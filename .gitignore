@@ -1,0 +1,10 @@
+build
+data
+libs
+code/platform
+debug/.vs
+
+**.input
+**.out
+**/.DS_Store
+**.VC.db

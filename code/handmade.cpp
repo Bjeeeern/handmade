@@ -418,8 +418,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								1.0f, 0.0f, 1.0f);
 
 	DrawBitmap(Buffer, &GameState->Backdrop, 
-						 {-40.0f, -40.0f}, 
-						 {(f32)GameState->Backdrop.Width, (f32)GameState->Backdrop.Height});
+						 -40.0f, -40.0f, 
+						 (f32)GameState->Backdrop.Width, (f32)GameState->Backdrop.Height);
 
 	f32 ScreenCenterX = (f32)Buffer->Width / 2.0f;
 	f32 ScreenCenterY = (f32)Buffer->Height / 2.0f;
@@ -527,15 +527,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 										PlayerR, PlayerG, PlayerB);
 
 			hero_bitmaps *Hero = &(GameState->HeroBitmaps[GameState->HeroFacingDirection]);
+
 			DrawBitmap(Buffer, &Hero->Torso, 
-								 {PlayerX - Hero->AlignmentX, PlayerY - Hero->AlignmentY},
-								 {(f32)Hero->Torso.Width, (f32)Hero->Torso.Height});
+								 PlayerX - Hero->AlignmentX, PlayerY - Hero->AlignmentY,
+								 (f32)Hero->Torso.Width, (f32)Hero->Torso.Height);
 			DrawBitmap(Buffer, &Hero->Cape,
-								 {PlayerX - Hero->AlignmentX, PlayerY - Hero->AlignmentY},
-								 {(f32)Hero->Cape.Width, (f32)Hero->Cape.Height});
+								 PlayerX - Hero->AlignmentX, PlayerY - Hero->AlignmentY,
+								 (f32)Hero->Cape.Width, (f32)Hero->Cape.Height);
 			DrawBitmap(Buffer, &Hero->Head,
-								 {PlayerX - Hero->AlignmentX, PlayerY - Hero->AlignmentY},
-								 {(f32)Hero->Head.Width, (f32)Hero->Head.Height});
+								 PlayerX - Hero->AlignmentX, PlayerY - Hero->AlignmentY,
+								 (f32)Hero->Head.Width, (f32)Hero->Head.Height);
 		}
 	}
 }

@@ -348,7 +348,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		GameState->HeroFacingDirection = 3;
 	}
 
-	f32 PlayerMetersPerSecondSpeed = 14.0f;
+	f32 PlayerMetersPerSecondSpeed = 10.0f;
 
 	f32 PlayerDistanceToTravel = PlayerMetersPerSecondSpeed * SecondsToUpdate;
 	f32 NewPlayerPositionX = (GameState->PlayerPosition.OffsetX + 

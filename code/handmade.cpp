@@ -29,6 +29,8 @@ struct game_state
 	memory_arena WorldArena;
 	world *World;
 
+	s32 RoomWidthInTiles;
+	s32 RoomHeightInTiles;
 	tile_map_position CameraPosition;
 	tile_map_position PlayerPosition;
 	b32 PlayerIsOnStairs;
@@ -52,7 +54,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 													 "data/test/test_hero_front_cape.bmp");
 	Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
 														"data/test/test_hero_front_torso.bmp");
-	Hero.AlignmentX = 71;
+	Hero.AlignmentX = 72;
 	Hero.AlignmentY = 182;
 	GameState->HeroBitmaps[0] = Hero;
 
@@ -62,7 +64,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 													 "data/test/test_hero_left_cape.bmp");
 	Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
 														"data/test/test_hero_left_torso.bmp");
-	Hero.AlignmentX = 71;
+	Hero.AlignmentX = 72;
 	Hero.AlignmentY = 182;
 	GameState->HeroBitmaps[1] = Hero;
 
@@ -72,7 +74,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 													 "data/test/test_hero_back_cape.bmp");
 	Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
 														"data/test/test_hero_back_torso.bmp");
-	Hero.AlignmentX = 71;
+	Hero.AlignmentX = 72;
 	Hero.AlignmentY = 182;
 	GameState->HeroBitmaps[2] = Hero;
 
@@ -82,21 +84,15 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 													 "data/test/test_hero_right_cape.bmp");
 	Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
 														"data/test/test_hero_right_torso.bmp");
-	Hero.AlignmentX = 71;
+	Hero.AlignmentX = 72;
 	Hero.AlignmentY = 182;
 	GameState->HeroBitmaps[3] = Hero;
 
-	GameState->PlayerPosition.AbsTileX = 7;
-	GameState->PlayerPosition.AbsTileY = 5;
-	GameState->PlayerPosition.AbsTileZ = 0;
-	GameState->PlayerPosition.OffsetX = 0.0f;
-	GameState->PlayerPosition.OffsetY = 0.0f;
+	GameState->PlayerPosition.AbsTile = {7, 5, 0};
+	GameState->PlayerPosition.Offset = {0.0f, 0.0f};
 
-	GameState->CameraPosition.AbsTileX = 8;
-	GameState->CameraPosition.AbsTileY = 4;
-	GameState->CameraPosition.AbsTileZ = 0;
-	GameState->CameraPosition.OffsetX = 0.0f;
-	GameState->CameraPosition.OffsetY = 0.0f;
+	GameState->CameraPosition.AbsTile = {8, 4, 0};
+	GameState->CameraPosition.Offset = {};
 
 	GameState->PlayerIsOnStairs;
 
@@ -114,19 +110,19 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 
 	TileMap->TileSideInMeters = 1.4f;
 
-	TileMap->ChunkCountX = 128;
-	TileMap->ChunkCountY = 128;
-	TileMap->ChunkCountZ = 2;
+	TileMap->ChunkCount = {128, 128, 2};
 
 	TileMap->TileChunks = PushArray(&GameState->WorldArena, 
-																	TileMap->ChunkCountX*
-																	TileMap->ChunkCountY*
-																	TileMap->ChunkCountZ, tile_chunk);
+																	TileMap->ChunkCount.X*
+																	TileMap->ChunkCount.Y*
+																	TileMap->ChunkCount.Z, tile_chunk);
 
 	u32 RandomNumberIndex = 0;
 
-	u32 TilesPerWidth = 17;
-	u32 TilesPerHeight = 9;
+	GameState->RoomWidthInTiles = 17;
+	GameState->RoomHeightInTiles = 9;
+	u32 TilesPerWidth = GameState->RoomWidthInTiles;
+	u32 TilesPerHeight = GameState->RoomHeightInTiles;
 
 	u32 ScreenX = 0;
 	u32 ScreenY = 0;
@@ -190,9 +186,10 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 					TileX < TilesPerWidth;
 					++TileX)
 			{
-				u32 AbsTileX = ScreenX * TilesPerWidth + TileX;
-				u32 AbsTileY = ScreenY * TilesPerHeight + TileY;
-				u32 AbsTileZ = ScreenZ;
+				v3u AbsTile = {
+					ScreenX * TilesPerWidth + TileX, 
+					ScreenY * TilesPerHeight + TileY, 
+					ScreenZ};
 
 				u32 TileValue = 1;
 				if((TileX == 0))
@@ -249,8 +246,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 					TileValue = StairToBuild;
 				}
 
-				SetTileValue(&GameState->WorldArena, World->TileMap, 
-										 AbsTileX, AbsTileY, AbsTileZ, TileValue);
+				SetTileValue(&GameState->WorldArena, World->TileMap, AbsTile, TileValue);
 			}
 		}
 
@@ -303,6 +299,20 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	}
 }
 
+internal_function tile_map_position 
+GetCenterOfRoom(tile_map_position A, s32 RoomWidthInTiles, s32 RoomHeightInTiles)
+{
+	tile_map_position Result = {};
+
+	Result.AbsTile.X = 
+		(A.AbsTile.X / RoomWidthInTiles) * RoomWidthInTiles + FloorF32ToS32(RoomWidthInTiles*0.5f);
+	Result.AbsTile.Y = 
+		(A.AbsTile.Y / RoomHeightInTiles) * RoomHeightInTiles + FloorF32ToS32(RoomHeightInTiles*0.5f);
+	Result.AbsTile.Z = A.AbsTile.Z;
+
+	return Result;
+}
+
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
 	Assert( (&GetController(Input, 0)->Struct_Terminator - 
@@ -328,51 +338,55 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 	f32 PlayerWidth = (f32)TileMap->TileSideInMeters * 0.75f;
 
-	f32 PlayerDirectionX = Input0->LeftStick.XEnd;
-	f32 PlayerDirectionY = Input0->LeftStick.YEnd;
+	v2 PlayerDirection = {};
 
 	if(Input0->LeftStickVrtBtn.Down.EndedDown)
 	{
+		PlayerDirection.Y += -1;
 		GameState->HeroFacingDirection = 0;
 	}
 	if(Input0->LeftStickVrtBtn.Left.EndedDown)
 	{
+		PlayerDirection.X += -1;
 		GameState->HeroFacingDirection = 1;
 	}
 	if(Input0->LeftStickVrtBtn.Up.EndedDown)
 	{
+		PlayerDirection.Y += 1;
 		GameState->HeroFacingDirection = 2;
 	}
 	if(Input0->LeftStickVrtBtn.Right.EndedDown)
 	{
+		PlayerDirection.X += 1;
 		GameState->HeroFacingDirection = 3;
+	}
+
+	if(PlayerDirection.X && PlayerDirection.Y)
+	{
+		PlayerDirection *= invroot2;
 	}
 
 	f32 PlayerMetersPerSecondSpeed = 10.0f;
 
 	f32 PlayerDistanceToTravel = PlayerMetersPerSecondSpeed * SecondsToUpdate;
-	f32 NewPlayerPositionX = (GameState->PlayerPosition.OffsetX + 
-														PlayerDirectionX * PlayerDistanceToTravel);
-	f32 NewPlayerPositionY = (GameState->PlayerPosition.OffsetY + 
-														PlayerDirectionY * PlayerDistanceToTravel);
+	v2 NewPlayerPosition = 
+		(GameState->PlayerPosition.Offset + PlayerDirection * PlayerDistanceToTravel);
 
 	tile_map_position NewDeltaPlayerPosition = GameState->PlayerPosition;
-	NewDeltaPlayerPosition.OffsetX = NewPlayerPositionX;
-	NewDeltaPlayerPosition.OffsetY = NewPlayerPositionY;
+	NewDeltaPlayerPosition.Offset = NewPlayerPosition;
 
 	tile_map_position NewDeltaLeft = NewDeltaPlayerPosition;
-	NewDeltaLeft.OffsetX = (NewPlayerPositionX - PlayerWidth/2.0f); 
+	NewDeltaLeft.Offset.X = (NewPlayerPosition.X - PlayerWidth/2.0f); 
 
 	tile_map_position NewDeltaRight = NewDeltaPlayerPosition;
-	NewDeltaRight.OffsetX = (NewPlayerPositionX + PlayerWidth/2.0f); 
+	NewDeltaRight.Offset.X = (NewPlayerPosition.X + PlayerWidth/2.0f); 
 
 	tile_map_position PlayerCanonicalPosition = RecanonilizePosition(TileMap, 
 																																	 NewDeltaPlayerPosition);
 	tile_map_position PlayerCanonicalLeft = RecanonilizePosition(TileMap, NewDeltaLeft);
 	tile_map_position PlayerCanonicalRight = RecanonilizePosition(TileMap, NewDeltaRight);
 
-	s32 DebugPlayerTileX = PlayerCanonicalPosition.AbsTileX;
-	s32 DebugPlayerTileY = PlayerCanonicalPosition.AbsTileY;
+	v2u DebugPlayerTile = PlayerCanonicalPosition.AbsTile.XY;
 
 	if(IsTileMapPointEmpty(TileMap, PlayerCanonicalLeft) &&
 		 IsTileMapPointEmpty(TileMap, PlayerCanonicalRight))
@@ -388,13 +402,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		{
 			if(CurrentTile == 3)
 			{
-				GameState->PlayerPosition.AbsTileZ += 1;
-				GameState->CameraPosition.AbsTileZ += 1;
+				GameState->PlayerPosition.AbsTile.Z += 1;
+				//GameState->CameraPosition.AbsTile.Z += 1;
 			}
 			else if(CurrentTile == 4)
 			{
-				GameState->PlayerPosition.AbsTileZ -= 1;
-				GameState->CameraPosition.AbsTileZ -= 1;
+				GameState->PlayerPosition.AbsTile.Z -= 1;
+				//GameState->CameraPosition.AbsTile.Z -= 1;
 			}
 			GameState->PlayerIsOnStairs = true;
 		}
@@ -404,8 +418,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		GameState->PlayerIsOnStairs = false;
 	}
 
-	GameState->CameraPosition.AbsTileX = (GameState->PlayerPosition.AbsTileX / 17)*17 + 8;
-	GameState->CameraPosition.AbsTileY = (GameState->PlayerPosition.AbsTileY / 9)*9 + 4;
+	GameState->CameraPosition = GetCenterOfRoom(GameState->PlayerPosition,
+																							GameState->RoomWidthInTiles,
+																							GameState->RoomHeightInTiles);
 
 	//
 	// NOTE(bjorn): Rendering below.
@@ -432,10 +447,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				RelColumn < 60;
 				++RelColumn)
 		{
-			s32 Column = GameState->CameraPosition.AbsTileX + RelColumn;
-			s32 Row = GameState->CameraPosition.AbsTileY + RelRow;
+			u32 Column = GameState->CameraPosition.AbsTile.X + RelColumn;
+			u32 Row = GameState->CameraPosition.AbsTile.Y + RelRow;
 
-			u32 TileID = GetTileValue(TileMap, Column, Row, GameState->CameraPosition.AbsTileZ);
+			u32 TileID = GetTileValue(TileMap, 
+																v3u{Column, Row, GameState->CameraPosition.AbsTile.Z});
 			f32 TileR = 0.0f;
 			f32 TileG = 0.0f;
 			f32 TileB = 0.0f;
@@ -472,7 +488,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				TileG = 1.0f;
 				TileB = 0.5f;
 			}
-			if(Row == DebugPlayerTileY && Column == DebugPlayerTileX)
+			if(Row == DebugPlayerTile.Y && Column == DebugPlayerTile.X)
 			{
 				TileR = 1.0f;
 				TileG = 0.5f;
@@ -482,12 +498,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			f32 MinX = (ScreenCenterX + 
 									(f32)RelColumn * (f32)TileSideInPixels -
 									(f32)TileSideInPixels / 2.0f -
-									PixelsPerMeter * GameState->CameraPosition.OffsetX
+									PixelsPerMeter * GameState->CameraPosition.Offset.X
 								 );
 			f32 MinY = (ScreenCenterY - 
 									(f32)RelRow * (f32)TileSideInPixels +
 									(f32)TileSideInPixels / 2.0f +
-									PixelsPerMeter * GameState->CameraPosition.OffsetY
+									PixelsPerMeter * GameState->CameraPosition.Offset.Y
 								 );
 
 			f32 MaxX = MinX + (f32)TileSideInPixels;
@@ -521,7 +537,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		f32 PlayerLeft = PlayerX - PlayerPixelWidth / 2.0f;
 		f32 PlayerRight = PlayerX + PlayerPixelWidth / 2.0f;
 
-		if(GameState->PlayerPosition.AbsTileZ <= GameState->CameraPosition.AbsTileZ)
+		if(GameState->PlayerPosition.AbsTile.Z <= GameState->CameraPosition.AbsTile.Z)
 		{
 			DrawRectangle(Buffer, PlayerLeft, PlayerRight, PlayerTop, PlayerBottom, 
 										PlayerR, PlayerG, PlayerB);

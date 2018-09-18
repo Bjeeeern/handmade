@@ -119,35 +119,21 @@ IsTileMapPointEmpty(tile_map *TileMap, tile_map_position CanonicalPosition)
 //TODO(bjorn): Do not use divide/multiply for recanonicalizing. There might 
 //occur a loss of presicion that causes the player to get stuck when moving
 //slowly with small increments.
-	internal_function void
-RecanonilizeSubTileRelativeCenter(f32 *InnerDimension, f32 UnitLenghtOfInner, 
-																	u32 *OuterDimension)
-{
-	s32 Offset = RoundF32ToS32(*InnerDimension / UnitLenghtOfInner);
-	*InnerDimension -= UnitLenghtOfInner * Offset;
-	//NOTE(bjorn): TileMap is assumed to be toroidal. Edges across connect.
-	*OuterDimension += Offset;
-
-	f32 HalfUnit = UnitLenghtOfInner / 2.0f;
-	Assert(*InnerDimension >= -HalfUnit);
-	Assert(*InnerDimension <= HalfUnit);
-}
-
 	internal_function tile_map_position
 RecanonilizePosition(tile_map *TileMap, tile_map_position NewDeltaPosition)
 {
 	tile_map_position Result = NewDeltaPosition;
 
-	/*
-	RecanonilizeSubTileRelativeCenter(&Result.OffsetX, TileMap->TileSideInMeters, 
-																		&Result.AbsTileX);
-	RecanonilizeSubTileRelativeCenter(&Result.OffsetY, TileMap->TileSideInMeters, 
-																		&Result.AbsTileY);
-																		*/
-	v2s Offset = RoundV2ToV2S(NewDeltaPosition.AbsTile.XY / TileMap->TileSideInMeters);
-	Result.Offset -= Offset * TileMap->TileSideInMeters;
+	v2s AbsTileOffset = RoundV2ToV2S(NewDeltaPosition.Offset / TileMap->TileSideInMeters);
+	Result.Offset -= AbsTileOffset * TileMap->TileSideInMeters;
 	//NOTE(bjorn): TileMap is assumed to be toroidal. Edges across connect.
-	Result.AbsTile += (v3s)Offset;
+	Result.AbsTile += (v3s)AbsTileOffset;
+
+	f32 HalfUnit = TileMap->TileSideInMeters / 2.0f;
+	Assert(Result.Offset.X >= -HalfUnit);
+	Assert(Result.Offset.X <= HalfUnit);
+	Assert(Result.Offset.Y >= -HalfUnit);
+	Assert(Result.Offset.Y <= HalfUnit);
 
 	return Result;
 }
@@ -157,7 +143,7 @@ CalculateMeterDelta(tile_map *TileMap, tile_map_position A, tile_map_position B)
 {
 	v3 Delta = {};
 
-	v3u TileDelta = A.AbsTile - B.AbsTile;
+	v3s TileDelta = (v3u)A.AbsTile - (v3u)B.AbsTile;
 	v2 Offset = A.Offset - B.Offset;
 
 	Delta = (v3)TileDelta * TileMap->TileSideInMeters + (v3)Offset;

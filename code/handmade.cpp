@@ -32,6 +32,8 @@ struct game_state
 	s32 RoomHeightInTiles;
 	tile_map_position CameraPosition;
 	tile_map_position PlayerPosition;
+	v2 PlayerVelocity;
+
 	b32 PlayerIsOnStairs;
 
 	loaded_bitmap Backdrop;
@@ -333,53 +335,71 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 	f32 PlayerWidth = (f32)TileMap->TileSideInMeters * 0.75f;
 
-	v2 PlayerDirection = {};
+	v2 InputDirection = {};
 
 	if(Input0->LeftStickVrtBtn.Down.EndedDown)
 	{
-		PlayerDirection.Y += -1;
+		InputDirection.Y += -1;
 		GameState->HeroFacingDirection = 0;
 	}
 	if(Input0->LeftStickVrtBtn.Left.EndedDown)
 	{
-		PlayerDirection.X += -1;
+		InputDirection.X += -1;
 		GameState->HeroFacingDirection = 1;
 	}
 	if(Input0->LeftStickVrtBtn.Up.EndedDown)
 	{
-		PlayerDirection.Y += 1;
+		InputDirection.Y += 1;
 		GameState->HeroFacingDirection = 2;
 	}
 	if(Input0->LeftStickVrtBtn.Right.EndedDown)
 	{
-		PlayerDirection.X += 1;
+		InputDirection.X += 1;
 		GameState->HeroFacingDirection = 3;
 	}
 
-	if(PlayerDirection.X && PlayerDirection.Y)
+	if(InputDirection.X && InputDirection.Y)
 	{
-		PlayerDirection *= invroot2;
+		InputDirection *= invroot2;
 	}
 
-	f32 PlayerMetersPerSecondSpeed = 10.0f;
+	//TODO(bjorn): There is a feedback where the output velocity affects the
+	//input acceleration causing different behaviour depending on update
+	//frequency. The problem is that the velocity is only sampled at distances
+	//and its effect is not integrated over.
 
-	f32 PlayerDistanceToTravel = PlayerMetersPerSecondSpeed * SecondsToUpdate;
-	v2 NewPlayerPosition = 
-		(GameState->PlayerPosition.Offset + PlayerDirection * PlayerDistanceToTravel);
+	tile_map_position NewPlayerPosition = GameState->PlayerPosition;
+#if 0
+	v2 PlayerAcceleration = InputDirection * 10.0f;
+	PlayerAcceleration += -1.5f * GameState->PlayerVelocity;
+	NewPlayerPosition.Offset = (((0.5f * PlayerAcceleration) * Square(SecondsToUpdate))
+															+ (GameState->PlayerVelocity * SecondsToUpdate)
+															+ GameState->PlayerPosition.Offset);
+	GameState->PlayerVelocity = (PlayerAcceleration * SecondsToUpdate) + GameState->PlayerVelocity;
+#else
+#if 1
+	v2 PlayerAcceleration = InputDirection * 70.0f;
+	PlayerAcceleration += -8.0f * GameState->PlayerVelocity;
+	NewPlayerPosition.Offset = (((0.5f * PlayerAcceleration) * Square(SecondsToUpdate))
+															+ (GameState->PlayerVelocity * SecondsToUpdate)
+															+ GameState->PlayerPosition.Offset);
+	GameState->PlayerVelocity = (PlayerAcceleration * SecondsToUpdate) + GameState->PlayerVelocity;
+#else
+	GameState->PlayerVelocity = InputDirection * 10.0f;
+	NewPlayerPosition.Offset = GameState->PlayerVelocity * SecondsToUpdate
+		+ GameState->PlayerPosition.Offset;
+#endif
+#endif
 
-	tile_map_position NewDeltaPlayerPosition = GameState->PlayerPosition;
-	NewDeltaPlayerPosition.Offset = NewPlayerPosition;
+	tile_map_position PlayerCanonicalPosition = RecanonilizePosition(TileMap, NewPlayerPosition);
 
-	tile_map_position NewDeltaLeft = NewDeltaPlayerPosition;
-	NewDeltaLeft.Offset.X = (NewPlayerPosition.X - PlayerWidth/2.0f); 
+	tile_map_position NewPlayerLeft = NewPlayerPosition;
+	NewPlayerLeft.Offset.X = (NewPlayerPosition.Offset.X - PlayerWidth/2.0f); 
+	tile_map_position PlayerCanonicalLeft = RecanonilizePosition(TileMap, NewPlayerLeft);
 
-	tile_map_position NewDeltaRight = NewDeltaPlayerPosition;
-	NewDeltaRight.Offset.X = (NewPlayerPosition.X + PlayerWidth/2.0f); 
-
-	tile_map_position PlayerCanonicalPosition = RecanonilizePosition(TileMap, 
-																																	 NewDeltaPlayerPosition);
-	tile_map_position PlayerCanonicalLeft = RecanonilizePosition(TileMap, NewDeltaLeft);
-	tile_map_position PlayerCanonicalRight = RecanonilizePosition(TileMap, NewDeltaRight);
+	tile_map_position NewPlayerRight = NewPlayerPosition;
+	NewPlayerRight.Offset.X = (NewPlayerPosition.Offset.X + PlayerWidth/2.0f); 
+	tile_map_position PlayerCanonicalRight = RecanonilizePosition(TileMap, NewPlayerRight);
 
 	v2u DebugPlayerCenterTile = PlayerCanonicalPosition.AbsTile.XY;
 	v2u DebugPlayerLeftTile = PlayerCanonicalLeft.AbsTile.XY;
@@ -390,10 +410,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	{
 		GameState->PlayerPosition = PlayerCanonicalPosition;
 	}
-	
+
 	u32 CurrentTile = GetTileValue(TileMap, PlayerCanonicalPosition);
 	if((CurrentTile == 3) ||
-		(CurrentTile == 4))
+		 (CurrentTile == 4))
 	{
 		if(!GameState->PlayerIsOnStairs)
 		{
@@ -420,15 +440,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	// NOTE(bjorn): Rendering below.
 	//
-	s32 TileSideInPixels = 50;
+	s32 TileSideInPixels = 60;
 	f32 PixelsPerMeter = (f32)TileSideInPixels / TileMap->TileSideInMeters;
-
 
 	DrawRectangle(Buffer, {0.0f, 0.0f}, {(f32)Buffer->Width, (f32)Buffer->Height}, 
 								{1.0f, 0.0f, 1.0f});
 
+#if 0
 	DrawBitmap(Buffer, &GameState->Backdrop, {-40.0f, -40.0f}, 
 						 {(f32)GameState->Backdrop.Width, (f32)GameState->Backdrop.Height});
+#endif
 
 	v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
 

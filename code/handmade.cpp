@@ -365,13 +365,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 	//TODO(bjorn): There is a feedback where the output velocity affects the
 	//input acceleration causing different behaviour depending on update
-	//frequency. The problem is that the velocity is only sampled at distances
+	//frequency. The problem is that the friction is only sampled at distances
 	//and its effect is not integrated over.
+	//TODO(casey): ODE here!
 
 	tile_map_position NewPlayerPosition = GameState->PlayerPosition;
 #if 0
-	v2 PlayerAcceleration = InputDirection * 10.0f;
-	PlayerAcceleration += -1.5f * GameState->PlayerVelocity;
+	v2 PlayerAcceleration = InputDirection * 2.0f;
+	PlayerAcceleration += -0.0f * GameState->PlayerVelocity;
 	NewPlayerPosition.Offset = (((0.5f * PlayerAcceleration) * Square(SecondsToUpdate))
 															+ (GameState->PlayerVelocity * SecondsToUpdate)
 															+ GameState->PlayerPosition.Offset);
@@ -385,7 +386,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 															+ GameState->PlayerPosition.Offset);
 	GameState->PlayerVelocity = (PlayerAcceleration * SecondsToUpdate) + GameState->PlayerVelocity;
 #else
-	GameState->PlayerVelocity = InputDirection * 10.0f;
+	GameState->PlayerVelocity = InputDirection * 2.0f;
 	NewPlayerPosition.Offset = GameState->PlayerVelocity * SecondsToUpdate
 		+ GameState->PlayerPosition.Offset;
 #endif
@@ -405,10 +406,79 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	v2u DebugPlayerLeftTile = PlayerCanonicalLeft.AbsTile.XY;
 	v2u DebugPlayerRightTile = PlayerCanonicalRight.AbsTile.XY;
 
-	if(IsTileMapPointEmpty(TileMap, PlayerCanonicalLeft) &&
-		 IsTileMapPointEmpty(TileMap, PlayerCanonicalRight))
+	b32 LeftCollisionPointEmpty = IsTileMapPointEmpty(TileMap, PlayerCanonicalLeft);
+	b32 CenterCollisionPointEmpty	= IsTileMapPointEmpty(TileMap, PlayerCanonicalPosition);
+	b32 RightCollisionPointEmpty = IsTileMapPointEmpty(TileMap, PlayerCanonicalRight);
+	if(LeftCollisionPointEmpty && CenterCollisionPointEmpty && RightCollisionPointEmpty)
 	{
 		GameState->PlayerPosition = PlayerCanonicalPosition;
+	}
+	else
+	{
+		v2 Normal = {};
+
+		if(!LeftCollisionPointEmpty)
+		{
+			tile_map_position OldPlayerLeft = GameState->PlayerPosition;
+			OldPlayerLeft.Offset.X = (GameState->PlayerPosition.Offset.X - PlayerWidth/2.0f); 
+			tile_map_position OldPlayerCanonicalLeft = RecanonilizePosition(TileMap, OldPlayerLeft);
+
+			tile_map_position OldPlayerCanonical, NewPlayerCanonical;
+			OldPlayerCanonical = OldPlayerCanonicalLeft;
+			NewPlayerCanonical = PlayerCanonicalLeft;
+
+			v2 PotNormal = (v2)((v3s)OldPlayerCanonical.AbsTile - (v3s)NewPlayerCanonical.AbsTile).XY;
+			if(!(PotNormal.X && PotNormal.Y))
+			{
+				Normal = PotNormal;
+			}
+		}
+
+		if(!RightCollisionPointEmpty)
+		{
+			tile_map_position OldPlayerRight = GameState->PlayerPosition;
+			OldPlayerRight.Offset.X = (GameState->PlayerPosition.Offset.X + PlayerWidth/2.0f); 
+			tile_map_position OldPlayerCanonicalRight = RecanonilizePosition(TileMap, OldPlayerRight);
+
+			tile_map_position OldPlayerCanonical, NewPlayerCanonical;
+			OldPlayerCanonical = OldPlayerCanonicalRight;
+			NewPlayerCanonical = PlayerCanonicalRight;
+
+			v2 PotNormal = (v2)((v3s)OldPlayerCanonical.AbsTile - (v3s)NewPlayerCanonical.AbsTile).XY;
+			if(!(PotNormal.X && PotNormal.Y))
+			{
+				Normal = PotNormal;
+			}
+		}
+
+		if(!CenterCollisionPointEmpty)
+		{
+			tile_map_position OldPlayerCanonical, NewPlayerCanonical;
+			OldPlayerCanonical = GameState->PlayerPosition;
+			NewPlayerCanonical = PlayerCanonicalPosition;
+
+			v2 PotNormal = (v2)((v3s)OldPlayerCanonical.AbsTile - (v3s)NewPlayerCanonical.AbsTile).XY;
+			if(!(PotNormal.X && PotNormal.Y))
+			{
+				Normal = PotNormal;
+			}
+		}
+
+		if(Normal.X && Normal.Y)
+		{
+			Normal = {};
+		}
+		else
+		{
+			GameState->PlayerVelocity -= 1.0f * Dot(GameState->PlayerVelocity, Normal) * Normal;
+			PlayerAcceleration -= 1.0f * Dot(PlayerAcceleration, Normal) * Normal;
+
+			NewPlayerPosition.Offset = (((0.5f * PlayerAcceleration) * Square(SecondsToUpdate))
+																	+ (GameState->PlayerVelocity * SecondsToUpdate)
+																	+ GameState->PlayerPosition.Offset);
+
+			GameState->PlayerPosition = RecanonilizePosition(TileMap, NewPlayerPosition);
+		}
 	}
 
 	u32 CurrentTile = GetTileValue(TileMap, PlayerCanonicalPosition);

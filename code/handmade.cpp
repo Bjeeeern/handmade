@@ -310,6 +310,16 @@ GetCenterOfRoom(tile_map_position A, s32 RoomWidthInTiles, s32 RoomHeightInTiles
 	return Result;
 }
 
+internal_function v2 
+ClosestPointInRectangle(v2 MinCorner, v2 MaxCorner, tile_map_diff RelNewPlayerPos)
+{
+	v2 Result = {};
+	Result.X = Clamp(RelNewPlayerPos.MeterDiff.X, MinCorner.X, MaxCorner.X);
+	Result.Y = Clamp(RelNewPlayerPos.MeterDiff.Y, MinCorner.Y, MaxCorner.Y);
+
+	return Result;
+}
+
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
 	Assert( (&GetController(Input, 0)->Struct_Terminator - 
@@ -332,9 +342,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 	world *World = GameState->World;
 	tile_map *TileMap = World->TileMap;
+	tile_map_position OldPlayerPos = GameState->PlayerPosition;
 
 	f32 PlayerWidth = (f32)TileMap->TileSideInMeters * 0.75f;
 
+	//
+	// NOTE(bjorn): Movement
+	//
 	v2 InputDirection = {};
 
 	if(Input0->LeftStickVrtBtn.Down.EndedDown)
@@ -363,125 +377,68 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		InputDirection *= invroot2;
 	}
 
-	//TODO(bjorn): There is a feedback where the output velocity affects the
-	//input acceleration causing different behaviour depending on update
-	//frequency. The problem is that the friction is only sampled at distances
-	//and its effect is not integrated over.
-	//TODO(casey): ODE here!
-
-	tile_map_position NewPlayerPosition = GameState->PlayerPosition;
-#if 0
-	v2 PlayerAcceleration = InputDirection * 2.0f;
-	PlayerAcceleration += -0.0f * GameState->PlayerVelocity;
-	NewPlayerPosition.Offset = (((0.5f * PlayerAcceleration) * Square(SecondsToUpdate))
-															+ (GameState->PlayerVelocity * SecondsToUpdate)
-															+ GameState->PlayerPosition.Offset);
-	GameState->PlayerVelocity = (PlayerAcceleration * SecondsToUpdate) + GameState->PlayerVelocity;
-#else
-#if 1
 	v2 PlayerAcceleration = InputDirection * 70.0f;
+
+	//TODO(casey): ODE here!
 	PlayerAcceleration += -8.0f * GameState->PlayerVelocity;
-	NewPlayerPosition.Offset = (((0.5f * PlayerAcceleration) * Square(SecondsToUpdate))
-															+ (GameState->PlayerVelocity * SecondsToUpdate)
-															+ GameState->PlayerPosition.Offset);
+
+	tile_map_position NewPlayerPos = GameState->PlayerPosition;
+	v2 PlayerDelta = (0.5f * PlayerAcceleration * Square(SecondsToUpdate)
+										+ (GameState->PlayerVelocity * SecondsToUpdate));
+	NewPlayerPos.Offset += PlayerDelta;
 	GameState->PlayerVelocity = (PlayerAcceleration * SecondsToUpdate) + GameState->PlayerVelocity;
-#else
-	GameState->PlayerVelocity = InputDirection * 2.0f;
-	NewPlayerPosition.Offset = GameState->PlayerVelocity * SecondsToUpdate
-		+ GameState->PlayerPosition.Offset;
-#endif
-#endif
 
-	tile_map_position PlayerCanonicalPosition = RecanonilizePosition(TileMap, NewPlayerPosition);
+	NewPlayerPos = RecanonilizePosition(TileMap, NewPlayerPos);
 
-	tile_map_position NewPlayerLeft = NewPlayerPosition;
-	NewPlayerLeft.Offset.X = (NewPlayerPosition.Offset.X - PlayerWidth/2.0f); 
-	tile_map_position PlayerCanonicalLeft = RecanonilizePosition(TileMap, NewPlayerLeft);
-
-	tile_map_position NewPlayerRight = NewPlayerPosition;
-	NewPlayerRight.Offset.X = (NewPlayerPosition.Offset.X + PlayerWidth/2.0f); 
-	tile_map_position PlayerCanonicalRight = RecanonilizePosition(TileMap, NewPlayerRight);
-
-	v2u DebugPlayerCenterTile = PlayerCanonicalPosition.AbsTile.XY;
-	v2u DebugPlayerLeftTile = PlayerCanonicalLeft.AbsTile.XY;
-	v2u DebugPlayerRightTile = PlayerCanonicalRight.AbsTile.XY;
-
-	b32 LeftCollisionPointEmpty = IsTileMapPointEmpty(TileMap, PlayerCanonicalLeft);
-	b32 CenterCollisionPointEmpty	= IsTileMapPointEmpty(TileMap, PlayerCanonicalPosition);
-	b32 RightCollisionPointEmpty = IsTileMapPointEmpty(TileMap, PlayerCanonicalRight);
-	if(LeftCollisionPointEmpty && CenterCollisionPointEmpty && RightCollisionPointEmpty)
+	//
+	// NOTE(bjorn): Collision check after movement
+	//
+	u32 MinTileX = Min(OldPlayerPos.AbsTile.X, NewPlayerPos.AbsTile.X);
+	u32 MinTileY = Min(OldPlayerPos.AbsTile.Y, NewPlayerPos.AbsTile.Y);
+	u32 OneAfterMaxTileX = Max(OldPlayerPos.AbsTile.X, NewPlayerPos.AbsTile.X) + 1; 
+	u32 OneAfterMaxTileY = Max(OldPlayerPos.AbsTile.Y, NewPlayerPos.AbsTile.Y) + 1; 
+	u32 AbsTileZ = NewPlayerPos.AbsTile.Z;
+	tile_map_position BestPlayerPos = NewPlayerPos;
+	f32 BestDistanceSquared = positive_infinity32;
+	for(u32 AbsTileY = MinTileY;
+			AbsTileY != OneAfterMaxTileY;
+			AbsTileY++)
 	{
-		GameState->PlayerPosition = PlayerCanonicalPosition;
-	}
-	else
-	{
-		v2 Normal = {};
-
-		if(!LeftCollisionPointEmpty)
+		for(u32 AbsTileX = MinTileX;
+				AbsTileX != OneAfterMaxTileX;
+				AbsTileX++)
 		{
-			tile_map_position OldPlayerLeft = GameState->PlayerPosition;
-			OldPlayerLeft.Offset.X = (GameState->PlayerPosition.Offset.X - PlayerWidth/2.0f); 
-			tile_map_position OldPlayerCanonicalLeft = RecanonilizePosition(TileMap, OldPlayerLeft);
-
-			tile_map_position OldPlayerCanonical, NewPlayerCanonical;
-			OldPlayerCanonical = OldPlayerCanonicalLeft;
-			NewPlayerCanonical = PlayerCanonicalLeft;
-
-			v2 PotNormal = (v2)((v3s)OldPlayerCanonical.AbsTile - (v3s)NewPlayerCanonical.AbsTile).XY;
-			if(!(PotNormal.X && PotNormal.Y))
+			u32 TileValue = GetTileValue(TileMap, v3u{AbsTileX, AbsTileY, AbsTileZ});
+			if(IsTileValueEmpty(TileValue))
 			{
-				Normal = PotNormal;
+				tile_map_position TestTilePos = CenteredTilePoint(AbsTileX, AbsTileY, AbsTileZ);
+				tile_map_diff RelNewPlayerPos = GetTileMapPosDifference(TileMap, 
+																																NewPlayerPos, 
+																																TestTilePos);
+
+				v2 MinCorner = -0.5f * v2{TileMap->TileSideInMeters, TileMap->TileSideInMeters};
+				v2 MaxCorner = 0.5f * v2{TileMap->TileSideInMeters, TileMap->TileSideInMeters};
+				TestTilePos.Offset = ClosestPointInRectangle(MinCorner, MaxCorner, RelNewPlayerPos);
+
+				tile_map_diff RelTestTilePlayerPos = GetTileMapPosDifference(TileMap, 
+																																		 NewPlayerPos, 
+																																		 TestTilePos);
+				f32 TestDistanceSquared = LenghtSquared(RelTestTilePlayerPos.MeterDiff.XY);
+				if(TestDistanceSquared < BestDistanceSquared)
+				{
+					BestDistanceSquared = TestDistanceSquared;
+					BestPlayerPos = TestTilePos;
+				}
 			}
-		}
-
-		if(!RightCollisionPointEmpty)
-		{
-			tile_map_position OldPlayerRight = GameState->PlayerPosition;
-			OldPlayerRight.Offset.X = (GameState->PlayerPosition.Offset.X + PlayerWidth/2.0f); 
-			tile_map_position OldPlayerCanonicalRight = RecanonilizePosition(TileMap, OldPlayerRight);
-
-			tile_map_position OldPlayerCanonical, NewPlayerCanonical;
-			OldPlayerCanonical = OldPlayerCanonicalRight;
-			NewPlayerCanonical = PlayerCanonicalRight;
-
-			v2 PotNormal = (v2)((v3s)OldPlayerCanonical.AbsTile - (v3s)NewPlayerCanonical.AbsTile).XY;
-			if(!(PotNormal.X && PotNormal.Y))
-			{
-				Normal = PotNormal;
-			}
-		}
-
-		if(!CenterCollisionPointEmpty)
-		{
-			tile_map_position OldPlayerCanonical, NewPlayerCanonical;
-			OldPlayerCanonical = GameState->PlayerPosition;
-			NewPlayerCanonical = PlayerCanonicalPosition;
-
-			v2 PotNormal = (v2)((v3s)OldPlayerCanonical.AbsTile - (v3s)NewPlayerCanonical.AbsTile).XY;
-			if(!(PotNormal.X && PotNormal.Y))
-			{
-				Normal = PotNormal;
-			}
-		}
-
-		if(Normal.X && Normal.Y)
-		{
-			Normal = {};
-		}
-		else
-		{
-			GameState->PlayerVelocity -= 1.0f * Dot(GameState->PlayerVelocity, Normal) * Normal;
-			PlayerAcceleration -= 1.0f * Dot(PlayerAcceleration, Normal) * Normal;
-
-			NewPlayerPosition.Offset = (((0.5f * PlayerAcceleration) * Square(SecondsToUpdate))
-																	+ (GameState->PlayerVelocity * SecondsToUpdate)
-																	+ GameState->PlayerPosition.Offset);
-
-			GameState->PlayerPosition = RecanonilizePosition(TileMap, NewPlayerPosition);
 		}
 	}
 
-	u32 CurrentTile = GetTileValue(TileMap, PlayerCanonicalPosition);
+	GameState->PlayerPosition = BestPlayerPos;
+
+	//
+	// NOTE(bjorn): Update camera/Z-position
+	//
+	u32 CurrentTile = GetTileValue(TileMap, GameState->PlayerPosition);
 	if((CurrentTile == 3) ||
 		 (CurrentTile == 4))
 	{
@@ -508,7 +465,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 																							GameState->RoomHeightInTiles);
 
 	//
-	// NOTE(bjorn): Rendering below.
+	// NOTE(bjorn): Rendering
 	//
 	s32 TileSideInPixels = 60;
 	f32 PixelsPerMeter = (f32)TileSideInPixels / TileMap->TileSideInMeters;
@@ -560,12 +517,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			{
 				TileRGB = {0.0f, 1.0f, 0.5f};
 			}
-			if((Row == DebugPlayerCenterTile.Y && Column == DebugPlayerCenterTile.X) ||
-				 (Row == DebugPlayerLeftTile.Y && Column == DebugPlayerLeftTile.X) ||
-				 (Row == DebugPlayerRightTile.Y && Column == DebugPlayerRightTile.X))
-			{
-				TileRGB = {1.0f, 0.5f, 0.0f};
-			}
 
 			m22 InvertY = {1, 0,
 										 0,-1};
@@ -588,9 +539,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 		v2 PlayerPixelDim = {(f32)TileSideInPixels * 0.75f, (f32)TileSideInPixels};
 
-		v3 PlayerCameraDelta = CalculateMeterDelta(TileMap, 
-																							 GameState->PlayerPosition, 
-																							 GameState->CameraPosition);
+		v3 PlayerCameraDelta = GetTileMapPosDifference(TileMap, 
+																									 GameState->PlayerPosition, 
+																									 GameState->CameraPosition).MeterDiff;
 		m22 GameSpaceToScreenSpace = 
 		{PixelsPerMeter,						  0,
 		 0,							-PixelsPerMeter};

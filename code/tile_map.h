@@ -37,6 +37,16 @@ struct tile_map_position
 	v2 Offset;
 };
 
+inline tile_map_position
+CenteredTilePoint(u32 AbsTileX, u32 AbsTileY, u32 AbsTileZ)
+{
+	tile_map_position Result = {};
+
+	Result.AbsTile = {AbsTileX,	AbsTileY, AbsTileZ};
+
+	return Result;
+}
+
 inline tile_chunk_position 
 GetChunkPosition(tile_map *TileMap, v3u AbsTile)
 {
@@ -81,7 +91,7 @@ GetTileValueUnchecked(tile_map *TileMap, tile_chunk *TileChunk, v2u Tile)
   return TileValue;
 }
 
-  internal_function b32
+  internal_function u32
 GetTileValue(tile_map *TileMap, v3u AbsTile)
 {
   u32 TileValue = 0;
@@ -96,10 +106,16 @@ GetTileValue(tile_map *TileMap, v3u AbsTile)
 
 	return TileValue;
 }
-  internal_function b32
+  internal_function u32
 GetTileValue(tile_map *TileMap, tile_map_position Pos)
 {
 	return GetTileValue(TileMap, Pos.AbsTile);
+}
+
+internal_function b32
+IsTileValueEmpty(u32 TileValue)
+{
+	return (TileValue == 1) || (TileValue == 3) || (TileValue == 4);
 }
 
 	internal_function b32
@@ -109,11 +125,7 @@ IsTileMapPointEmpty(tile_map *TileMap, tile_map_position CanonicalPosition)
 
 	u32 TileValue = GetTileValue(TileMap, CanonicalPosition.AbsTile);
 
-	Empty = (TileValue == 1) ||
-		(TileValue == 3) ||
-		(TileValue == 4);
-
-	return Empty;
+	return IsTileValueEmpty(TileValue);
 }
 
 //TODO(bjorn): Do not use divide/multiply for recanonicalizing. There might 
@@ -138,17 +150,22 @@ RecanonilizePosition(tile_map *TileMap, tile_map_position NewDeltaPosition)
 	return Result;
 }
 
-	internal_function v3
-CalculateMeterDelta(tile_map *TileMap, tile_map_position A, tile_map_position B)
+struct tile_map_diff
 {
-	v3 Delta = {};
+	v3s AbsTileDiff;
+	v3 MeterDiff;
+};
+	internal_function tile_map_diff
+GetTileMapPosDifference(tile_map *TileMap, tile_map_position A, tile_map_position B)
+{
+	tile_map_diff Result = {};
 
-	v3s TileDelta = (v3u)A.AbsTile - (v3u)B.AbsTile;
-	v2 Offset = A.Offset - B.Offset;
+	Result.AbsTileDiff = (v3s)A.AbsTile - (v3s)B.AbsTile;
 
-	Delta = (v3)TileDelta * TileMap->TileSideInMeters + (v3)Offset;
+	v2 InternalDiff = A.Offset - B.Offset;
+	Result.MeterDiff = (v3)Result.AbsTileDiff * TileMap->TileSideInMeters + (v3)InternalDiff;
 
-	return Delta;
+	return Result;
 }
 
 	internal_function void

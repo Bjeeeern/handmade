@@ -334,8 +334,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		InitializeGame(Memory, GameState);
 		Memory->IsInitialized = true;
 	}
-	game_controller *Input0 = GetController(Input, 0);
-	if(Input0->ActionDown.EndedDown)
+
+	game_keyboard *Keyboard0 = GetKeyboard(Input, 0);
+	game_controller *Controller0 = GetController(Input, 0);
+	if(Controller0->ActionDown.EndedDown)
 	{
 		InitializeGame(Memory, GameState);
 	}
@@ -351,22 +353,22 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	v2 InputDirection = {};
 
-	if(Input0->LeftStickVrtBtn.Down.EndedDown)
+	if(Keyboard0->S.EndedDown)
 	{
 		InputDirection.Y += -1;
 		GameState->HeroFacingDirection = 0;
 	}
-	if(Input0->LeftStickVrtBtn.Left.EndedDown)
+	if(Keyboard0->A.EndedDown)
 	{
 		InputDirection.X += -1;
 		GameState->HeroFacingDirection = 1;
 	}
-	if(Input0->LeftStickVrtBtn.Up.EndedDown)
+	if(Keyboard0->W.EndedDown)
 	{
 		InputDirection.Y += 1;
 		GameState->HeroFacingDirection = 2;
 	}
-	if(Input0->LeftStickVrtBtn.Right.EndedDown)
+	if(Keyboard0->D.EndedDown)
 	{
 		InputDirection.X += 1;
 		GameState->HeroFacingDirection = 3;
@@ -377,10 +379,15 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		InputDirection *= invroot2;
 	}
 
-	v2 PlayerAcceleration = InputDirection * 70.0f;
+	if(Controller0->IsConnected)
+	{
+		InputDirection = Controller0->LeftStick.Average;
+	}
+
+	v2 PlayerAcceleration = InputDirection * 85.0f;
 
 	//TODO(casey): ODE here!
-	PlayerAcceleration += -8.0f * GameState->PlayerVelocity;
+	PlayerAcceleration += -8.5f * GameState->PlayerVelocity;
 
 	tile_map_position NewPlayerPos = GameState->PlayerPosition;
 	v2 PlayerDelta = (0.5f * PlayerAcceleration * Square(SecondsToUpdate)
@@ -473,7 +480,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	DrawRectangle(Buffer, {0.0f, 0.0f}, {(f32)Buffer->Width, (f32)Buffer->Height}, 
 								{1.0f, 0.0f, 1.0f});
 
-#if 0
+#if 1
 	DrawBitmap(Buffer, &GameState->Backdrop, {-40.0f, -40.0f}, 
 						 {(f32)GameState->Backdrop.Width, (f32)GameState->Backdrop.Height});
 #endif
@@ -569,7 +576,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 }
 
 	internal_function void
-OutputSound(game_sound_output_buffer *SoundBuffer)
+OutputSound(game_sound_output_buffer *SoundBuffer, game_state* GameState)
 {
 	s32 ToneVolume = 1000;
 	s16 *SampleOut = SoundBuffer->Samples;
@@ -577,11 +584,6 @@ OutputSound(game_sound_output_buffer *SoundBuffer)
 			SampleIndex < SoundBuffer->SampleCount;
 			++SampleIndex)
 	{
-		/*
-			 local_persist s32 t = 0;
-			 t++;
-			 s16 SampleValue = 1000 * ((t / 1000) % 2);
-			 */
 		s16 SampleValue = 0;
 		*SampleOut++ = SampleValue;
 		*SampleOut++ = SampleValue;
@@ -591,5 +593,5 @@ OutputSound(game_sound_output_buffer *SoundBuffer)
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)
 {
 	game_state *GameState = (game_state *)Memory->PermanentStorage;
-	OutputSound(SoundBuffer);
+	OutputSound(SoundBuffer, GameState);
 }

@@ -23,6 +23,17 @@ struct hero_bitmaps
 	v2s Alignment;
 };
 
+struct entity
+{
+	b32 Exists;
+
+	tile_map_position Pos;
+	v2 Vel;
+	u32 FacingDirection;
+
+	b32 IsOnStairs;
+};
+
 struct game_state
 {
 	memory_arena WorldArena;
@@ -30,17 +41,64 @@ struct game_state
 
 	s32 RoomWidthInTiles;
 	s32 RoomHeightInTiles;
-	tile_map_position CameraPosition;
-	tile_map_position PlayerPosition;
-	v2 PlayerVelocity;
 
-	b32 PlayerIsOnStairs;
+	//TODO(bjorn): Should we allow split-screen?
+	u32 CameraFollowingPlayerIndex;
+	tile_map_position CameraPosition;
+
+	u32 PlayerIndexForController[ArrayCount(((game_input*)0)->Keyboards)];
+	u32 PlayerIndexForKeyboard[ArrayCount(((game_input*)0)->Controllers)];
+
+	u32 EntityCount;
+	entity Entities[256];
 
 	loaded_bitmap Backdrop;
 
 	hero_bitmaps HeroBitmaps[4];
-	s32 HeroFacingDirection;
 };
+
+	inline entity *
+GetEntity(game_state *GameState, s32 EntityIndex)
+{
+	entity* Result = {};
+
+	if(0 < EntityIndex && EntityIndex < ArrayCount(GameState->Entities))
+	{
+		Result = &GameState->Entities[EntityIndex];
+	}
+
+	return Result;
+}
+
+struct new_entity_result
+{
+	entity* Entity;
+	u32 EntityIndex;
+};
+internal_function new_entity_result
+AddEntity(game_state* GameState)
+{
+	new_entity_result Result = {};
+
+	GameState->EntityCount++;
+	Assert(GameState->EntityCount < ArrayCount(GameState->Entities));
+
+	Result.EntityIndex = GameState->EntityCount;
+	Result.Entity = GetEntity(GameState, Result.EntityIndex);
+
+	return Result;
+}
+
+internal_function void
+InitializePlayer(entity* Entity)
+{
+	*Entity = {};
+
+	Entity->Exists = true;
+
+	Entity->Pos.AbsTile = {7, 5, 0};
+	Entity->Pos.Offset = {0.0f, 0.0f};
+}
 
 	internal_function void
 InitializeGame(game_memory *Memory, game_state *GameState)
@@ -85,13 +143,11 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	Hero.Alignment = {72, 182};
 	GameState->HeroBitmaps[3] = Hero;
 
-	GameState->PlayerPosition.AbsTile = {7, 5, 0};
-	GameState->PlayerPosition.Offset = {0.0f, 0.0f};
+	new_entity_result PlayerEntityInfo = AddEntity(GameState);
+	InitializePlayer(PlayerEntityInfo.Entity);
 
-	GameState->CameraPosition.AbsTile = {8, 4, 0};
-	GameState->CameraPosition.Offset = {};
-
-	GameState->PlayerIsOnStairs;
+	GameState->CameraFollowingPlayerIndex = PlayerEntityInfo.EntityIndex;
+	GameState->PlayerIndexForKeyboard[0] = PlayerEntityInfo.EntityIndex;
 
 	InitializeArena(&GameState->WorldArena, Memory->PermanentStorageSize - sizeof(game_state),
 									(u8*)Memory->PermanentStorage + sizeof(game_state));
@@ -296,7 +352,153 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	}
 }
 
-internal_function tile_map_position 
+internal_function v2 
+ClosestPointInRectangle(v2 MinCorner, v2 MaxCorner, tile_map_diff RelNewPos)
+{
+	v2 Result = {};
+	Result.X = Clamp(RelNewPos.MeterDiff.X, MinCorner.X, MaxCorner.X);
+	Result.Y = Clamp(RelNewPos.MeterDiff.Y, MinCorner.Y, MaxCorner.Y);
+
+	return Result;
+}
+
+internal_function void
+MoveEntity(entity* Entity, v2 InputDirection, f32 SecondsToUpdate, tile_map* TileMap)
+{
+	tile_map_position OldPos = Entity->Pos;
+
+	v2 Acceleration = InputDirection * 85.0f;
+	//TODO(casey): ODE here!
+	Acceleration += -8.5f * Entity->Vel;
+
+	tile_map_position NewPos = Entity->Pos;
+	v2 PlayerDelta = (0.5f * Acceleration * Square(SecondsToUpdate)
+										+ (Entity->Vel * SecondsToUpdate));
+	NewPos.Offset += PlayerDelta;
+
+	Entity->Vel = (Acceleration * SecondsToUpdate) + Entity->Vel;
+
+	NewPos = RecanonilizePosition(TileMap, NewPos);
+
+	//
+	// NOTE(bjorn): Collision check after movement
+	//
+	u32 MinTileX = Min(OldPos.AbsTile.X, NewPos.AbsTile.X);
+	u32 MinTileY = Min(OldPos.AbsTile.Y, NewPos.AbsTile.Y);
+	u32 OneAfterMaxTileX = Max(OldPos.AbsTile.X, NewPos.AbsTile.X) + 1; 
+	u32 OneAfterMaxTileY = Max(OldPos.AbsTile.Y, NewPos.AbsTile.Y) + 1; 
+	u32 AbsTileZ = NewPos.AbsTile.Z;
+	tile_map_position BestPos = NewPos;
+	f32 BestDistanceSquared = positive_infinity32;
+	for(u32 AbsTileY = MinTileY;
+			AbsTileY != OneAfterMaxTileY;
+			AbsTileY++)
+	{
+		for(u32 AbsTileX = MinTileX;
+				AbsTileX != OneAfterMaxTileX;
+				AbsTileX++)
+		{
+			u32 TileValue = GetTileValue(TileMap, v3u{AbsTileX, AbsTileY, AbsTileZ});
+			if(IsTileValueEmpty(TileValue))
+			{
+				tile_map_position TestTilePos = CenteredTilePoint(AbsTileX, AbsTileY, AbsTileZ);
+				tile_map_diff RelNewPos = GetTileMapPosDifference(TileMap, 
+																																NewPos, 
+																																TestTilePos);
+
+				v2 MinCorner = -0.5f * v2{TileMap->TileSideInMeters, TileMap->TileSideInMeters};
+				v2 MaxCorner = 0.5f * v2{TileMap->TileSideInMeters, TileMap->TileSideInMeters};
+				TestTilePos.Offset = ClosestPointInRectangle(MinCorner, MaxCorner, RelNewPos);
+
+				tile_map_diff RelTestTilePlayerPos = GetTileMapPosDifference(TileMap, 
+																																		 NewPos, 
+																																		 TestTilePos);
+				f32 TestDistanceSquared = LenghtSquared(RelTestTilePlayerPos.MeterDiff.XY);
+				if(TestDistanceSquared < BestDistanceSquared)
+				{
+					BestDistanceSquared = TestDistanceSquared;
+					BestPos = TestTilePos;
+				}
+			}
+		}
+	}
+
+	Entity->Pos = BestPos;
+
+	u32 CurrentTile = GetTileValue(TileMap, Entity->Pos);
+	if((CurrentTile == 3) ||
+		 (CurrentTile == 4))
+	{
+		if(!Entity->IsOnStairs)
+		{
+			if(CurrentTile == 3)
+			{
+				Entity->Pos.AbsTile.Z += 1;
+			}
+			else if(CurrentTile == 4)
+			{
+				Entity->Pos.AbsTile.Z -= 1;
+			}
+			Entity->IsOnStairs = true;
+		}
+	}
+	else
+	{
+		Entity->IsOnStairs = false;
+	}
+
+	f32 Threshold = 0.0001f;
+	v2s FaceDir = {};
+
+	if(Entity->Vel.X < -Threshold)
+	{
+		FaceDir.X = -1;
+	}
+	else if(Entity->Vel.X > Threshold)
+	{
+		FaceDir.X = 1;
+	}
+	else
+	{
+		FaceDir.X = 0;
+	}
+
+	if(Entity->Vel.Y < -Threshold)
+	{
+		FaceDir.Y = -1;
+	}
+	else if(Entity->Vel.Y > Threshold)
+	{
+		FaceDir.Y = 1;
+	}
+	else
+	{
+		FaceDir.Y = 0;
+	}
+
+	if(!FaceDir.X != !FaceDir.Y)
+	{
+		if(FaceDir.X < 0)
+		{
+			Entity->FacingDirection = 1;
+		}
+		if(FaceDir.X > 0)
+		{
+			Entity->FacingDirection = 3;
+		}
+		if(FaceDir.Y > 0)
+		{
+			Entity->FacingDirection = 2;
+		}
+		if(FaceDir.Y < 0)
+		{
+			Entity->FacingDirection = 0;
+		}
+	}
+
+}
+
+	internal_function tile_map_position 
 GetCenterOfRoom(tile_map_position A, s32 RoomWidthInTiles, s32 RoomHeightInTiles)
 {
 	tile_map_position Result = {};
@@ -306,16 +508,6 @@ GetCenterOfRoom(tile_map_position A, s32 RoomWidthInTiles, s32 RoomHeightInTiles
 	Result.AbsTile.Y = 
 		(A.AbsTile.Y / RoomHeightInTiles) * RoomHeightInTiles + FloorF32ToS32(RoomHeightInTiles*0.5f);
 	Result.AbsTile.Z = A.AbsTile.Z;
-
-	return Result;
-}
-
-internal_function v2 
-ClosestPointInRectangle(v2 MinCorner, v2 MaxCorner, tile_map_diff RelNewPlayerPos)
-{
-	v2 Result = {};
-	Result.X = Clamp(RelNewPlayerPos.MeterDiff.X, MinCorner.X, MaxCorner.X);
-	Result.Y = Clamp(RelNewPlayerPos.MeterDiff.Y, MinCorner.Y, MaxCorner.Y);
 
 	return Result;
 }
@@ -335,141 +527,104 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		Memory->IsInitialized = true;
 	}
 
-	game_keyboard *Keyboard0 = GetKeyboard(Input, 0);
-	game_controller *Controller0 = GetController(Input, 0);
-	if(Controller0->ActionDown.EndedDown)
-	{
-		InitializeGame(Memory, GameState);
-	}
-
 	world *World = GameState->World;
 	tile_map *TileMap = World->TileMap;
-	tile_map_position OldPlayerPos = GameState->PlayerPosition;
 
 	f32 PlayerWidth = (f32)TileMap->TileSideInMeters * 0.75f;
 
 	//
 	// NOTE(bjorn): Movement
 	//
-	v2 InputDirection = {};
-
-	if(Keyboard0->S.EndedDown)
+	for(s32 ControllerIndex = 0;
+			ControllerIndex < ArrayCount(Input->Controllers);
+			ControllerIndex++)
 	{
-		InputDirection.Y += -1;
-		GameState->HeroFacingDirection = 0;
-	}
-	if(Keyboard0->A.EndedDown)
-	{
-		InputDirection.X += -1;
-		GameState->HeroFacingDirection = 1;
-	}
-	if(Keyboard0->W.EndedDown)
-	{
-		InputDirection.Y += 1;
-		GameState->HeroFacingDirection = 2;
-	}
-	if(Keyboard0->D.EndedDown)
-	{
-		InputDirection.X += 1;
-		GameState->HeroFacingDirection = 3;
-	}
-
-	if(InputDirection.X && InputDirection.Y)
-	{
-		InputDirection *= invroot2;
-	}
-
-	if(Controller0->IsConnected)
-	{
-		InputDirection = Controller0->LeftStick.Average;
-	}
-
-	v2 PlayerAcceleration = InputDirection * 85.0f;
-
-	//TODO(casey): ODE here!
-	PlayerAcceleration += -8.5f * GameState->PlayerVelocity;
-
-	tile_map_position NewPlayerPos = GameState->PlayerPosition;
-	v2 PlayerDelta = (0.5f * PlayerAcceleration * Square(SecondsToUpdate)
-										+ (GameState->PlayerVelocity * SecondsToUpdate));
-	NewPlayerPos.Offset += PlayerDelta;
-	GameState->PlayerVelocity = (PlayerAcceleration * SecondsToUpdate) + GameState->PlayerVelocity;
-
-	NewPlayerPos = RecanonilizePosition(TileMap, NewPlayerPos);
-
-	//
-	// NOTE(bjorn): Collision check after movement
-	//
-	u32 MinTileX = Min(OldPlayerPos.AbsTile.X, NewPlayerPos.AbsTile.X);
-	u32 MinTileY = Min(OldPlayerPos.AbsTile.Y, NewPlayerPos.AbsTile.Y);
-	u32 OneAfterMaxTileX = Max(OldPlayerPos.AbsTile.X, NewPlayerPos.AbsTile.X) + 1; 
-	u32 OneAfterMaxTileY = Max(OldPlayerPos.AbsTile.Y, NewPlayerPos.AbsTile.Y) + 1; 
-	u32 AbsTileZ = NewPlayerPos.AbsTile.Z;
-	tile_map_position BestPlayerPos = NewPlayerPos;
-	f32 BestDistanceSquared = positive_infinity32;
-	for(u32 AbsTileY = MinTileY;
-			AbsTileY != OneAfterMaxTileY;
-			AbsTileY++)
-	{
-		for(u32 AbsTileX = MinTileX;
-				AbsTileX != OneAfterMaxTileX;
-				AbsTileX++)
+		game_controller* Controller = GetController(Input, ControllerIndex);
+		if(Controller->IsConnected)
 		{
-			u32 TileValue = GetTileValue(TileMap, v3u{AbsTileX, AbsTileY, AbsTileZ});
-			if(IsTileValueEmpty(TileValue))
+			entity* ControllingEntity = GetEntity(GameState, 
+																						GameState->PlayerIndexForController[ControllerIndex]);
+			if(ControllingEntity && ControllingEntity->Exists)
 			{
-				tile_map_position TestTilePos = CenteredTilePoint(AbsTileX, AbsTileY, AbsTileZ);
-				tile_map_diff RelNewPlayerPos = GetTileMapPosDifference(TileMap, 
-																																NewPlayerPos, 
-																																TestTilePos);
+				v2 InputDirection = {};
 
-				v2 MinCorner = -0.5f * v2{TileMap->TileSideInMeters, TileMap->TileSideInMeters};
-				v2 MaxCorner = 0.5f * v2{TileMap->TileSideInMeters, TileMap->TileSideInMeters};
-				TestTilePos.Offset = ClosestPointInRectangle(MinCorner, MaxCorner, RelNewPlayerPos);
+				InputDirection = Controller->LeftStick.End;
 
-				tile_map_diff RelTestTilePlayerPos = GetTileMapPosDifference(TileMap, 
-																																		 NewPlayerPos, 
-																																		 TestTilePos);
-				f32 TestDistanceSquared = LenghtSquared(RelTestTilePlayerPos.MeterDiff.XY);
-				if(TestDistanceSquared < BestDistanceSquared)
+				MoveEntity(ControllingEntity, InputDirection, SecondsToUpdate, TileMap);
+
+				if(Controller->Start.EndedDown && Controller->Start.HalfTransitionCount)
 				{
-					BestDistanceSquared = TestDistanceSquared;
-					BestPlayerPos = TestTilePos;
+					ControllingEntity->Exists = false;
+					GameState->PlayerIndexForController[ControllerIndex] = 0;
+				}
+			}
+			else
+			{
+				if(Controller->Start.EndedDown && Controller->Start.HalfTransitionCount)
+				{
+					new_entity_result NewEntityInfo = AddEntity(GameState);
+
+					if(NewEntityInfo.Entity)
+					{
+						GameState->PlayerIndexForController[ControllerIndex] = NewEntityInfo.EntityIndex;
+						InitializePlayer(NewEntityInfo.Entity);
+					}
 				}
 			}
 		}
 	}
 
-	GameState->PlayerPosition = BestPlayerPos;
+	for(s32 KeyboardIndex = 0;
+			KeyboardIndex < ArrayCount(Input->Keyboards);
+			KeyboardIndex++)
+	{
+		game_keyboard* Keyboard = GetKeyboard(Input, KeyboardIndex);
+		if(Keyboard->IsConnected)
+		{
+			entity* ControllingEntity = GetEntity(GameState, 
+																						GameState->PlayerIndexForKeyboard[KeyboardIndex]);
+			if(ControllingEntity && ControllingEntity->Exists)
+			{
+				v2 InputDirection = {};
+
+				if(Keyboard->S.EndedDown)
+				{
+					InputDirection.Y += -1;
+				}
+				if(Keyboard->A.EndedDown)
+				{
+					InputDirection.X += -1;
+				}
+				if(Keyboard->W.EndedDown)
+				{
+					InputDirection.Y += 1;
+				}
+				if(Keyboard->D.EndedDown)
+				{
+					InputDirection.X += 1;
+				}
+
+				if(InputDirection.X && InputDirection.Y)
+				{
+					InputDirection *= invroot2;
+				}
+
+				MoveEntity(ControllingEntity, InputDirection, SecondsToUpdate, TileMap);
+			}
+		}
+	}
+
 
 	//
 	// NOTE(bjorn): Update camera/Z-position
 	//
-	u32 CurrentTile = GetTileValue(TileMap, GameState->PlayerPosition);
-	if((CurrentTile == 3) ||
-		 (CurrentTile == 4))
+	entity* CameraFollowingEntity = GetEntity(GameState, GameState->CameraFollowingPlayerIndex);
+	if(CameraFollowingEntity && CameraFollowingEntity->Exists)
 	{
-		if(!GameState->PlayerIsOnStairs)
-		{
-			if(CurrentTile == 3)
-			{
-				GameState->PlayerPosition.AbsTile.Z += 1;
-			}
-			else if(CurrentTile == 4)
-			{
-				GameState->PlayerPosition.AbsTile.Z -= 1;
-			}
-			GameState->PlayerIsOnStairs = true;
-		}
+		GameState->CameraPosition = GetCenterOfRoom(CameraFollowingEntity->Pos,
+																								GameState->RoomWidthInTiles,
+																								GameState->RoomHeightInTiles);
 	}
-	else
-	{
-		GameState->PlayerIsOnStairs = false;
-	}
-
-	GameState->CameraPosition = GetCenterOfRoom(GameState->PlayerPosition,
-																							GameState->RoomWidthInTiles,
-																							GameState->RoomHeightInTiles);
 
 	//
 	// NOTE(bjorn): Rendering
@@ -541,36 +696,44 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		}
 	}
 
+	entity* Entity = GetEntity(GameState, 1);
+	for(s32 EntityIndex = 1;
+			EntityIndex < ArrayCount(GameState->Entities);
+			Entity++, EntityIndex++)
 	{
-		v3 PlayerRGB = {1.0f, 1.0f, 0.0f};
-
-		v2 PlayerPixelDim = {(f32)TileSideInPixels * 0.75f, (f32)TileSideInPixels};
-
-		v3 PlayerCameraDelta = GetTileMapPosDifference(TileMap, 
-																									 GameState->PlayerPosition, 
-																									 GameState->CameraPosition).MeterDiff;
-		m22 GameSpaceToScreenSpace = 
-		{PixelsPerMeter,						  0,
-		 0,							-PixelsPerMeter};
-
-		v2 PlayerCameraPixelDelta = GameSpaceToScreenSpace * PlayerCameraDelta.XY;
-
-		v2 Player = ScreenCenter + PlayerCameraPixelDelta;
-
-		f32 PlayerTop = Player.Y - PlayerPixelDim.Y;
-		f32 PlayerBottom = Player.Y;
-		f32 PlayerLeft = Player.X - PlayerPixelDim.X / 2.0f;
-		f32 PlayerRight = Player.X + PlayerPixelDim.X / 2.0f;
-
-		if(GameState->PlayerPosition.AbsTile.Z <= GameState->CameraPosition.AbsTile.Z)
+		if(Entity->Exists)
 		{
-			DrawRectangle(Buffer, {PlayerLeft, PlayerTop}, {PlayerRight, PlayerBottom}, PlayerRGB);
+			entity* Player = Entity;
+			v3 PlayerRGB = {1.0f, 1.0f, 0.0f};
 
-			hero_bitmaps *Hero = &(GameState->HeroBitmaps[GameState->HeroFacingDirection]);
+			v2 PlayerPixelDim = {(f32)TileSideInPixels * 0.75f, (f32)TileSideInPixels};
 
-			DrawBitmap(Buffer, &Hero->Torso, Player - Hero->Alignment, (v2)Hero->Torso.Dim);
-			DrawBitmap(Buffer, &Hero->Cape, Player - Hero->Alignment, (v2)Hero->Cape.Dim);
-			DrawBitmap(Buffer, &Hero->Head, Player - Hero->Alignment, (v2)Hero->Head.Dim);
+			v3 PlayerCameraDelta = GetTileMapPosDifference(TileMap, 
+																										 Player->Pos, 
+																										 GameState->CameraPosition).MeterDiff;
+			m22 GameSpaceToScreenSpace = 
+			{PixelsPerMeter,						  0,
+				0,							-PixelsPerMeter};
+
+			v2 PlayerCameraPixelDelta = GameSpaceToScreenSpace * PlayerCameraDelta.XY;
+
+			v2 PlayerPixelPos = ScreenCenter + PlayerCameraPixelDelta;
+
+			f32 PlayerTop = PlayerPixelPos .Y - PlayerPixelDim.Y;
+			f32 PlayerBottom = PlayerPixelPos.Y;
+			f32 PlayerLeft = PlayerPixelPos.X - PlayerPixelDim.X / 2.0f;
+			f32 PlayerRight = PlayerPixelPos.X + PlayerPixelDim.X / 2.0f;
+
+			if(Player->Pos.AbsTile.Z == GameState->CameraPosition.AbsTile.Z)
+			{
+				DrawRectangle(Buffer, {PlayerLeft, PlayerTop}, {PlayerRight, PlayerBottom}, PlayerRGB);
+
+				hero_bitmaps *Hero = &(GameState->HeroBitmaps[Player->FacingDirection]);
+
+				DrawBitmap(Buffer, &Hero->Torso, PlayerPixelPos - Hero->Alignment, (v2)Hero->Torso.Dim);
+				DrawBitmap(Buffer, &Hero->Cape, PlayerPixelPos - Hero->Alignment, (v2)Hero->Cape.Dim);
+				DrawBitmap(Buffer, &Hero->Head, PlayerPixelPos - Hero->Alignment, (v2)Hero->Head.Dim);
+			}
 		}
 	}
 }

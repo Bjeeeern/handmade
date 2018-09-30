@@ -97,7 +97,7 @@ InitializePlayer(entity* Entity)
 	Entity->Exists = true;
 
 	Entity->Pos.AbsTile = {7, 5, 0};
-	Entity->Pos.Offset = {0.0f, 0.0f};
+	Entity->Pos.Offset_ = {0.0f, 0.0f};
 }
 
 	internal_function void
@@ -371,14 +371,9 @@ MoveEntity(entity* Entity, v2 InputDirection, f32 SecondsToUpdate, tile_map* Til
 	//TODO(casey): ODE here!
 	Acceleration += -8.5f * Entity->Vel;
 
-	tile_map_position NewPos = Entity->Pos;
-	v2 PlayerDelta = (0.5f * Acceleration * Square(SecondsToUpdate)
-										+ (Entity->Vel * SecondsToUpdate));
-	NewPos.Offset += PlayerDelta;
+	v2 D0 = (0.5f * Acceleration * Square(SecondsToUpdate) + (Entity->Vel * SecondsToUpdate));
 
-	Entity->Vel = (Acceleration * SecondsToUpdate) + Entity->Vel;
-
-	NewPos = RecanonilizePosition(TileMap, NewPos);
+	tile_map_position NewPos = Offset(TileMap, OldPos, D0);
 
 	//
 	// NOTE(bjorn): Collision check after movement
@@ -388,42 +383,119 @@ MoveEntity(entity* Entity, v2 InputDirection, f32 SecondsToUpdate, tile_map* Til
 	u32 OneAfterMaxTileX = Max(OldPos.AbsTile.X, NewPos.AbsTile.X) + 1; 
 	u32 OneAfterMaxTileY = Max(OldPos.AbsTile.Y, NewPos.AbsTile.Y) + 1; 
 	u32 AbsTileZ = NewPos.AbsTile.Z;
-	tile_map_position BestPos = NewPos;
-	f32 BestDistanceSquared = positive_infinity32;
-	for(u32 AbsTileY = MinTileY;
-			AbsTileY != OneAfterMaxTileY;
-			AbsTileY++)
+	tile_map_position EnityTilePos = CenteredTilePoint(OldPos);
+
+	v2 P0 = OldPos.Offset_;
+	v2 D1 = D0;
+	for(s32 Steps = 4;
+			Steps > 0;
+			Steps--)
 	{
-		for(u32 AbsTileX = MinTileX;
-				AbsTileX != OneAfterMaxTileX;
-				AbsTileX++)
+		f32 BestTime = 1.0f;
+		v2 dP1 = Entity->Vel;
+
+		for(u32 AbsTileY = MinTileY;
+				AbsTileY != OneAfterMaxTileY;
+				AbsTileY++)
 		{
-			u32 TileValue = GetTileValue(TileMap, v3u{AbsTileX, AbsTileY, AbsTileZ});
-			if(IsTileValueEmpty(TileValue))
+			for(u32 AbsTileX = MinTileX;
+					AbsTileX != OneAfterMaxTileX;
+					AbsTileX++)
 			{
-				tile_map_position TestTilePos = CenteredTilePoint(AbsTileX, AbsTileY, AbsTileZ);
-				tile_map_diff RelNewPos = GetTileMapPosDifference(TileMap, 
-																																NewPos, 
-																																TestTilePos);
-
-				v2 MinCorner = -0.5f * v2{TileMap->TileSideInMeters, TileMap->TileSideInMeters};
-				v2 MaxCorner = 0.5f * v2{TileMap->TileSideInMeters, TileMap->TileSideInMeters};
-				TestTilePos.Offset = ClosestPointInRectangle(MinCorner, MaxCorner, RelNewPos);
-
-				tile_map_diff RelTestTilePlayerPos = GetTileMapPosDifference(TileMap, 
-																																		 NewPos, 
-																																		 TestTilePos);
-				f32 TestDistanceSquared = LenghtSquared(RelTestTilePlayerPos.MeterDiff.XY);
-				if(TestDistanceSquared < BestDistanceSquared)
+				u32 TileValue = GetTileValue(TileMap, v3u{AbsTileX, AbsTileY, AbsTileZ});
+				if(!IsTileValueEmpty(TileValue))
 				{
-					BestDistanceSquared = TestDistanceSquared;
-					BestPos = TestTilePos;
+					tile_map_position TestTilePos = CenteredTilePoint(AbsTileX, AbsTileY, AbsTileZ);
+					tile_map_diff CurrentToTest = GetTileMapPosDifference(TileMap, TestTilePos, EnityTilePos);
+
+					f32 Wl = CurrentToTest.MeterDiff.X - TileMap->TileSideInMeters * 0.5f;
+					f32 Wr = CurrentToTest.MeterDiff.X + TileMap->TileSideInMeters * 0.5f;
+					f32 Wt = CurrentToTest.MeterDiff.Y + TileMap->TileSideInMeters * 0.5f;
+					f32 Wb = CurrentToTest.MeterDiff.Y - TileMap->TileSideInMeters * 0.5f;
+
+					f32 tEpsilon = 0.0001f;
+
+					//NOTE(bjorn): Right wall segment.
+					if(D0.X != 0.0f)
+					{
+						f32 t = (Wr - P0.X) / D0.X;
+						if(0 < t && t < BestTime)
+						{
+							v2 P1 = P0 + t * D0;
+							if(Wb < P1.Y && P1.Y < Wt)
+							{
+								BestTime = Max(0.0f, t - tEpsilon);
+								dP1.X = 0.0f;
+								D1.X = 0.0f;
+								Acceleration.X = 0.0f;
+							}
+						}
+					}
+
+					//NOTE(bjorn): Left wall segment.
+					if(D0.X != 0.0f)
+					{
+						f32 t = (Wl - P0.X) / D0.X;
+						if(0 < t && t < BestTime)
+						{
+							v2 P1 = P0 + t * D0;
+							if(Wb < P1.Y && P1.Y < Wt)
+							{
+								BestTime = Max(0.0f, t - tEpsilon);
+								dP1.X = 0.0f;
+								D1.X = 0.0f;
+								Acceleration.X = 0.0f;
+							}
+						}
+					}
+
+					//NOTE(bjorn): Top wall segment.
+					if(D0.Y != 0.0f)
+					{
+						f32 t = (Wt - P0.Y) / D0.Y;
+						if(0 < t && t < BestTime)
+						{
+							v2 P1 = P0 + t * D0;
+							if(Wl < P1.X && P1.X < Wr)
+							{
+								BestTime = Max(0.0f, t - tEpsilon);
+								dP1.Y = 0.0f;
+								D1.Y = 0.0f;
+								Acceleration.Y = 0.0f;
+							}
+						}
+					}
+
+					//NOTE(bjorn): Bottom wall segment.
+					if(D0.Y != 0.0f)
+					{
+						f32 t = (Wb - P0.Y) / D0.Y;
+						if(0 < t && t < BestTime)
+						{
+							v2 P1 = P0 + t * D0;
+							if(Wl < P1.X && P1.X < Wr)
+							{
+								BestTime = Max(0.0f, t - tEpsilon);
+								dP1.Y = 0.0f;
+								D1.Y = 0.0f;
+								Acceleration.Y = 0.0f;
+							}
+						}
+					}
 				}
 			}
 		}
+
+		P0 = P0 + BestTime * D0;
+
+		D0 = D1 * (1.0f - BestTime);
+		Entity->Vel = dP1;
+
+		if(BestTime >= 1.0f) { break; }
 	}
 
-	Entity->Pos = BestPos;
+	Entity->Pos = Offset(TileMap, OldPos, P0 - OldPos.Offset_);
+	Entity->Vel = (Acceleration * SecondsToUpdate) + Entity->Vel;
 
 	u32 CurrentTile = GetTileValue(TileMap, Entity->Pos);
 	if((CurrentTile == 3) ||
@@ -447,55 +519,31 @@ MoveEntity(entity* Entity, v2 InputDirection, f32 SecondsToUpdate, tile_map* Til
 		Entity->IsOnStairs = false;
 	}
 
-	f32 Threshold = 0.0001f;
-	v2s FaceDir = {};
-
-	if(Entity->Vel.X < -Threshold)
+	if(Entity->Vel.X != 0.0f && Entity->Vel.Y != 0.0f)
 	{
-		FaceDir.X = -1;
-	}
-	else if(Entity->Vel.X > Threshold)
-	{
-		FaceDir.X = 1;
-	}
-	else
-	{
-		FaceDir.X = 0;
-	}
-
-	if(Entity->Vel.Y < -Threshold)
-	{
-		FaceDir.Y = -1;
-	}
-	else if(Entity->Vel.Y > Threshold)
-	{
-		FaceDir.Y = 1;
-	}
-	else
-	{
-		FaceDir.Y = 0;
-	}
-
-	if(!FaceDir.X != !FaceDir.Y)
-	{
-		if(FaceDir.X < 0)
+		if(Absolute(Entity->Vel.X) > Absolute(Entity->Vel.Y))
 		{
-			Entity->FacingDirection = 1;
+			if(Entity->Vel.X > 0)
+			{
+				Entity->FacingDirection = 3;
+			}
+			else
+			{
+				Entity->FacingDirection = 1;
+			}
 		}
-		if(FaceDir.X > 0)
+		else
 		{
-			Entity->FacingDirection = 3;
-		}
-		if(FaceDir.Y > 0)
-		{
-			Entity->FacingDirection = 2;
-		}
-		if(FaceDir.Y < 0)
-		{
-			Entity->FacingDirection = 0;
+			if(Entity->Vel.Y > 0)
+			{
+				Entity->FacingDirection = 2;
+			}
+			else
+			{
+				Entity->FacingDirection = 0;
+			}
 		}
 	}
-
 }
 
 	internal_function tile_map_position 
@@ -685,7 +733,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 			v2 Min = ScreenCenter 
 				+ ((v2)v2s{RelColumn, -RelRow} - v2{0.5f, -0.5f}) * TileSideInPixels
-				- InvertY * GameState->CameraPosition.Offset;
+				- InvertY * GameState->CameraPosition.Offset_;
 
 			v2 Max = Min + v2{1.0f, -1.0f} * TileSideInPixels;
 

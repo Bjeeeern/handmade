@@ -33,9 +33,18 @@ struct tile_map
 struct tile_map_position
 {
 	v3u AbsTile;
-  
-	v2 Offset;
+	v2 Offset_;
 };
+
+inline tile_map_position
+CenteredTilePoint(tile_map_position TilePos)
+{
+	tile_map_position Result = {};
+
+	Result.AbsTile = TilePos.AbsTile;
+
+	return Result;
+}
 
 inline tile_map_position
 CenteredTilePoint(u32 AbsTileX, u32 AbsTileY, u32 AbsTileZ)
@@ -136,8 +145,8 @@ RecanonilizePosition(tile_map *TileMap, tile_map_position NewDeltaPosition)
 {
 	tile_map_position Result = NewDeltaPosition;
 
-	v2s AbsTileOffset = RoundV2ToV2S(NewDeltaPosition.Offset / TileMap->TileSideInMeters);
-	Result.Offset -= AbsTileOffset * TileMap->TileSideInMeters;
+	v2s AbsTileOffset = RoundV2ToV2S(NewDeltaPosition.Offset_ / TileMap->TileSideInMeters);
+	Result.Offset_ -= AbsTileOffset * TileMap->TileSideInMeters;
 	//NOTE(bjorn): TileMap is assumed to be toroidal. Edges across connect.
 	Result.AbsTile += (v3s)AbsTileOffset;
 
@@ -162,7 +171,7 @@ GetTileMapPosDifference(tile_map *TileMap, tile_map_position A, tile_map_positio
 
 	Result.AbsTileDiff = (v3s)A.AbsTile - (v3s)B.AbsTile;
 
-	v2 InternalDiff = A.Offset - B.Offset;
+	v2 InternalDiff = A.Offset_ - B.Offset_;
 	Result.MeterDiff = (v3)Result.AbsTileDiff * TileMap->TileSideInMeters + (v3)InternalDiff;
 
 	return Result;
@@ -198,6 +207,13 @@ SetTileValue(memory_arena *Arena, tile_map *TileMap, v3u AbsTile, u32 TileValue)
 	}
 
 	SetTileValueUnchecked(TileMap, TileChunk, ChunkPosition.RelTile, TileValue);
+}
+
+inline tile_map_position
+Offset(tile_map *TileMap, tile_map_position OldPosition, v2 Offset)
+{
+	OldPosition.Offset_ += Offset;
+	return RecanonilizePosition(TileMap, OldPosition);
 }
 
 #define TILE_MAP_H

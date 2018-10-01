@@ -27,6 +27,8 @@ struct entity
 {
 	b32 Exists;
 
+	v2 Dim;
+
 	tile_map_position Pos;
 	v2 Vel;
 	u32 FacingDirection;
@@ -90,7 +92,7 @@ AddEntity(game_state* GameState)
 }
 
 internal_function void
-InitializePlayer(entity* Entity)
+InitializePlayer(entity* Entity, tile_map* TileMap)
 {
 	*Entity = {};
 
@@ -98,6 +100,8 @@ InitializePlayer(entity* Entity)
 
 	Entity->Pos.AbsTile = {7, 5, 0};
 	Entity->Pos.Offset_ = {0.0f, 0.0f};
+
+	Entity->Dim = v2{0.5f, 0.3f} * TileMap->TileSideInMeters;
 }
 
 	internal_function void
@@ -143,12 +147,6 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	Hero.Alignment = {72, 182};
 	GameState->HeroBitmaps[3] = Hero;
 
-	new_entity_result PlayerEntityInfo = AddEntity(GameState);
-	InitializePlayer(PlayerEntityInfo.Entity);
-
-	GameState->CameraFollowingPlayerIndex = PlayerEntityInfo.EntityIndex;
-	GameState->PlayerIndexForKeyboard[0] = PlayerEntityInfo.EntityIndex;
-
 	InitializeArena(&GameState->WorldArena, Memory->PermanentStorageSize - sizeof(game_state),
 									(u8*)Memory->PermanentStorage + sizeof(game_state));
 
@@ -169,6 +167,12 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 																	TileMap->ChunkCount.X*
 																	TileMap->ChunkCount.Y*
 																	TileMap->ChunkCount.Z, tile_chunk);
+
+	new_entity_result PlayerEntityInfo = AddEntity(GameState);
+	InitializePlayer(PlayerEntityInfo.Entity, TileMap);
+
+	GameState->CameraFollowingPlayerIndex = PlayerEntityInfo.EntityIndex;
+	GameState->PlayerIndexForKeyboard[0] = PlayerEntityInfo.EntityIndex;
 
 	u32 RandomNumberIndex = 0;
 
@@ -362,7 +366,33 @@ ClosestPointInRectangle(v2 MinCorner, v2 MaxCorner, tile_map_diff RelNewPos)
 	return Result;
 }
 
-internal_function void
+internal_function b32
+TestWall(v2 Axis, v2 P0, v2 D0, f32 Wall, v2 MinEdge, v2 MaxEdge, f32* BestTime)
+{
+	b32 Hit = false;
+	v2 Coaxis = {Axis.Y, Axis.X};
+
+	if(Dot(D0, Axis) != 0.0f)
+	{
+		f32 t = (Wall - Dot(P0, Axis)) / Dot(D0, Axis);
+
+		if(0 < t && t < *BestTime)
+		{
+			v2 P1 = P0 + t * D0;
+
+			if(Dot(MinEdge, Coaxis) < Dot(P1, Coaxis) && Dot(P1, Coaxis) < Dot(MaxEdge, Coaxis))
+			{
+				f32 tEpsilon = 0.001f;
+				*BestTime = Max(0.0f, t - tEpsilon);
+				Hit = true;
+			}
+		}
+	}
+
+	return Hit;
+}
+
+	internal_function void
 MoveEntity(entity* Entity, v2 InputDirection, f32 SecondsToUpdate, tile_map* TileMap)
 {
 	tile_map_position OldPos = Entity->Pos;
@@ -378,12 +408,29 @@ MoveEntity(entity* Entity, v2 InputDirection, f32 SecondsToUpdate, tile_map* Til
 	//
 	// NOTE(bjorn): Collision check after movement
 	//
+	tile_map_position MinOldPos = Offset(TileMap, OldPos, -Entity->Dim);
+	tile_map_position MinNewPos = Offset(TileMap, NewPos, -Entity->Dim);
+	tile_map_position MaxOldPos = Offset(TileMap, OldPos, Entity->Dim);
+	tile_map_position MaxNewPos = Offset(TileMap, NewPos, Entity->Dim);
+
 	u32 MinTileX = Min(OldPos.AbsTile.X, NewPos.AbsTile.X);
 	u32 MinTileY = Min(OldPos.AbsTile.Y, NewPos.AbsTile.Y);
-	u32 OneAfterMaxTileX = Max(OldPos.AbsTile.X, NewPos.AbsTile.X) + 1; 
-	u32 OneAfterMaxTileY = Max(OldPos.AbsTile.Y, NewPos.AbsTile.Y) + 1; 
+	u32 MaxTileX = Max(OldPos.AbsTile.X, NewPos.AbsTile.X); 
+	u32 MaxTileY = Max(OldPos.AbsTile.Y, NewPos.AbsTile.Y); 
+
+	u32 WidthInTiles = RoofF32ToS32(Entity->Dim.X / TileMap->TileSideInMeters);
+	u32 HeightInTiles = RoofF32ToS32(Entity->Dim.Y / TileMap->TileSideInMeters);
+
+	MinTileX -= WidthInTiles;
+	MinTileY -= HeightInTiles;
+	MaxTileX += WidthInTiles;
+	MaxTileY += HeightInTiles;
+
 	u32 AbsTileZ = NewPos.AbsTile.Z;
 	tile_map_position EnityTilePos = CenteredTilePoint(OldPos);
+
+	Assert(AbsoluteS32(MaxTileX - MinTileY) < 32);
+	Assert(AbsoluteS32(MaxTileY - MinTileY) < 32);
 
 	v2 P0 = OldPos.Offset_;
 	v2 D1 = D0;
@@ -391,15 +438,15 @@ MoveEntity(entity* Entity, v2 InputDirection, f32 SecondsToUpdate, tile_map* Til
 			Steps > 0;
 			Steps--)
 	{
+		v2 WallNormal = {};
 		f32 BestTime = 1.0f;
-		v2 dP1 = Entity->Vel;
 
 		for(u32 AbsTileY = MinTileY;
-				AbsTileY != OneAfterMaxTileY;
+				AbsTileY <= MaxTileY;
 				AbsTileY++)
 		{
 			for(u32 AbsTileX = MinTileX;
-					AbsTileX != OneAfterMaxTileX;
+					AbsTileX <= MaxTileX;
 					AbsTileX++)
 			{
 				u32 TileValue = GetTileValue(TileMap, v3u{AbsTileX, AbsTileY, AbsTileZ});
@@ -408,88 +455,35 @@ MoveEntity(entity* Entity, v2 InputDirection, f32 SecondsToUpdate, tile_map* Til
 					tile_map_position TestTilePos = CenteredTilePoint(AbsTileX, AbsTileY, AbsTileZ);
 					tile_map_diff CurrentToTest = GetTileMapPosDifference(TileMap, TestTilePos, EnityTilePos);
 
-					f32 Wl = CurrentToTest.MeterDiff.X - TileMap->TileSideInMeters * 0.5f;
-					f32 Wr = CurrentToTest.MeterDiff.X + TileMap->TileSideInMeters * 0.5f;
-					f32 Wt = CurrentToTest.MeterDiff.Y + TileMap->TileSideInMeters * 0.5f;
-					f32 Wb = CurrentToTest.MeterDiff.Y - TileMap->TileSideInMeters * 0.5f;
+					v2 TileDim = {TileMap->TileSideInMeters, TileMap->TileSideInMeters};
+					v2 BottomLeftEdge = CurrentToTest.MeterDiff.XY - (TileDim + Entity->Dim) * 0.5f;
+					v2 TopRightEdge = CurrentToTest.MeterDiff.XY + (TileDim + Entity->Dim) * 0.5f;
 
-					f32 tEpsilon = 0.0001f;
-
-					//NOTE(bjorn): Right wall segment.
-					if(D0.X != 0.0f)
+					if(TestWall({1,0}, P0, D0, TopRightEdge.X, BottomLeftEdge, TopRightEdge, &BestTime))
 					{
-						f32 t = (Wr - P0.X) / D0.X;
-						if(0 < t && t < BestTime)
-						{
-							v2 P1 = P0 + t * D0;
-							if(Wb < P1.Y && P1.Y < Wt)
-							{
-								BestTime = Max(0.0f, t - tEpsilon);
-								dP1.X = 0.0f;
-								D1.X = 0.0f;
-								Acceleration.X = 0.0f;
-							}
-						}
+						WallNormal = {1, 0};
 					}
-
-					//NOTE(bjorn): Left wall segment.
-					if(D0.X != 0.0f)
+					if(TestWall({1,0}, P0, D0, BottomLeftEdge.X, BottomLeftEdge, TopRightEdge, &BestTime))
 					{
-						f32 t = (Wl - P0.X) / D0.X;
-						if(0 < t && t < BestTime)
-						{
-							v2 P1 = P0 + t * D0;
-							if(Wb < P1.Y && P1.Y < Wt)
-							{
-								BestTime = Max(0.0f, t - tEpsilon);
-								dP1.X = 0.0f;
-								D1.X = 0.0f;
-								Acceleration.X = 0.0f;
-							}
-						}
+						WallNormal = {-1, 0};
 					}
-
-					//NOTE(bjorn): Top wall segment.
-					if(D0.Y != 0.0f)
+					if(TestWall({0,1}, P0, D0, TopRightEdge.Y, BottomLeftEdge, TopRightEdge, &BestTime))
 					{
-						f32 t = (Wt - P0.Y) / D0.Y;
-						if(0 < t && t < BestTime)
-						{
-							v2 P1 = P0 + t * D0;
-							if(Wl < P1.X && P1.X < Wr)
-							{
-								BestTime = Max(0.0f, t - tEpsilon);
-								dP1.Y = 0.0f;
-								D1.Y = 0.0f;
-								Acceleration.Y = 0.0f;
-							}
-						}
+						WallNormal = {0, 1};
 					}
-
-					//NOTE(bjorn): Bottom wall segment.
-					if(D0.Y != 0.0f)
+					if(TestWall({0,1}, P0, D0, BottomLeftEdge.Y, BottomLeftEdge, TopRightEdge, &BestTime))
 					{
-						f32 t = (Wb - P0.Y) / D0.Y;
-						if(0 < t && t < BestTime)
-						{
-							v2 P1 = P0 + t * D0;
-							if(Wl < P1.X && P1.X < Wr)
-							{
-								BestTime = Max(0.0f, t - tEpsilon);
-								dP1.Y = 0.0f;
-								D1.Y = 0.0f;
-								Acceleration.Y = 0.0f;
-							}
-						}
+						WallNormal = {0, -1};
 					}
 				}
 			}
 		}
 
-		P0 = P0 + BestTime * D0;
+		P0 += BestTime * D0;
 
-		D0 = D1 * (1.0f - BestTime);
-		Entity->Vel = dP1;
+		D0 *= (1.0f - BestTime);
+		D0 -= Dot(D0, WallNormal) * WallNormal;
+		Entity->Vel -= Dot(Entity->Vel, WallNormal) * WallNormal;
 
 		if(BestTime >= 1.0f) { break; }
 	}
@@ -615,7 +609,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					if(NewEntityInfo.Entity)
 					{
 						GameState->PlayerIndexForController[ControllerIndex] = NewEntityInfo.EntityIndex;
-						InitializePlayer(NewEntityInfo.Entity);
+						InitializePlayer(NewEntityInfo.Entity, TileMap);
 					}
 				}
 			}
@@ -752,9 +746,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		if(Entity->Exists)
 		{
 			entity* Player = Entity;
-			v3 PlayerRGB = {1.0f, 1.0f, 0.0f};
-
-			v2 PlayerPixelDim = {(f32)TileSideInPixels * 0.75f, (f32)TileSideInPixels};
+			v2 PlayerPixelDim = Hadamard({0.75f, 1.0f}, 
+																	 {(f32)TileSideInPixels, (f32)TileSideInPixels});
 
 			v3 PlayerCameraDelta = GetTileMapPosDifference(TileMap, 
 																										 Player->Pos, 
@@ -767,14 +760,21 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 			v2 PlayerPixelPos = ScreenCenter + PlayerCameraPixelDelta;
 
-			f32 PlayerTop = PlayerPixelPos .Y - PlayerPixelDim.Y;
+			f32 PlayerTop = PlayerPixelPos.Y - PlayerPixelDim.Y;
 			f32 PlayerBottom = PlayerPixelPos.Y;
 			f32 PlayerLeft = PlayerPixelPos.X - PlayerPixelDim.X / 2.0f;
 			f32 PlayerRight = PlayerPixelPos.X + PlayerPixelDim.X / 2.0f;
 
 			if(Player->Pos.AbsTile.Z == GameState->CameraPosition.AbsTile.Z)
 			{
-				DrawRectangle(Buffer, {PlayerLeft, PlayerTop}, {PlayerRight, PlayerBottom}, PlayerRGB);
+				v2 CollisionMarkerPixelDim = Hadamard(Entity->Dim, 
+																							{(f32)TileSideInPixels, (f32)TileSideInPixels});
+
+				v3 YellowCollisionMarker = {1.0f, 1.0f, 0.0f};
+				DrawRectangle(Buffer, 
+											PlayerPixelPos - CollisionMarkerPixelDim * 0.5f, 
+											PlayerPixelPos + CollisionMarkerPixelDim * 0.5f, 
+											YellowCollisionMarker);
 
 				hero_bitmaps *Hero = &(GameState->HeroBitmaps[Player->FacingDirection]);
 

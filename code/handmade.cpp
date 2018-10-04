@@ -382,7 +382,7 @@ TestWall(v2 Axis, v2 P0, v2 D0, f32 Wall, v2 MinEdge, v2 MaxEdge, f32* BestTime)
 
 			if(Dot(MinEdge, Coaxis) < Dot(P1, Coaxis) && Dot(P1, Coaxis) < Dot(MaxEdge, Coaxis))
 			{
-				f32 tEpsilon = 0.001f;
+				f32 tEpsilon = 0.0001f;
 				*BestTime = Max(0.0f, t - tEpsilon);
 				Hit = true;
 			}
@@ -426,15 +426,24 @@ MoveEntity(entity* Entity, v2 InputDirection, f32 SecondsToUpdate, tile_map* Til
 	MaxTileX += WidthInTiles;
 	MaxTileY += HeightInTiles;
 
+	if(MinTileX > MaxTileX)
+	{
+		MinTileX = 0;
+	}
+	if(MinTileY > MaxTileY)
+	{
+		MinTileY = 0;
+	}
+
 	u32 AbsTileZ = NewPos.AbsTile.Z;
 	tile_map_position EnityTilePos = CenteredTilePoint(OldPos);
 
-	Assert(AbsoluteS32(MaxTileX - MinTileY) < 32);
-	Assert(AbsoluteS32(MaxTileY - MinTileY) < 32);
+	Assert(AbsoluteS64((s64)MaxTileX - (s64)MinTileY) < 32);
+	Assert(AbsoluteS64((s64)MaxTileY - (s64)MinTileY) < 32);
 
 	v2 P0 = OldPos.Offset_;
 	v2 D1 = D0;
-	for(s32 Steps = 4;
+	for(s32 Steps = 3;
 			Steps > 0;
 			Steps--)
 	{
@@ -767,10 +776,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 			if(Player->Pos.AbsTile.Z == GameState->CameraPosition.AbsTile.Z)
 			{
-				v2 CollisionMarkerPixelDim = Hadamard(Entity->Dim, 
-																							{(f32)TileSideInPixels, (f32)TileSideInPixels});
+				v2 CollisionMarkerPixelDim = Hadamard(Entity->Dim, {PixelsPerMeter, PixelsPerMeter});
 
-				v3 YellowCollisionMarker = {1.0f, 1.0f, 0.0f};
+				v3 YellowCollisionMarker = {0.5f, 0.5f, 0.0f};
 				DrawRectangle(Buffer, 
 											PlayerPixelPos - CollisionMarkerPixelDim * 0.5f, 
 											PlayerPixelPos + CollisionMarkerPixelDim * 0.5f, 

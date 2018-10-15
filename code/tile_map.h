@@ -151,10 +151,11 @@ RecanonilizePosition(tile_map *TileMap, tile_map_position NewDeltaPosition)
 	Result.AbsTile += (v3s)AbsTileOffset;
 
 	f32 HalfUnit = TileMap->TileSideInMeters / 2.0f;
-	//Assert(Result.Offset.X >= -HalfUnit);
-	//Assert(Result.Offset.X <= HalfUnit);
-	//Assert(Result.Offset.Y >= -HalfUnit);
-	//Assert(Result.Offset.Y <= HalfUnit);
+
+	//Assert(Result.Offset_.X >= -HalfUnit);
+	//Assert(Result.Offset_.X <= HalfUnit);
+	//Assert(Result.Offset_.Y >= -HalfUnit);
+	//Assert(Result.Offset_.Y <= HalfUnit);
 
 	return Result;
 }

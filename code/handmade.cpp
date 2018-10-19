@@ -26,7 +26,6 @@ struct hero_bitmaps
 enum entity_residence
 {
 	EntityResidence_Nonexistent,
-	EntityResidence_Dormant,
 	EntityResidence_Low,
 	EntityResidence_High,
 };
@@ -43,13 +42,11 @@ struct high_entity
 	v2 dP;
 	b32 IsOnStairs;
 	u32 FacingDirection;
+
+	u32 LowEntityIndex;
 };
 
 struct low_entity
-{
-};
-
-struct dormant_entity
 {
 	entity_type Type;
 
@@ -65,14 +62,15 @@ struct dormant_entity
 	};
 	b32 Collides;
 	s32 dAbsTileZ;
+
+	u32 HighEntityIndex;
 };
 
 struct entity
 {
-	entity_residence* Residence;
+	entity_residence Residence;
 	high_entity* High;
 	low_entity* Low;
-	dormant_entity* Dormant;
 };
 
 struct game_state
@@ -90,11 +88,11 @@ struct game_state
 	u32 PlayerIndexForController[ArrayCount(((game_input*)0)->Keyboards)];
 	u32 PlayerIndexForKeyboard[ArrayCount(((game_input*)0)->Controllers)];
 
-	u32 EntityCount;
-	entity_residence EntityResidencies[256];
+	u32 LowEntityCount;
+	u32 HighEntityCount;
+	//entity_residence EntityResidencies[256];
 	high_entity HighEntities[256];
-	low_entity LowEntities[256];
-	dormant_entity DormantEntities[256];
+	low_entity LowEntities[4096];
 
 	loaded_bitmap Backdrop;
 
@@ -102,53 +100,64 @@ struct game_state
 };
 
 internal_function void
-MapEntityIntoHigh(game_state* GameState, u32 EntityIndex)
+MapEntityIntoHigh(game_state* GameState, u32 LowIndex)
 {
-	if(GameState->EntityResidencies[EntityIndex] != EntityResidence_High)
+	low_entity* Low = GameState->LowEntities + LowIndex;
+	if(!Low->HighEntityIndex)
 	{
-		GameState->EntityResidencies[EntityIndex] = EntityResidence_High;
+		if(GameState->HighEntityCount < (ArrayCount(GameState->HighEntities)-1))
+		{
+			u32 HighIndex = ++GameState->HighEntityCount;
 
-		high_entity* High = GameState->HighEntities + EntityIndex;
-		dormant_entity* Dormant = GameState->DormantEntities + EntityIndex;
+			Low->HighEntityIndex = HighIndex;
 
-		*High = {};
-		High->P = GetTileMapPosDifference(GameState->World->TileMap, Dormant->TileP, 
-																			GameState->CameraPosition).MeterDiff.XY;
+			high_entity* High = GameState->HighEntities + EntityIndex;
+
+			*High = {};
+			High->LowEntitityIndex = LowIndex;
+			High->P = GetTileMapPosDifference(GameState->World->TileMap, Low->TileP, 
+																				GameState->CameraPosition).MeterDiff.XY;
+		}
+		else
+		{
+			InvalidCodePath;
+		}
 	}
 }
-internal_function void
-MapEntityIntoDormant(game_state* GameState, u32 EntityIndex)
+	internal_function void
+MapEntityIntoLow(game_state* GameState, u32 LowIndex)
 {
-	if(GameState->EntityResidencies[EntityIndex] != EntityResidence_Dormant)
+	low_entity* Low = GameState->LowEntities + LowIndex;
+	if(!Low->HighEntitityIndex)
 	{
-		GameState->EntityResidencies[EntityIndex] = EntityResidence_Dormant;
+		if(
+		//GameState->EntityResidencies[EntityIndex] = EntityResidence_Low;
 
-		high_entity* High = GameState->HighEntities + EntityIndex;
-		dormant_entity* Dormant = GameState->DormantEntities + EntityIndex;
+		low_entity* Low = GameState->LowEntities + EntityIndex;
 
-		Dormant->TileP = Offset(GameState->World->TileMap, GameState->CameraPosition, High->P);
+		Low->TileP = Offset(GameState->World->TileMap, GameState->CameraPosition, High->P);
 	}
 }
 
 	inline entity
-GetEntity(game_state *GameState, entity_residence DesiredResidence, u32 EntityIndex)
+GetEntity(game_state *GameState, u32 LowEntityIndex)
 {
 	entity Result = {};
 
-	if(0 < EntityIndex && EntityIndex <= GameState->EntityCount)
+	if(0 < LowEntityIndex && LowEntityIndex <= GameState->LowEntityCount)
 	{
 		if(GameState->EntityResidencies[EntityIndex] > EntityResidence_Nonexistent)
 		{
 			if(DesiredResidence == EntityResidence_High && 
 				 GameState->EntityResidencies[EntityIndex] < EntityResidence_High)
 			{
-				MapEntityIntoHigh(GameState, EntityIndex);
+				Assert(!"Dont arrive here");
+				//MapEntityIntoHigh(GameState, EntityIndex);
 			}
 
-			Result.Residence = &GameState->EntityResidencies[EntityIndex];
-			Result.High = &GameState->HighEntities[EntityIndex];
-			Result.Low = &GameState->LowEntities[EntityIndex];
-			Result.Dormant = &GameState->DormantEntities[EntityIndex];
+			Result.Residence = GameState->EntityResidencies[EntityIndex];
+			Result.High = GameState->HighEntities + EntityIndex;
+			Result.Low = GameState->LowEntities + EntityIndex;
 		}
 	}
 
@@ -164,7 +173,7 @@ AddEntity(game_state* GameState)
 	Assert(GameState->EntityCount < ArrayCount(GameState->HighEntities));
 
 	Result = GameState->EntityCount;
-	GameState->EntityResidencies[Result] = EntityResidence_Dormant;
+	GameState->EntityResidencies[Result] = EntityResidence_Low;
 
 	return Result;
 }
@@ -173,26 +182,22 @@ AddEntity(game_state* GameState)
 AddPlayer(game_state* GameState)
 {
 	u32 EntityIndex = AddEntity(GameState);
-	entity Entity = GetEntity(GameState, EntityResidence_Dormant, EntityIndex);
+	low_entity* Low = GameState->LowEntities + EntityIndex;
 
-	*Entity.High = {};
-	*Entity.Low = {};
-	*Entity.Dormant = {};
+	Low->Type = EntityType_Player;
 
-	Entity.Dormant->Type = EntityType_Player;
+	Low->TileP.AbsTile = GameState->CameraPosition.AbsTile;
+	Low->TileP.AbsTile += v3s{-2, 1, 0};
 
-	Entity.Dormant->TileP.AbsTile = GameState->CameraPosition.AbsTile;
-	Entity.Dormant->TileP.AbsTile += v3s{-2, 1, 0};
+	Low->Dim = v2{0.5f, 0.3f} * GameState->World->TileMap->TileSideInMeters;
+	Low->Collides = true;
 
-	Entity.Dormant->Dim = v2{0.5f, 0.3f} * GameState->World->TileMap->TileSideInMeters;
-	Entity.Dormant->Collides = true;
-
-	entity Test = GetEntity(GameState, EntityResidence_Dormant, 
+	entity Test = GetEntity(GameState, EntityResidence_Low, 
 									 GameState->CameraFollowingPlayerIndex);
 	if(!Test.Residence)
 	{
 		GameState->CameraFollowingPlayerIndex = EntityIndex;
-		Entity.Dormant->TileP.AbsTile = v3u{7, 5, 0};
+		Low->TileP.AbsTile = v3u{7, 5, 0};
 	}
 
 	return EntityIndex;
@@ -201,21 +206,17 @@ AddPlayer(game_state* GameState)
 	internal_function u32
 AddWall(game_state* GameState, v3u AbsTilePos)
 {
-	u32 Result = AddEntity(GameState);
-	entity Entity = GetEntity(GameState, EntityResidence_Dormant, Result);
+	u32 EntityIndex = AddEntity(GameState);
+	low_entity* Low = GameState->LowEntities + EntityIndex;
 
-	*Entity.High = {};
-	*Entity.Low = {};
-	*Entity.Dormant = {};
+	Low->Type = EntityType_Wall;
 
-	Entity.Dormant->Type = EntityType_Wall;
+	Low->TileP.AbsTile = AbsTilePos;
 
-	Entity.Dormant->TileP.AbsTile = AbsTilePos;
+	Low->Dim = v2{1, 1} * GameState->World->TileMap->TileSideInMeters;
+	Low->Collides = true;
 
-	Entity.Dormant->Dim = v2{1, 1} * GameState->World->TileMap->TileSideInMeters;
-	Entity.Dormant->Collides = true;
-
-	return Result;
+	return EntityIndex;
 }
 
 	internal_function void
@@ -288,7 +289,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 		MapEntityIntoHigh(GameState, EntityIndex);
 	}
 
-	u32 RandomNumberIndex = 0;
+	u32 RandomNumberIndex = 10;
 
 	GameState->RoomWidthInTiles = 17;
 	GameState->RoomHeightInTiles = 9;
@@ -418,7 +419,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 				}
 
 				//SetTileValue(&GameState->WorldArena, World->TileMap, AbsTile, TileValue);
-				if(TileValue ==  2 && AbsTile.X < 30 && AbsTile.Y < 30)
+				//if(TileValue ==  2 && AbsTile.X < 30 && AbsTile.Y < 30)
 				{
 					u32 EntityIndex = AddWall(GameState, AbsTile);
 					//MapEntityIntoHigh(GameState, EntityIndex);
@@ -549,7 +550,7 @@ MoveEntity(game_state* GameState, u32 EntityIndex, v2 InputDirection, f32 Second
 		u32 HitEntityIndex = 0;
 
 		for(u32 CollisionEntityIndex = 1;
-				CollisionEntityIndex <= GameState->EntityCount;
+				CollisionEntityIndex <= GameState->HighEntityCount;
 				CollisionEntityIndex++)
 		{
 			if((EntityIndex != CollisionEntityIndex) &&
@@ -559,10 +560,10 @@ MoveEntity(game_state* GameState, u32 EntityIndex, v2 InputDirection, f32 Second
 																					 EntityResidence_High, CollisionEntityIndex);
 
 				v2 BottomLeftEdge = CollisionEntity.High->P - 
-					(CollisionEntity.Dormant->Dim + Entity.Dormant->Dim) * 0.5f;
+					(CollisionEntity.Low->Dim + Entity.Low->Dim) * 0.5f;
 
 				v2 TopRightEdge = CollisionEntity.High->P + 
-					(CollisionEntity.Dormant->Dim + Entity.Dormant->Dim) * 0.5f;
+					(CollisionEntity.Low->Dim + Entity.Low->Dim) * 0.5f;
 
 				if(TestWall({1,0}, P0, D0, TopRightEdge.X, BottomLeftEdge, TopRightEdge, &BestTime))
 				{
@@ -587,6 +588,7 @@ MoveEntity(game_state* GameState, u32 EntityIndex, v2 InputDirection, f32 Second
 
 		D0 *= (1.0f - BestTime);
 		D0 -= Dot(D0, WallNormal) * WallNormal;
+
 		Entity.High->dP -= Dot(Entity.High->dP, WallNormal) * WallNormal;
 
 		if(BestTime >= 1.0f) { break; }
@@ -618,7 +620,7 @@ MoveEntity(game_state* GameState, u32 EntityIndex, v2 InputDirection, f32 Second
 		Entity->IsOnStairs = false;
 	}
 #endif
-	Entity.Dormant->TileP = MapIntoTileSpace(CameraP, TileMap, Entity.High->P);
+	Entity.Low->TileP = MapIntoTileSpace(CameraP, TileMap, Entity.High->P);
 
 	if(Entity.High->dP.X != 0.0f && Entity.High->dP.Y != 0.0f)
 	{
@@ -691,7 +693,7 @@ SetCamera(game_state* GameState, tile_map_position NewCameraPosition)
 			EntityIndex++)
 	{
 		high_entity* High = GameState->HighEntities + EntityIndex;
-		dormant_entity* Dormant = GameState->DormantEntities + EntityIndex;
+		low_entity* Low = GameState->LowEntities + EntityIndex;
 
 		if(GameState->EntityResidencies[EntityIndex] == EntityResidence_High)
 		{
@@ -699,13 +701,13 @@ SetCamera(game_state* GameState, tile_map_position NewCameraPosition)
 
 			if(!IsInRectangle(CameraUpdateBounds, High->P))
 			{
-				MapEntityIntoDormant(GameState, EntityIndex);
+				MapEntityIntoLow(GameState, EntityIndex);
 			}
 		}
-		if(GameState->EntityResidencies[EntityIndex] == EntityResidence_Dormant)
+		if(GameState->EntityResidencies[EntityIndex] == EntityResidence_Low)
 		{
-			if(Dormant->TileP.AbsTile.Z == NewCameraPosition.AbsTile.Z &&
-				 IsInRectangle(CameraUpdateAbsBounds, Dormant->TileP.AbsTile.XY))
+			if(Low->TileP.AbsTile.Z == NewCameraPosition.AbsTile.Z &&
+				 IsInRectangle(CameraUpdateAbsBounds, Low->TileP.AbsTile.XY))
 			{
 				MapEntityIntoHigh(GameState, EntityIndex);
 			}
@@ -820,11 +822,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// NOTE(bjorn): Update camera/Z-position
 	//
 	v2 CameraMovedOffset = {};
-	entity CameraFollowingEntity = GetEntity(GameState, EntityResidence_Dormant, 
+	entity CameraFollowingEntity = GetEntity(GameState, EntityResidence_Low, 
 																					 GameState->CameraFollowingPlayerIndex);
-	if(*CameraFollowingEntity.Residence >= EntityResidence_Dormant)
+	if(CameraFollowingEntity.Residence >= EntityResidence_Low)
 	{
-		tile_map_position NewCameraPosition = GetCenterOfRoom(CameraFollowingEntity.Dormant->TileP,
+		tile_map_position NewCameraPosition = GetCenterOfRoom(CameraFollowingEntity.Low->TileP,
 																													GameState->RoomWidthInTiles,
 																													GameState->RoomHeightInTiles);
 		CameraMovedOffset = SetCamera(GameState, NewCameraPosition);
@@ -909,7 +911,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			entity Entity = GetEntity(GameState, EntityResidence_High, EntityIndex);
 
 			v2 CollisionMarkerPixelDim = 
-				Hadamard(Entity.Dormant->Dim, {PixelsPerMeter, PixelsPerMeter});
+				Hadamard(Entity.Low->Dim, {PixelsPerMeter, PixelsPerMeter});
 			m22 GameSpaceToScreenSpace = 
 			{PixelsPerMeter, 0             ,
 				0             ,-PixelsPerMeter};
@@ -917,18 +919,18 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			v2 EntityCameraPixelDelta = GameSpaceToScreenSpace * Entity.High->P;
 			v2 EntityPixelPos = ScreenCenter + EntityCameraPixelDelta;
 
-			if(Entity.Dormant->Type == EntityType_Wall)
+			if(Entity.Low->Type == EntityType_Wall)
 			{
 				v3 White = {1, 1, 1};
 				DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), White);
 			}
-			if(Entity.Dormant->Type == EntityType_Player)
+			if(Entity.Low->Type == EntityType_Player)
 			{
 				v2 PlayerPixelDim = Hadamard({0.75f, 1.0f}, 
 																		 (v2)v2s{TileSideInPixels, TileSideInPixels});
 
 
-				if(Entity.Dormant->TileP.AbsTile.Z == GameState->CameraPosition.AbsTile.Z)
+				if(Entity.Low->TileP.AbsTile.Z == GameState->CameraPosition.AbsTile.Z)
 				{
 					v3 Yellow = {1.0f, 1.0f, 0.0f};
 					DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), Yellow);

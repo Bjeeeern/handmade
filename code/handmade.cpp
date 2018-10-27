@@ -295,15 +295,9 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	TileMap->ChunkShift = 4;
 	TileMap->ChunkDim = (1 << TileMap->ChunkShift);
 	TileMap->ChunkMask = TileMap->ChunkDim - 1;
+	TileMap->ChunkSafetyMargin = (max_s32 / TileMap->ChunkDim) - 256;
 
 	TileMap->TileSideInMeters = 1.4f;
-
-	TileMap->ChunkCount = {128, 128, 2};
-
-	TileMap->TileChunks = PushArray(&GameState->WorldArena, 
-																	TileMap->ChunkCount.X*
-																	TileMap->ChunkCount.Y*
-																	TileMap->ChunkCount.Z, tile_chunk);
 
 	{
 		u32 EntityIndex = AddPlayer(GameState);
@@ -440,11 +434,10 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 					TileValue = StairToBuild;
 				}
 
-				//SetTileValue(&GameState->WorldArena, World->TileMap, AbsTile, TileValue);
-				if(TileValue ==  2)//&& AbsTile.X < 30 && AbsTile.Y < 30)
+				SetTileValue(&GameState->WorldArena, World->TileMap, AbsTile, TileValue);
+				if(TileValue ==  2)
 				{
 					u32 EntityIndex = AddWall(GameState, AbsTile);
-					//MapEntityIntoHigh(GameState, EntityIndex);
 				}
 			}
 		}
@@ -684,7 +677,7 @@ SetCamera(game_state* GameState, tile_map_position NewCameraPosition)
 	u32 AbsTileHeight = 9 * 3;
 	rectangle2 CameraUpdateBounds = 
 		RectCenterDim({0,0}, (v2)v2u{AbsTileWidth, AbsTileHeight} * TileMap->TileSideInMeters);
-	rectangle2u CameraUpdateAbsBounds = RectCenterDim(NewCameraPosition.AbsTile.XY, 
+	rectangle2s CameraUpdateAbsBounds = RectCenterDim(NewCameraPosition.AbsTile.XY, 
 																										v2u{AbsTileWidth, AbsTileHeight});
 
 	// TODO(bjorn): This should not be a problem when we are in the middle of the
@@ -870,11 +863,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				RelColumn < 60;
 				++RelColumn)
 		{
-			u32 Column = GameState->CameraPosition.AbsTile.X + RelColumn;
-			u32 Row = GameState->CameraPosition.AbsTile.Y + RelRow;
+			s32 Column = GameState->CameraPosition.AbsTile.X + RelColumn;
+			s32 Row = GameState->CameraPosition.AbsTile.Y + RelRow;
 
 			u32 TileID = GetTileValue(TileMap, 
-																v3u{Column, Row, GameState->CameraPosition.AbsTile.Z});
+																v3s{Column, Row, GameState->CameraPosition.AbsTile.Z});
 			v3 TileRGB = {};
 
 			if(TileID == 0)

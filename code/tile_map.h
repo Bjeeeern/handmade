@@ -3,14 +3,19 @@
 #include "math.h"
 #include "platform.h"
 
+#define TILE_CHUNK_SAFETY_MARGIN 
+
 struct tile_chunk
 {
+	v3s ChunkPos;
+	tile_chunk* NextTileChunk;
+
   u32 *Tiles;
 };
 
 struct tile_chunk_position
 {
-	v3u TileChunk;
+	v3s ChunkPos;
 
 	v2u RelTile;
 };
@@ -20,19 +25,16 @@ struct tile_map
   s32 ChunkShift;
   u32 ChunkMask;
 	s32 ChunkDim;
+	s32 ChunkSafetyMargin;
 
   f32 TileSideInMeters;
 
-	//TODO(bjorn): REAL sparsness so that anywhere in the world can be
-	//represented without the giant pointer array.
-	v3u ChunkCount;
-
-  tile_chunk *TileChunks;
+  tile_chunk HashMap[4096];
 };
 
 struct tile_map_position
 {
-	v3u AbsTile;
+	v3s AbsTile;
 	v2 Offset_;
 };
 
@@ -47,7 +49,7 @@ CenteredTilePoint(tile_map_position TilePos)
 }
 
 inline tile_map_position
-CenteredTilePoint(u32 AbsTileX, u32 AbsTileY, u32 AbsTileZ)
+CenteredTilePoint(s32 AbsTileX, s32 AbsTileY, s32 AbsTileZ)
 {
 	tile_map_position Result = {};
 
@@ -57,13 +59,13 @@ CenteredTilePoint(u32 AbsTileX, u32 AbsTileY, u32 AbsTileZ)
 }
 
 inline tile_chunk_position 
-GetChunkPosition(tile_map *TileMap, v3u AbsTile)
+GetChunkPosition(tile_map *TileMap, v3s AbsTile)
 {
 	tile_chunk_position Result;
 
-	Result.TileChunk.X = AbsTile.X >> TileMap->ChunkShift;
-	Result.TileChunk.Y = AbsTile.Y >> TileMap->ChunkShift;
-	Result.TileChunk.Z = AbsTile.Z;
+	Result.ChunkPos.X = AbsTile.X >> TileMap->ChunkShift;
+	Result.ChunkPos.Y = AbsTile.Y >> TileMap->ChunkShift;
+	Result.ChunkPos.Z = AbsTile.Z;
 	Result.RelTile.X = AbsTile.X & TileMap->ChunkMask;
 	Result.RelTile.Y = AbsTile.Y & TileMap->ChunkMask;
 
@@ -71,42 +73,91 @@ GetChunkPosition(tile_map *TileMap, v3u AbsTile)
 }
 
   internal_function tile_chunk *
-GetTileChunk(tile_map *TileMap, v3u PotentialTileChunk)
+GetTileChunk(tile_map *TileMap, v3s PotentialChunkPos, memory_arena* Arena = 0)
 {
   tile_chunk *TileChunk = 0;
 
-	b32 IsInsideTileMap = (PotentialTileChunk.X < TileMap->ChunkCount.X &&
-												 PotentialTileChunk.Y < TileMap->ChunkCount.Y &&
-												 PotentialTileChunk.Z < TileMap->ChunkCount.Z);
-  if(IsInsideTileMap)
-  {
-    TileChunk = &(TileMap->TileChunks[
-									PotentialTileChunk.Z * TileMap->ChunkCount.X * TileMap->ChunkCount.Y +
-									PotentialTileChunk.Y * TileMap->ChunkCount.X +
-								 	PotentialTileChunk.X]);
-  }
-  return TileChunk;
+	Assert(PotentialChunkPos.X <  TileMap->ChunkSafetyMargin &&
+				 PotentialChunkPos.Y <  TileMap->ChunkSafetyMargin &&
+				 PotentialChunkPos.Z <  TileMap->ChunkSafetyMargin &&
+				 PotentialChunkPos.X > -TileMap->ChunkSafetyMargin &&
+				 PotentialChunkPos.Y > -TileMap->ChunkSafetyMargin &&
+				 PotentialChunkPos.Z > -TileMap->ChunkSafetyMargin);
+
+	s32 HashValue = 19 * PotentialChunkPos.X + 7 * PotentialChunkPos.Y + 3 * PotentialChunkPos.Z;
+	s32 HashSlot = HashValue & (ArrayCount(TileMap->HashMap) - 1);
+	TileChunk = TileMap->HashMap + HashSlot;
+
+	if(TileChunk->Tiles)
+	{
+		do
+		{
+			if(TileChunk->ChunkPos == PotentialChunkPos)
+			{
+				//NOTE(bjorn): We have a match, so nothing needs to be done.
+				Assert(TileChunk->Tiles);
+				break;
+			}
+			else if(TileChunk->NextTileChunk)
+			{
+				TileChunk = TileChunk->NextTileChunk;
+			}
+			else if(Arena)
+			{
+				tile_chunk* NewTileChunk = PushStruct(Arena, tile_chunk);
+				TileChunk->NextTileChunk = NewTileChunk;
+
+				NewTileChunk->ChunkPos = PotentialChunkPos;
+
+				u32 TileChunkTileCount = Square(TileMap->ChunkDim);
+				TileChunk->Tiles = PushArray(Arena, TileChunkTileCount, u32);
+
+				TileChunk = NewTileChunk;
+				Assert(TileChunk->Tiles);
+				break;
+			}
+			else
+			{
+				TileChunk = 0;
+				break;
+			}
+		}
+		while(true);
+	}
+	else if(Arena)
+	{
+		TileChunk->ChunkPos = PotentialChunkPos;
+
+		u32 TileChunkTileCount = Square(TileMap->ChunkDim);
+		TileChunk->Tiles = PushArray(Arena, TileChunkTileCount, u32);
+	}
+	else
+	{
+		TileChunk = 0;
+	}
+
+	return TileChunk;
 }
 
-  inline u32
+	inline u32
 GetTileValueUnchecked(tile_map *TileMap, tile_chunk *TileChunk, v2u Tile)
 {
-  Assert(TileChunk);
-  Assert(0 <= Tile.X && Tile.X < (u32)TileMap->ChunkDim);
-  Assert(0 <= Tile.Y && Tile.Y < (u32)TileMap->ChunkDim);
+	Assert(TileChunk);
+	Assert(0 <= Tile.X && Tile.X < (u32)TileMap->ChunkDim);
+	Assert(0 <= Tile.Y && Tile.Y < (u32)TileMap->ChunkDim);
 
-  u32 TileValue = TileChunk->Tiles[Tile.Y * TileMap->ChunkDim + Tile.X];
+	u32 TileValue = TileChunk->Tiles[Tile.Y * TileMap->ChunkDim + Tile.X];
 
-  return TileValue;
+	return TileValue;
 }
 
-  internal_function u32
-GetTileValue(tile_map *TileMap, v3u AbsTile)
+	internal_function u32
+GetTileValue(tile_map *TileMap, v3s AbsTile)
 {
-  u32 TileValue = 0;
+	u32 TileValue = 0;
 
 	tile_chunk_position ChunkPosition = GetChunkPosition(TileMap, AbsTile);
-	tile_chunk *TileChunk = GetTileChunk(TileMap, ChunkPosition.TileChunk);
+	tile_chunk* TileChunk = GetTileChunk(TileMap, ChunkPosition.ChunkPos);
 
   if(TileChunk && TileChunk->Tiles)
 	{
@@ -189,23 +240,13 @@ SetTileValueUnchecked(tile_map *TileMap, tile_chunk *TileChunk, v2u Tile, u32 Ti
 }
 
 	internal_function void
-SetTileValue(memory_arena *Arena, tile_map *TileMap, v3u AbsTile, u32 TileValue)
+SetTileValue(memory_arena *Arena, tile_map *TileMap, v3s AbsTile, u32 TileValue)
 {
 	tile_chunk_position ChunkPosition = GetChunkPosition(TileMap, AbsTile);
-	tile_chunk *TileChunk = GetTileChunk(TileMap, ChunkPosition.TileChunk);
+	tile_chunk *TileChunk = GetTileChunk(TileMap, ChunkPosition.ChunkPos, Arena);
 
 	Assert(TileChunk);
-	if(!TileChunk->Tiles)
-	{
-		u32 TileChunkTileCount = TileMap->ChunkDim * TileMap->ChunkDim;
-		TileChunk->Tiles = PushArray(Arena, TileChunkTileCount, u32);
-		for(u32 TileChunkIndex = 0;
-				TileChunkIndex < TileChunkTileCount;
-				++TileChunkIndex)
-		{
-			TileChunk->Tiles[TileChunkIndex] = 1;
-		}
-	}
+	Assert(TileChunk->Tiles);
 
 	SetTileValueUnchecked(TileMap, TileChunk, ChunkPosition.RelTile, TileValue);
 }

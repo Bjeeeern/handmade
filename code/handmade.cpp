@@ -1,7 +1,7 @@
 #include "platform.h"
 #include "memory.h"
 #include "intrinsics.h"
-#include "tile_map.h"
+#include "world_map.h"
 #include "random.h"
 #include "renderer.h"
 #include "resource.h"
@@ -9,10 +9,6 @@
 //
 // NOTE(bjorn): These structs only have a meaning within the game.
 // Pi32
-struct world
-{
-	tile_map *TileMap;
-};
 
 struct hero_bitmaps
 {
@@ -76,7 +72,7 @@ struct entity
 struct game_state
 {
 	memory_arena WorldArena;
-	world* World;
+	world_map* WorldMap;
 
 	s32 RoomWidthInTiles;
 	s32 RoomHeightInTiles;
@@ -91,7 +87,7 @@ struct game_state
 	u32 HighEntityCount;
 	u32 LowEntityCount;
 	high_entity HighEntities[256];
-	low_entity LowEntities[4096];
+	low_entity LowEntities[100000];
 
 	loaded_bitmap Backdrop;
 
@@ -287,9 +283,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	InitializeArena(&GameState->WorldArena, Memory->PermanentStorageSize - sizeof(game_state),
 									(u8*)Memory->PermanentStorage + sizeof(game_state));
 
-	GameState->World = PushStruct(&GameState->WorldArena, world);
-	world *World = GameState->World;
-	World->TileMap = PushStruct(&GameState->WorldArena, tile_map);
+	GameState->WorldMap = PushStruct(&GameState->WorldArena, world_map);
 
 	tile_map *TileMap = World->TileMap;
 	TileMap->ChunkShift = 4;

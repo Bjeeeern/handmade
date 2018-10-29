@@ -19,13 +19,6 @@ struct hero_bitmaps
 	v2s Alignment;
 };
 
-enum entity_residence
-{
-	EntityResidence_Nonexistent,
-	EntityResidence_Low,
-	EntityResidence_High,
-};
-
 enum entity_type
 {
 	EntityType_Player,
@@ -46,7 +39,7 @@ struct low_entity
 {
 	entity_type Type;
 
-	tile_map_position TileP;
+	world_map_position WorldP;
 	union
 	{
 		v2 Dim;
@@ -57,14 +50,13 @@ struct low_entity
 		};
 	};
 	b32 Collides;
-	s32 dAbsTileZ;
+	s32 dChunkPosZ;
 
 	u32 HighEntityIndex;
 };
 
 struct entity
 {
-	entity_residence Residence;
 	high_entity* High;
 	low_entity* Low;
 };
@@ -79,7 +71,7 @@ struct game_state
 
 	//TODO(bjorn): Should we allow split-screen?
 	u32 CameraFollowingPlayerIndex;
-	tile_map_position CameraPosition;
+	world_map_position CameraPosition;
 
 	u32 PlayerIndexForController[ArrayCount(((game_input*)0)->Keyboards)];
 	u32 PlayerIndexForKeyboard[ArrayCount(((game_input*)0)->Controllers)];
@@ -109,8 +101,8 @@ MapEntityIntoHigh(game_state* GameState, u32 LowIndex)
 
 			*High = {};
 			High->LowEntityIndex = LowIndex;
-			High->P = GetTileMapPosDifference(GameState->World->TileMap, Low->TileP, 
-																				GameState->CameraPosition).MeterDiff.XY;
+			High->P = GetWorldMapPosDifference(GameState->WorldMap, Low->WorldP, 
+																				GameState->CameraPosition).XY;
 		}
 		else
 		{
@@ -118,6 +110,7 @@ MapEntityIntoHigh(game_state* GameState, u32 LowIndex)
 		}
 	}
 }
+
 	internal_function void
 MapEntityIntoLow(game_state* GameState, u32 LowIndex)
 {
@@ -126,7 +119,7 @@ MapEntityIntoLow(game_state* GameState, u32 LowIndex)
 	if(HighIndex)
 	{
 		high_entity* High = GameState->HighEntities + HighIndex;
-		Low->TileP = Offset(GameState->World->TileMap, GameState->CameraPosition, High->P);
+		Low->WorldP = Offset(GameState->WorldMap, GameState->CameraPosition, High->P);
 		Low->HighEntityIndex = 0;
 
 		if(HighIndex != GameState->HighEntityCount)
@@ -205,33 +198,33 @@ AddPlayer(game_state* GameState)
 
 	Low->Type = EntityType_Player;
 
-	Low->TileP.AbsTile = GameState->CameraPosition.AbsTile;
-	Low->TileP.AbsTile += v3s{-2, 1, 0};
+	Low->WorldP = GameState->CameraPosition;
+	Low->WorldP = Offset(GameState->WorldMap, Low->WorldP, 
+											 GetChunkPositionFromTilePos(GameState->WorldMap, v3s{-2, 1, 0}).Offset_);
 
-	Low->Dim = v2{0.5f, 0.3f} * GameState->World->TileMap->TileSideInMeters;
+	Low->Dim = v2{0.5f, 0.3f} * GameState->WorldMap->TileSideInMeters;
 	Low->Collides = true;
 
 	entity Test = GetEntityByLowIndex(GameState, GameState->CameraFollowingPlayerIndex);
 	if(!Test.Low)
 	{
 		GameState->CameraFollowingPlayerIndex = LowIndex;
-		Low->TileP.AbsTile = v3u{7, 5, 0};
 	}
 
 	return LowIndex;
 }
 
 	internal_function u32
-AddWall(game_state* GameState, v3u AbsTilePos)
+AddWall(game_state* GameState, world_map_position WorldPos)
 {
 	u32 LowIndex = AddEntity(GameState);
 	low_entity* Low = GameState->LowEntities + LowIndex;
 
 	Low->Type = EntityType_Wall;
 
-	Low->TileP.AbsTile = AbsTilePos;
+	Low->WorldP = WorldPos;
 
-	Low->Dim = v2{1, 1} * GameState->World->TileMap->TileSideInMeters;
+	Low->Dim = v2{1, 1} * GameState->WorldMap->TileSideInMeters;
 	Low->Collides = true;
 
 	return LowIndex;
@@ -285,13 +278,10 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 
 	GameState->WorldMap = PushStruct(&GameState->WorldArena, world_map);
 
-	tile_map *TileMap = World->TileMap;
-	TileMap->ChunkShift = 4;
-	TileMap->ChunkDim = (1 << TileMap->ChunkShift);
-	TileMap->ChunkMask = TileMap->ChunkDim - 1;
-	TileMap->ChunkSafetyMargin = (max_s32 / TileMap->ChunkDim) - 256;
-
-	TileMap->TileSideInMeters = 1.4f;
+	world_map *WorldMap = GameState->WorldMap;
+	WorldMap->ChunkSafetyMargin = 256;
+	WorldMap->TileSideInMeters = 1.4f;
+	WorldMap->ChunkSideInMeters = WorldMap->TileSideInMeters * TILES_PER_CHUNK;
 
 	{
 		u32 EntityIndex = AddPlayer(GameState);
@@ -428,10 +418,11 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 					TileValue = StairToBuild;
 				}
 
-				SetTileValue(&GameState->WorldArena, World->TileMap, AbsTile, TileValue);
 				if(TileValue ==  2)
 				{
-					u32 EntityIndex = AddWall(GameState, AbsTile);
+					world_map_position WorldPos = GetChunkPositionFromTilePos(WorldMap, AbsTile);
+					u32 EntityIndex = AddWall(GameState, WorldPos);
+				  ChangeEntityLocation(&GameState->WorldArena, WorldMap, EntityIndex, 0, &WorldPos);
 				}
 			}
 		}
@@ -485,16 +476,6 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	}
 }
 
-internal_function v2 
-ClosestPointInRectangle(v2 MinCorner, v2 MaxCorner, tile_map_diff RelNewPos)
-{
-	v2 Result = {};
-	Result.X = Clamp(RelNewPos.MeterDiff.X, MinCorner.X, MaxCorner.X);
-	Result.Y = Clamp(RelNewPos.MeterDiff.Y, MinCorner.Y, MaxCorner.Y);
-
-	return Result;
-}
-
 internal_function b32
 TestWall(v2 Axis, v2 P0, v2 D0, f32 Wall, v2 MinEdge, v2 MaxEdge, f32* BestTime)
 {
@@ -521,17 +502,17 @@ TestWall(v2 Axis, v2 P0, v2 D0, f32 Wall, v2 MinEdge, v2 MaxEdge, f32* BestTime)
 	return Hit;
 }
 
-internal_function tile_map_position
-MapIntoTileSpace(tile_map_position CameraP, tile_map* TileMap, v2 EntityP)
+internal_function world_map_position
+MapCameraPosToWorldPos(world_map_position CameraP, world_map* WorldMap, v2 EntityP)
 {
-	tile_map_position Result = CameraP;
+	world_map_position Result = CameraP;
 	Result.Offset_ += EntityP;
-	return RecanonilizePosition(TileMap, Result);
+	return RecanonilizePosition(WorldMap, Result);
 }
 
 	internal_function void
 MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsToUpdate, 
-					 tile_map* TileMap, tile_map_position CameraP)
+					 world_map* WorldMap, world_map_position CameraP)
 {
 	v2 OldPos = Entity.High->P;
 
@@ -601,7 +582,7 @@ MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsT
 
 		if(HitDetected)
 		{
-			Entity.Low->TileP.AbsTile.Z += HitEntity.Low->dAbsTileZ;
+			Entity.Low->WorldP.ChunkP.Z += HitEntity.Low->dChunkPosZ;
 		}
 
 		if(BestTime >= 1.0f) { break; }
@@ -636,48 +617,48 @@ MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsT
 		}
 	}
 
-	Entity.Low->TileP = MapIntoTileSpace(CameraP, TileMap, Entity.High->P);
+	Entity.Low->WorldP = MapCameraPosToWorldPos(CameraP, WorldMap, Entity.High->P);
 }
 
-	internal_function tile_map_position 
-GetCenterOfRoom(tile_map_position A, s32 RoomWidthInTiles, s32 RoomHeightInTiles)
+	internal_function world_map_position 
+GetCenterOfRoom(world_map* WorldMap, world_map_position A, 
+								s32 RoomWidthInTiles, s32 RoomHeightInTiles)
 {
-	tile_map_position Result = {};
+	world_map_position Result = {};
 
-	Result.AbsTile.X = 
-		(A.AbsTile.X / RoomWidthInTiles) * RoomWidthInTiles + FloorF32ToS32(RoomWidthInTiles*0.5f);
-	Result.AbsTile.Y = 
-		(A.AbsTile.Y / RoomHeightInTiles) * RoomHeightInTiles + FloorF32ToS32(RoomHeightInTiles*0.5f);
-	Result.AbsTile.Z = A.AbsTile.Z;
+	v3s AbsTile = {};
+	AbsTile.X = A.ChunkP.X * TILES_PER_CHUNK + FloorF32ToS32(A.Offset_.X / WorldMap->TileSideInMeters);
+	AbsTile.Y = A.ChunkP.Y * TILES_PER_CHUNK + FloorF32ToS32(A.Offset_.X / WorldMap->TileSideInMeters);
+	AbsTile.Z = A.ChunkP.Z;
+
+	Result = GetChunkPositionFromTilePos(WorldMap, AbsTile);
 
 	return Result;
 }
 
 internal_function v2
-SetCamera(game_state* GameState, tile_map_position NewCameraPosition)
+SetCamera(game_state* GameState, world_map_position NewCameraPosition)
 {
 	v2 Result = {};
 
-	tile_map_diff Diff = GetTileMapPosDifference(GameState->World->TileMap, 
-																							 NewCameraPosition, 
-																							 GameState->CameraPosition);
+	v3 Diff = GetWorldMapPosDifference(GameState->WorldMap, NewCameraPosition, 
+																								GameState->CameraPosition);
 
 	GameState->CameraPosition = NewCameraPosition;
-	Result = Diff.MeterDiff.XY;
+	Result = Diff.XY;
 
-	tile_map* TileMap = GameState->World->TileMap;
+	world_map* WorldMap = GameState->WorldMap;
 
-	u32 AbsTileWidth = 17 * 3;
-	u32 AbsTileHeight = 9 * 3;
-	rectangle2 CameraUpdateBounds = 
-		RectCenterDim({0,0}, (v2)v2u{AbsTileWidth, AbsTileHeight} * TileMap->TileSideInMeters);
-	rectangle2s CameraUpdateAbsBounds = RectCenterDim(NewCameraPosition.AbsTile.XY, 
-																										v2u{AbsTileWidth, AbsTileHeight});
+	v2 HighFrequencyUpdateDim = v2{3.0f, 2.0f}*WorldMap->ChunkSideInMeters;
 
-	// TODO(bjorn): This should not be a problem when we are in the middle of the
-	// as-good-as-infinite map.
-	if(CameraUpdateAbsBounds.Min.X > max_u32 / 2) CameraUpdateAbsBounds.Min.X = 0;
-	if(CameraUpdateAbsBounds.Min.Y > max_u32 / 2) CameraUpdateAbsBounds.Min.Y = 0;
+	rectangle2 CameraUpdateBounds = RectCenterDim(v2{0,0}, HighFrequencyUpdateDim);
+
+	world_map_position MinWorldP = MapCameraPosToWorldPos(NewCameraPosition, WorldMap, 
+																												CameraUpdateBounds.Min);
+	world_map_position MaxWorldP = MapCameraPosToWorldPos(NewCameraPosition, WorldMap, 
+																												CameraUpdateBounds.Max);
+
+	rectangle2s CameraUpdateAbsBounds = RectMinMax(MinWorldP.ChunkP.XY, MaxWorldP.ChunkP.XY);
 
 	for(u32 LowEntityIndex = 1;
 			LowEntityIndex <= GameState->LowEntityCount;
@@ -690,7 +671,7 @@ SetCamera(game_state* GameState, tile_map_position NewCameraPosition)
 			high_entity* High = GameState->HighEntities + Low->HighEntityIndex;
 			High->P -= Result;
 
-			if((Low->TileP.AbsTile.Z != NewCameraPosition.AbsTile.Z) ||
+			if((Low->WorldP.ChunkP.Z != NewCameraPosition.ChunkP.Z) ||
 				 !IsInRectangle(CameraUpdateBounds, High->P))
 			{
 				MapEntityIntoLow(GameState, LowEntityIndex);
@@ -698,10 +679,14 @@ SetCamera(game_state* GameState, tile_map_position NewCameraPosition)
 		}
 		else
 		{
-			if(Low->TileP.AbsTile.Z == NewCameraPosition.AbsTile.Z &&
-				 IsInRectangle(CameraUpdateAbsBounds, Low->TileP.AbsTile.XY))
+			if(Low->WorldP.ChunkP.Z == NewCameraPosition.ChunkP.Z &&
+				 IsInRectangle(CameraUpdateAbsBounds, Low->WorldP.ChunkP.XY))
 			{
-				MapEntityIntoHigh(GameState, LowEntityIndex);
+				v3 RelCamP = GetWorldMapPosDifference(WorldMap, Low->WorldP, NewCameraPosition).XY;
+				if(IsInRectangle(CameraUpdateBounds, RelCamP.XY))
+				{
+					MapEntityIntoHigh(GameState, LowEntityIndex);
+				}
 			}
 		}
 	}
@@ -724,10 +709,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		Memory->IsInitialized = true;
 	}
 
-	world *World = GameState->World;
-	tile_map *TileMap = World->TileMap;
-
-	f32 PlayerWidth = (f32)TileMap->TileSideInMeters * 0.75f;
+	world_map* WorldMap = GameState->WorldMap;
 
 	//
 	// NOTE(bjorn): Movement
@@ -752,7 +734,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				{
 					MoveEntity(GameState, ControlledEntity, 
 										 InputDirection, SecondsToUpdate, 
-										 TileMap, GameState->CameraPosition);
+										 WorldMap, GameState->CameraPosition);
 				}
 
 				if(Controller->Start.EndedDown && Controller->Start.HalfTransitionCount)
@@ -812,7 +794,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				{
 					MoveEntity(GameState, ControlledEntity, 
 										 InputDirection, SecondsToUpdate, 
-										 TileMap, GameState->CameraPosition);
+										 WorldMap, GameState->CameraPosition);
 				}
 			}
 		}
@@ -822,24 +804,23 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	// NOTE(bjorn): Update camera/Z-position
 	//
-	v2 CameraMovedOffset = {};
-	entity CameraFollowingEntity = 
-		GetEntityByLowIndex(GameState, GameState->CameraFollowingPlayerIndex);
-	if(CameraFollowingEntity.Low)
+	entity CameraTarget = GetEntityByLowIndex(GameState, GameState->CameraFollowingPlayerIndex);
+	if(CameraTarget.Low)
 	{
-		tile_map_position NewCameraPosition = GetCenterOfRoom(CameraFollowingEntity.Low->TileP,
-																													GameState->RoomWidthInTiles,
-																													GameState->RoomHeightInTiles);
-		CameraMovedOffset = SetCamera(GameState, NewCameraPosition);
+		world_map_position NewCameraPosition = GetCenterOfRoom(WorldMap, CameraTarget.Low->WorldP,
+																													 GameState->RoomWidthInTiles,
+																													 GameState->RoomHeightInTiles);
+		SetCamera(GameState, NewCameraPosition);
 	}
 
 	//
 	// NOTE(bjorn): Rendering
 	//
 	s32 TileSideInPixels = 60;
-	f32 PixelsPerMeter = (f32)TileSideInPixels / TileMap->TileSideInMeters;
+	f32 PixelsPerMeter = (f32)TileSideInPixels / WorldMap->TileSideInMeters;
 
-	DrawRectangle(Buffer, RectMinMax({0.0f, 0.0f}, {(f32)Buffer->Width, (f32)Buffer->Height}), 
+	DrawRectangle(Buffer, 
+								RectMinMax(v2{0.0f, 0.0f}, v2{(f32)Buffer->Width, (f32)Buffer->Height}), 
 								{1.0f, 0.0f, 1.0f});
 
 #if 1
@@ -848,60 +829,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #endif
 
 	v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
-
-	for(s32 RelRow = -20;
-			RelRow < 40;
-			++RelRow)
-	{
-		for(s32 RelColumn = -30;
-				RelColumn < 60;
-				++RelColumn)
-		{
-			s32 Column = GameState->CameraPosition.AbsTile.X + RelColumn;
-			s32 Row = GameState->CameraPosition.AbsTile.Y + RelRow;
-
-			u32 TileID = GetTileValue(TileMap, 
-																v3s{Column, Row, GameState->CameraPosition.AbsTile.Z});
-			v3 TileRGB = {};
-
-			if(TileID == 0)
-			{
-				TileRGB = {1.0f, 0.0f, 0.0f};
-			}
-			if(TileID == 1)
-			{
-				f32 Gray = 0.5f;
-				TileRGB = {Gray, Gray, Gray};
-			}
-			if(TileID == 2)
-			{
-				f32 White = 1.0f;
-				TileRGB = {White, White, White};
-			}
-			if(TileID == 3)
-			{
-				TileRGB = {0.0f, 0.5f, 1.0f};
-			}
-			if(TileID == 4)
-			{
-				TileRGB = {0.0f, 1.0f, 0.5f};
-			}
-
-			m22 InvertY = {1, 0,
-										 0,-1};
-
-			v2 Min = ScreenCenter 
-				+ ((v2)v2s{RelColumn, -RelRow} - v2{0.5f, -0.5f}) * TileSideInPixels
-				- InvertY * GameState->CameraPosition.Offset_;
-
-			v2 Max = Min + v2{1.0f, -1.0f} * TileSideInPixels;
-
-			if(TileID != 1)
-			{
-				DrawRectangle(Buffer, RectMinMax(Min, Max), TileRGB);
-			}
-		}
-	}
 
 	for(u32 HighEntityIndex = 1;
 			HighEntityIndex <= GameState->HighEntityCount;
@@ -929,7 +856,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 																	 (v2)v2s{TileSideInPixels, TileSideInPixels});
 
 
-			if(Entity.Low->TileP.AbsTile.Z == GameState->CameraPosition.AbsTile.Z)
+			if(Entity.Low->WorldP.ChunkP.Z == GameState->CameraPosition.ChunkP.Z)
 			{
 				v3 Yellow = {1.0f, 1.0f, 0.0f};
 				DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), Yellow);

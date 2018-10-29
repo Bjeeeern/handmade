@@ -15,7 +15,7 @@ struct entity_block
 
 struct world_chunk
 {
-	v3s ChunkPos;
+	v3s ChunkP;
   entity_block* Block;
 
 	world_chunk* Next;
@@ -35,40 +35,40 @@ struct world_map
 
 struct world_map_position
 {
-	v3s ChunkPos;
+	v3s ChunkP;
 	v2 Offset_;
 };
 
-#define WORLDS_PER_CHUNK 16
+#define TILES_PER_CHUNK 16
 
 inline world_map_position 
 GetChunkPositionFromTilePos(world_map *WorldMap, v3s AbsTile)
 {
 	world_map_position Result = {};
 
-	Result.ChunkPos.X = AbsTile.X / WORLDS_PER_CHUNK;
-	Result.ChunkPos.Y = AbsTile.Y / WORLDS_PER_CHUNK;
-	Result.ChunkPos.Z = AbsTile.Z;
+	Result.ChunkP.X = AbsTile.X / TILES_PER_CHUNK;
+	Result.ChunkP.Y = AbsTile.Y / TILES_PER_CHUNK;
+	Result.ChunkP.Z = AbsTile.Z;
 
-	Result.Offset_.X = (AbsTile.X - Result.ChunkPos.X * WORLDS_PER_CHUNK) * WorldMap->TileSideInMeters;
-	Result.Offset_.Y = (AbsTile.Y - Result.ChunkPos.Y * WORLDS_PER_CHUNK) * WorldMap->TileSideInMeters;
+	Result.Offset_.X = (AbsTile.X - Result.ChunkP.X * TILES_PER_CHUNK) * WorldMap->TileSideInMeters;
+	Result.Offset_.Y = (AbsTile.Y - Result.ChunkP.Y * TILES_PER_CHUNK) * WorldMap->TileSideInMeters;
 
 	return Result;
 }
 
   internal_function world_chunk *
-GetWorldChunk(world_map *WorldMap, v3s PotentialChunkPos, memory_arena* Arena = 0)
+GetWorldChunk(world_map *WorldMap, v3s PotentialChunkP, memory_arena* Arena = 0)
 {
   world_chunk *WorldChunk = 0;
 
-	Assert(PotentialChunkPos.X <  WorldMap->ChunkSafetyMargin &&
-				 PotentialChunkPos.Y <  WorldMap->ChunkSafetyMargin &&
-				 PotentialChunkPos.Z <  WorldMap->ChunkSafetyMargin &&
-				 PotentialChunkPos.X > -WorldMap->ChunkSafetyMargin &&
-				 PotentialChunkPos.Y > -WorldMap->ChunkSafetyMargin &&
-				 PotentialChunkPos.Z > -WorldMap->ChunkSafetyMargin);
+	Assert(PotentialChunkP.X <  WorldMap->ChunkSafetyMargin &&
+				 PotentialChunkP.Y <  WorldMap->ChunkSafetyMargin &&
+				 PotentialChunkP.Z <  WorldMap->ChunkSafetyMargin &&
+				 PotentialChunkP.X > -WorldMap->ChunkSafetyMargin &&
+				 PotentialChunkP.Y > -WorldMap->ChunkSafetyMargin &&
+				 PotentialChunkP.Z > -WorldMap->ChunkSafetyMargin);
 
-	s32 HashValue = 19 * PotentialChunkPos.X + 7 * PotentialChunkPos.Y + 3 * PotentialChunkPos.Z;
+	s32 HashValue = 19 * PotentialChunkP.X + 7 * PotentialChunkP.Y + 3 * PotentialChunkP.Z;
 	s32 HashSlot = HashValue & (ArrayCount(WorldMap->HashMap) - 1);
 	WorldChunk = WorldMap->HashMap + HashSlot;
 
@@ -77,7 +77,7 @@ GetWorldChunk(world_map *WorldMap, v3s PotentialChunkPos, memory_arena* Arena = 
 	{
 		do
 		{
-			if(WorldChunk->ChunkPos == PotentialChunkPos)
+			if(WorldChunk->ChunkP == PotentialChunkP)
 			{
 				Assert(WorldChunk->Block);
 				SlotFoundOrCreated = true;
@@ -102,7 +102,7 @@ GetWorldChunk(world_map *WorldMap, v3s PotentialChunkPos, memory_arena* Arena = 
 
 	if(Arena && !WorldChunk->Block)
 	{
-		WorldChunk->ChunkPos = PotentialChunkPos;
+		WorldChunk->ChunkP = PotentialChunkP;
 
 		if(WorldMap->FreeBlock)
 		{
@@ -116,6 +116,7 @@ GetWorldChunk(world_map *WorldMap, v3s PotentialChunkPos, memory_arena* Arena = 
 		}
 
 		Assert(WorldChunk->Block);
+		SlotFoundOrCreated = true;
 	}
 
 	if(!SlotFoundOrCreated)
@@ -149,26 +150,21 @@ RecanonilizePosition(world_map *WorldMap, world_map_position NewDeltaPosition)
 
 	v2s ChunkOffset = RoundV2ToV2S(NewDeltaPosition.Offset_ / WorldMap->ChunkSideInMeters);
 	Result.Offset_ -= ChunkOffset * WorldMap->ChunkSideInMeters;
-	Result.ChunkPos += (v3s)ChunkOffset;
+	Result.ChunkP += (v3s)ChunkOffset;
 
 	Assert(IsCanonical(WorldMap, Result.Offset_));
 	return Result;
 }
 
-struct world_map_diff
-{
-	v3s ChunkDiff;
-	v3 MeterDiff;
-};
-	internal_function world_map_diff
+	internal_function v3
 GetWorldMapPosDifference(world_map *WorldMap, world_map_position A, world_map_position B)
 {
-	world_map_diff Result = {};
+	v3 Result = {};
 
-	Result.ChunkDiff = (v3s)A.ChunkPos - (v3s)B.ChunkPos;
+	v3s ChunkDiff = (v3s)A.ChunkP - (v3s)B.ChunkP;
 
 	v2 InternalDiff = A.Offset_ - B.Offset_;
-	Result.MeterDiff = (v3)Result.ChunkDiff * WorldMap->ChunkSideInMeters + (v3)InternalDiff;
+	Result = (v3)ChunkDiff * WorldMap->ChunkSideInMeters + (v3)InternalDiff;
 
 	return Result;
 }
@@ -186,7 +182,7 @@ AreInSameChunk(world_map* WorldMap, world_map_position* A, world_map_position* B
 	Assert(IsCanonical(WorldMap, A->Offset_));
 	Assert(IsCanonical(WorldMap, B->Offset_));
 
-	b32 Result = (A->ChunkPos == B->ChunkPos);
+	b32 Result = (A->ChunkP == B->ChunkP);
 	return Result;
 }
 
@@ -202,7 +198,7 @@ ChangeEntityLocation(memory_arena* Arena, world_map* WorldMap, u32 LowEntityInde
 	{
 		if(OldP)
 		{
-			world_chunk* OldChunk = GetWorldChunk(WorldMap, OldP->ChunkPos);
+			world_chunk* OldChunk = GetWorldChunk(WorldMap, OldP->ChunkP);
 			Assert(OldChunk);
 
 			entity_block* FirstBlock = OldChunk->Block;
@@ -242,10 +238,10 @@ ChangeEntityLocation(memory_arena* Arena, world_map* WorldMap, u32 LowEntityInde
 		}
 	}
 
-	world_chunk* NewChunk = GetWorldChunk(WorldMap, OldP->ChunkPos, Arena);
-	entity_block* Block = NewChunk->Block;
-
+	world_chunk* NewChunk = GetWorldChunk(WorldMap, NewP->ChunkP, Arena);
 	Assert(NewChunk);
+
+	entity_block* Block = NewChunk->Block;
 	Assert(Block);
 
 	if(Block->EntityIndexCount >= ArrayCount(Block->EntityIndexes))

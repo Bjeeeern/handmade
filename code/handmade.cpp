@@ -68,6 +68,7 @@ struct game_state
 
 	s32 RoomWidthInTiles;
 	s32 RoomHeightInTiles;
+	v3s RoomOrigin;
 
 	//TODO(bjorn): Should we allow split-screen?
 	u32 CameraFollowingPlayerIndex;
@@ -200,10 +201,12 @@ AddPlayer(game_state* GameState)
 
 	Low->WorldP = GameState->CameraPosition;
 	Low->WorldP = Offset(GameState->WorldMap, Low->WorldP, 
-											 GetChunkPositionFromTilePos(GameState->WorldMap, v3s{-2, 1, 0}).Offset_);
+											 GetChunkPosFromAbsTile(GameState->WorldMap, v3s{-2, 1, 0}).Offset_);
 
 	Low->Dim = v2{0.5f, 0.3f} * GameState->WorldMap->TileSideInMeters;
 	Low->Collides = true;
+
+	ChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, LowIndex, 0, &Low->WorldP);
 
 	entity Test = GetEntityByLowIndex(GameState, GameState->CameraFollowingPlayerIndex);
 	if(!Test.Low)
@@ -226,6 +229,8 @@ AddWall(game_state* GameState, world_map_position WorldPos)
 
 	Low->Dim = v2{1, 1} * GameState->WorldMap->TileSideInMeters;
 	Low->Collides = true;
+
+	ChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, LowIndex, 0, &WorldPos);
 
 	return LowIndex;
 }
@@ -283,18 +288,21 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	WorldMap->TileSideInMeters = 1.4f;
 	WorldMap->ChunkSideInMeters = WorldMap->TileSideInMeters * TILES_PER_CHUNK;
 
-	{
-		u32 EntityIndex = AddPlayer(GameState);
-		GameState->PlayerIndexForKeyboard[0] = EntityIndex;
-		MapEntityIntoHigh(GameState, EntityIndex);
-	}
-
 	u32 RandomNumberIndex = 10;
 
 	GameState->RoomWidthInTiles = 17;
 	GameState->RoomHeightInTiles = 9;
+
 	u32 TilesPerWidth = GameState->RoomWidthInTiles;
 	u32 TilesPerHeight = GameState->RoomHeightInTiles;
+
+	GameState->RoomOrigin = (v3s)RoundV2ToV2S((v2)v2u{TilesPerWidth, TilesPerHeight} / 2.0f);
+
+	GameState->CameraPosition = GetChunkPosFromAbsTile(WorldMap, GameState->RoomOrigin);
+	{
+		u32 EntityIndex = AddPlayer(GameState);
+		GameState->PlayerIndexForKeyboard[0] = EntityIndex;
+	}
 
 	u32 ScreenX = 0;
 	u32 ScreenY = 0;
@@ -420,9 +428,8 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 
 				if(TileValue ==  2)
 				{
-					world_map_position WorldPos = GetChunkPositionFromTilePos(WorldMap, AbsTile);
+					world_map_position WorldPos = GetChunkPosFromAbsTile(WorldMap, AbsTile);
 					u32 EntityIndex = AddWall(GameState, WorldPos);
-				  ChangeEntityLocation(&GameState->WorldArena, WorldMap, EntityIndex, 0, &WorldPos);
 				}
 			}
 		}
@@ -617,21 +624,26 @@ MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsT
 		}
 	}
 
-	Entity.Low->WorldP = MapCameraPosToWorldPos(CameraP, WorldMap, Entity.High->P);
+	world_map_position NewWorldP = MapCameraPosToWorldPos(CameraP, WorldMap, Entity.High->P);
+	ChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, 
+											 Entity.High->LowEntityIndex, &Entity.Low->WorldP, &NewWorldP);
+  Entity.Low->WorldP = NewWorldP;
 }
 
 	internal_function world_map_position 
-GetCenterOfRoom(world_map* WorldMap, world_map_position A, 
+GetCenterOfRoom(world_map* WorldMap, v3s AbsTileC, world_map_position A, 
 								s32 RoomWidthInTiles, s32 RoomHeightInTiles)
 {
 	world_map_position Result = {};
 
-	v3s AbsTile = {};
-	AbsTile.X = A.ChunkP.X * TILES_PER_CHUNK + FloorF32ToS32(A.Offset_.X / WorldMap->TileSideInMeters);
-	AbsTile.Y = A.ChunkP.Y * TILES_PER_CHUNK + FloorF32ToS32(A.Offset_.X / WorldMap->TileSideInMeters);
-	AbsTile.Z = A.ChunkP.Z;
+	v3s AbsTileA = GetAbsTileFromChunkPos(WorldMap, A);
+	AbsTileC.Z = AbsTileA.Z;
 
-	Result = GetChunkPositionFromTilePos(WorldMap, AbsTile);
+	v3s Diff = AbsTileA - AbsTileC;
+	Diff.X = (Diff.X / RoomWidthInTiles) * RoomWidthInTiles + FloorF32ToS32(RoomWidthInTiles*0.5f);
+	Diff.Y = (Diff.Y / RoomHeightInTiles) * RoomHeightInTiles + FloorF32ToS32(RoomHeightInTiles*0.5f);
+
+	Result = GetChunkPosFromAbsTile(WorldMap, AbsTileC + Diff);
 
 	return Result;
 }
@@ -802,15 +814,21 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 
 	//
-	// NOTE(bjorn): Update camera/Z-position
+	// NOTE(bjorn): Update camera
 	//
 	entity CameraTarget = GetEntityByLowIndex(GameState, GameState->CameraFollowingPlayerIndex);
 	if(CameraTarget.Low)
 	{
-		world_map_position NewCameraPosition = GetCenterOfRoom(WorldMap, CameraTarget.Low->WorldP,
+#if 0
+		world_map_position NewCameraPosition = GetCenterOfRoom(WorldMap, 
+																													 GameState->RoomOrigin,
+																													 CameraTarget.Low->WorldP,
 																													 GameState->RoomWidthInTiles,
 																													 GameState->RoomHeightInTiles);
 		SetCamera(GameState, NewCameraPosition);
+#else
+		SetCamera(GameState, CameraTarget.Low->WorldP);
+#endif
 	}
 
 	//

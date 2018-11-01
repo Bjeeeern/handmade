@@ -39,23 +39,6 @@ struct world_map_position
 	v2 Offset_;
 };
 
-#define TILES_PER_CHUNK 16
-
-inline world_map_position 
-GetChunkPositionFromTilePos(world_map *WorldMap, v3s AbsTile)
-{
-	world_map_position Result = {};
-
-	Result.ChunkP.X = AbsTile.X / TILES_PER_CHUNK;
-	Result.ChunkP.Y = AbsTile.Y / TILES_PER_CHUNK;
-	Result.ChunkP.Z = AbsTile.Z;
-
-	Result.Offset_.X = (AbsTile.X - Result.ChunkP.X * TILES_PER_CHUNK) * WorldMap->TileSideInMeters;
-	Result.Offset_.Y = (AbsTile.Y - Result.ChunkP.Y * TILES_PER_CHUNK) * WorldMap->TileSideInMeters;
-
-	return Result;
-}
-
   internal_function world_chunk *
 GetWorldChunk(world_map *WorldMap, v3s PotentialChunkP, memory_arena* Arena = 0)
 {
@@ -132,6 +115,8 @@ IsCanonical(world_map *WorldMap, v2 Offset)
 {
 	f32 HalfUnit = WorldMap->ChunkSideInMeters / 2.0f;
 
+	HalfUnit *= 1.00001f;
+
 	b32 Result = ( (Offset.X >= -HalfUnit) &&
 								 (Offset.X <=  HalfUnit) &&
 								 (Offset.Y >= -HalfUnit) &&
@@ -153,6 +138,39 @@ RecanonilizePosition(world_map *WorldMap, world_map_position NewDeltaPosition)
 	Result.ChunkP += (v3s)ChunkOffset;
 
 	Assert(IsCanonical(WorldMap, Result.Offset_));
+	return Result;
+}
+
+#define TILES_PER_CHUNK 16
+
+inline world_map_position 
+GetChunkPosFromAbsTile(world_map *WorldMap, v3s AbsTile)
+{
+	world_map_position Result = {};
+
+	Result.ChunkP.X = (AbsTile.X + TILES_PER_CHUNK/2) / TILES_PER_CHUNK;
+	Result.ChunkP.Y = (AbsTile.Y + TILES_PER_CHUNK/2) / TILES_PER_CHUNK;
+	Result.ChunkP.Z = AbsTile.Z;
+
+	Result.Offset_.X = (AbsTile.X - Result.ChunkP.X * TILES_PER_CHUNK) * WorldMap->TileSideInMeters;
+	Result.Offset_.Y = (AbsTile.Y - Result.ChunkP.Y * TILES_PER_CHUNK) * WorldMap->TileSideInMeters;
+
+	Assert(IsCanonical(WorldMap, Result.Offset_));
+
+	return Result;
+}
+
+inline v3s 
+GetAbsTileFromChunkPos(world_map *WorldMap, world_map_position P)
+{
+	v3s Result = {};
+
+	Result.X = (P.ChunkP.X * TILES_PER_CHUNK + 
+							FloorF32ToS32(P.Offset_.X / WorldMap->TileSideInMeters));
+	Result.Y = (P.ChunkP.Y * TILES_PER_CHUNK + 
+								FloorF32ToS32(P.Offset_.Y / WorldMap->TileSideInMeters));
+	Result.Z = P.ChunkP.Z;
+
 	return Result;
 }
 
@@ -214,8 +232,9 @@ ChangeEntityLocation(memory_arena* Arena, world_map* WorldMap, u32 LowEntityInde
 					{
 						Assert(FirstBlock->EntityIndexCount > 0);
 
-						u32 TopEntityIndex = FirstBlock->EntityIndexes[FirstBlock->EntityIndexCount];
-						FirstBlock->EntityIndexCount--;
+						u32 TopEntityIndex = FirstBlock->EntityIndexes[--FirstBlock->EntityIndexCount];
+
+						Assert(TopEntityIndex);
 
 						Block->EntityIndexes[Index] = TopEntityIndex;
 
@@ -226,11 +245,12 @@ ChangeEntityLocation(memory_arena* Arena, world_map* WorldMap, u32 LowEntityInde
 							WorldMap->FreeBlock = FirstBlock;
 						}
 
-						Block = 0;
-						break;
+						goto IndexInOldChunkFound;
 					}
+					Assert(Block->Next);
 				}
 			}
+IndexInOldChunkFound:;
 		}
 		else
 		{
@@ -259,7 +279,7 @@ ChangeEntityLocation(memory_arena* Arena, world_map* WorldMap, u32 LowEntityInde
 			Block = NewChunk->Block;
 		}
 	}
-	Block->EntityIndexes[++Block->EntityIndexCount] = LowEntityIndex;
+	Block->EntityIndexes[Block->EntityIndexCount++] = LowEntityIndex;
 }
 
 

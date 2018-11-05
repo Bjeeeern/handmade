@@ -36,7 +36,7 @@ struct world_map
 struct world_map_position
 {
 	v3s ChunkP;
-	v2 Offset_;
+	v3 Offset_;
 };
 
   internal_function world_chunk *
@@ -111,7 +111,7 @@ GetWorldChunk(world_map *WorldMap, v3s PotentialChunkP, memory_arena* Arena = 0)
 }
 
 	inline b32
-IsCanonical(world_map *WorldMap, v2 Offset)
+IsCanonical(world_map *WorldMap, v3 Offset)
 {
 	f32 HalfUnit = WorldMap->ChunkSideInMeters / 2.0f;
 
@@ -120,7 +120,9 @@ IsCanonical(world_map *WorldMap, v2 Offset)
 	b32 Result = ( (Offset.X >= -HalfUnit) &&
 								 (Offset.X <=  HalfUnit) &&
 								 (Offset.Y >= -HalfUnit) &&
-								 (Offset.Y <=  HalfUnit) );
+								 (Offset.Y <=  HalfUnit) &&
+								 (Offset.Z >= -HalfUnit) &&
+								 (Offset.Z <=  HalfUnit) );
 
 	return Result;
 }
@@ -133,9 +135,9 @@ RecanonilizePosition(world_map *WorldMap, world_map_position NewDeltaPosition)
 {
 	world_map_position Result = NewDeltaPosition;
 
-	v2s ChunkOffset = RoundV2ToV2S(NewDeltaPosition.Offset_ / WorldMap->ChunkSideInMeters);
+	v3s ChunkOffset = RoundV3ToV3S(NewDeltaPosition.Offset_ / WorldMap->ChunkSideInMeters);
 	Result.Offset_ -= ChunkOffset * WorldMap->ChunkSideInMeters;
-	Result.ChunkP += (v3s)ChunkOffset;
+	Result.ChunkP += ChunkOffset;
 
 	Assert(IsCanonical(WorldMap, Result.Offset_));
 	return Result;
@@ -148,12 +150,9 @@ GetChunkPosFromAbsTile(world_map *WorldMap, v3s AbsTile)
 {
 	world_map_position Result = {};
 
-	Result.ChunkP.X = (AbsTile.X + TILES_PER_CHUNK/2) / TILES_PER_CHUNK;
-	Result.ChunkP.Y = (AbsTile.Y + TILES_PER_CHUNK/2) / TILES_PER_CHUNK;
-	Result.ChunkP.Z = AbsTile.Z;
+	Result.ChunkP = (AbsTile + v3s{1,1,1}*(TILES_PER_CHUNK/2)) / TILES_PER_CHUNK;
 
-	Result.Offset_.X = (AbsTile.X - Result.ChunkP.X * TILES_PER_CHUNK) * WorldMap->TileSideInMeters;
-	Result.Offset_.Y = (AbsTile.Y - Result.ChunkP.Y * TILES_PER_CHUNK) * WorldMap->TileSideInMeters;
+	Result.Offset_ = (AbsTile - Result.ChunkP * TILES_PER_CHUNK) * WorldMap->TileSideInMeters;
 
 	Assert(IsCanonical(WorldMap, Result.Offset_));
 
@@ -181,14 +180,14 @@ GetWorldMapPosDifference(world_map *WorldMap, world_map_position A, world_map_po
 
 	v3s ChunkDiff = (v3s)A.ChunkP - (v3s)B.ChunkP;
 
-	v2 InternalDiff = A.Offset_ - B.Offset_;
+	v3 InternalDiff = A.Offset_ - B.Offset_;
 	Result = (v3)ChunkDiff * WorldMap->ChunkSideInMeters + (v3)InternalDiff;
 
 	return Result;
 }
 
 	inline world_map_position
-Offset(world_map *WorldMap, world_map_position OldPosition, v2 Offset)
+Offset(world_map *WorldMap, world_map_position OldPosition, v3 Offset)
 {
 	OldPosition.Offset_ += Offset;
 	return RecanonilizePosition(WorldMap, OldPosition);
@@ -218,34 +217,36 @@ ChangeEntityLocation(memory_arena* Arena, world_map* WorldMap, u32 LowEntityInde
 		{
 			world_chunk* OldChunk = GetWorldChunk(WorldMap, OldP->ChunkP);
 			Assert(OldChunk);
-
-			entity_block* FirstBlock = OldChunk->Block;
-			for(entity_block* Block = FirstBlock;
-					Block;
-					Block = Block->Next)
+			if(OldChunk)
 			{
-				for(u32 Index = 0;
-						Index < Block->EntityIndexCount;
-						Index++)
+				entity_block* FirstBlock = OldChunk->Block;
+				for(entity_block* Block = FirstBlock;
+						Block;
+						Block = Block->Next)
 				{
-					if(Block->EntityIndexes[Index] == LowEntityIndex)
+					for(u32 Index = 0;
+							Index < Block->EntityIndexCount;
+							Index++)
 					{
-						Assert(FirstBlock->EntityIndexCount > 0);
-
-						u32 TopEntityIndex = FirstBlock->EntityIndexes[--FirstBlock->EntityIndexCount];
-
-						Assert(TopEntityIndex);
-
-						Block->EntityIndexes[Index] = TopEntityIndex;
-
-						if(FirstBlock->EntityIndexCount == 0)
+						if(Block->EntityIndexes[Index] == LowEntityIndex)
 						{
-							OldChunk->Block = FirstBlock->Next;
-							FirstBlock->Next = WorldMap->FreeBlock;
-							WorldMap->FreeBlock = FirstBlock;
-						}
+							Assert(FirstBlock->EntityIndexCount > 0);
 
-						goto IndexInOldChunkFound;
+							u32 TopEntityIndex = FirstBlock->EntityIndexes[--FirstBlock->EntityIndexCount];
+
+							Assert(TopEntityIndex);
+
+							Block->EntityIndexes[Index] = TopEntityIndex;
+
+							if(FirstBlock->EntityIndexCount == 0)
+							{
+								OldChunk->Block = FirstBlock->Next;
+								FirstBlock->Next = WorldMap->FreeBlock;
+								WorldMap->FreeBlock = FirstBlock;
+							}
+
+							goto IndexInOldChunkFound;
+						}
 					}
 					Assert(Block->Next);
 				}

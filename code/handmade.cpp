@@ -23,13 +23,16 @@ enum entity_type
 {
 	EntityType_Player,
 	EntityType_Wall,
+	EntityType_Stair,
 };
 
 struct high_entity
 {
-	v2 P;
-	v2 dP;
+	v3 P;
+	v3 dP;
+
 	b32 IsOnStairs;
+
 	u32 FacingDirection;
 
 	u32 LowEntityIndex;
@@ -40,17 +43,11 @@ struct low_entity
 	entity_type Type;
 
 	world_map_position WorldP;
-	union
-	{
-		v2 Dim;
-		struct
-		{
-			f32 Width;
-			f32 Height;
-		};
-	};
+	v3 Dim;
+
 	b32 Collides;
-	s32 dChunkPosZ;
+
+	f32 dZ;
 
 	u32 HighEntityIndex;
 };
@@ -103,7 +100,7 @@ MapEntityIntoHigh(game_state* GameState, u32 LowIndex)
 			*High = {};
 			High->LowEntityIndex = LowIndex;
 			High->P = GetWorldMapPosDifference(GameState->WorldMap, Low->WorldP, 
-																				GameState->CameraPosition).XY;
+																				GameState->CameraPosition);
 		}
 		else
 		{
@@ -235,6 +232,25 @@ AddWall(game_state* GameState, world_map_position WorldPos)
 	return LowIndex;
 }
 
+	internal_function u32
+AddStair(game_state* GameState, world_map_position WorldPos, f32 dZ)
+{
+	u32 LowIndex = AddEntity(GameState);
+	low_entity* Low = GameState->LowEntities + LowIndex;
+
+	Low->Type = EntityType_Stair;
+
+	Low->WorldP = WorldPos;
+
+	Low->Dim = v3{1, 1, 1} * GameState->WorldMap->TileSideInMeters;
+	Low->Collides = true;
+	Low->dZ = dZ;
+
+	ChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, LowIndex, 0, &WorldPos);
+
+	return LowIndex;
+}
+
 	internal_function void
 InitializeGame(game_memory *Memory, game_state *GameState)
 {
@@ -288,7 +304,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	WorldMap->TileSideInMeters = 1.4f;
 	WorldMap->ChunkSideInMeters = WorldMap->TileSideInMeters * TILES_PER_CHUNK;
 
-	u32 RandomNumberIndex = 10;
+	u32 RandomNumberIndex = 0;
 
 	GameState->RoomWidthInTiles = 17;
 	GameState->RoomHeightInTiles = 9;
@@ -426,10 +442,18 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 					TileValue = StairToBuild;
 				}
 
+				world_map_position WorldPos = GetChunkPosFromAbsTile(WorldMap, AbsTile);
+				if(TileValue == 3)
+				{
+					AddStair(GameState, WorldPos, 1);
+				}
+				if(TileValue == 4)
+				{
+					AddStair(GameState, WorldPos, -1);
+				}
 				if(TileValue ==  2)
 				{
-					world_map_position WorldPos = GetChunkPosFromAbsTile(WorldMap, AbsTile);
-					u32 EntityIndex = AddWall(GameState, WorldPos);
+					AddWall(GameState, WorldPos);
 				}
 			}
 		}
@@ -510,7 +534,7 @@ TestWall(v2 Axis, v2 P0, v2 D0, f32 Wall, v2 MinEdge, v2 MaxEdge, f32* BestTime)
 }
 
 internal_function world_map_position
-MapCameraPosToWorldPos(world_map_position CameraP, world_map* WorldMap, v2 EntityP)
+MapCameraPosToWorldPos(world_map_position CameraP, world_map* WorldMap, v3 EntityP)
 {
 	world_map_position Result = CameraP;
 	Result.Offset_ += EntityP;
@@ -521,13 +545,13 @@ MapCameraPosToWorldPos(world_map_position CameraP, world_map* WorldMap, v2 Entit
 MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsToUpdate, 
 					 world_map* WorldMap, world_map_position CameraP)
 {
-	v2 OldPos = Entity.High->P;
+	v2 OldPos = Entity.High->P.XY;
 
 	v2 ddP = InputDirection * 85.0f;
 	//TODO(casey): ODE here!
-	ddP += -8.5f * Entity.High->dP;
+	ddP += -8.5f * Entity.High->dP.XY;
 
-	v2 D0 = (0.5f * ddP * Square(SecondsToUpdate) + (Entity.High->dP * SecondsToUpdate));
+	v2 D0 = (0.5f * ddP * Square(SecondsToUpdate) + (Entity.High->dP.XY * SecondsToUpdate));
 
 	//
 	// NOTE(bjorn): Collision check after movement
@@ -541,7 +565,8 @@ MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsT
 		v2 WallNormal = {};
 		f32 BestTime = 1.0f;
 		entity HitEntity = {};
-		b32 HitDetected = 0;
+		b32 HitDetected = false;
+		b32 CollidedFromTheInside = false;
 
 		for(u32 CollisionHighEntityIndex = 1;
 				CollisionHighEntityIndex <= GameState->HighEntityCount;
@@ -552,11 +577,11 @@ MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsT
 				 Entity.Low->HighEntityIndex != CollisionHighEntityIndex)
 			{
 
-				v2 BottomLeftEdge = CollisionEntity.High->P - 
-					(CollisionEntity.Low->Dim + Entity.Low->Dim) * 0.5f;
+				v2 BottomLeftEdge = CollisionEntity.High->P.XY - 
+					(CollisionEntity.Low->Dim.XY + Entity.Low->Dim.XY) * 0.5f;
 
-				v2 TopRightEdge = CollisionEntity.High->P + 
-					(CollisionEntity.Low->Dim + Entity.Low->Dim) * 0.5f;
+				v2 TopRightEdge = CollisionEntity.High->P.XY + 
+					(CollisionEntity.Low->Dim.XY + Entity.Low->Dim.XY) * 0.5f;
 
 				b32 RightWallTest = TestWall({1,0}, P0, D0, TopRightEdge.X, 
 																		 BottomLeftEdge, TopRightEdge, &BestTime);
@@ -566,37 +591,51 @@ MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsT
 																	 BottomLeftEdge, TopRightEdge, &BestTime);
 				b32 BottomWallTest = TestWall({0,1}, P0, D0, BottomLeftEdge.Y, 
 																			BottomLeftEdge, TopRightEdge, &BestTime);
-				HitDetected = RightWallTest || LeftWallTest || TopWallTest || BottomWallTest;
+
+				if(RightWallTest || LeftWallTest || TopWallTest || BottomWallTest)
+				{
+					HitDetected = true;
+					HitEntity = CollisionEntity;
+
+					CollidedFromTheInside = IsInRectangle(RectMinMax(BottomLeftEdge, TopRightEdge), P0);
+				}
 
 				if(RightWallTest)  { WallNormal = { 1, 0}; }
 				if(LeftWallTest)   { WallNormal = {-1, 0}; }
 				if(TopWallTest)    { WallNormal = { 0, 1}; }
 				if(BottomWallTest) { WallNormal = { 0,-1}; }
-
-				if(HitDetected)
-				{
-					HitEntity = CollisionEntity;
-					//TODO(bjorn): Why does putting "break;" here break my collission.
-					//break;
-				}
 			}
 		}
 
-		P0 += BestTime * D0;
-		D0 *= (1.0f - BestTime);
-		D0              -= Dot(D0,							WallNormal) * WallNormal;
-		Entity.High->dP -= Dot(Entity.High->dP, WallNormal) * WallNormal;
+		if(BestTime >= 1.0f && !HitDetected) 
+		{ 
+			P0 += D0;
+			break; 
+		}
 
 		if(HitDetected)
 		{
-			Entity.Low->WorldP.ChunkP.Z += HitEntity.Low->dChunkPosZ;
+			if(HitEntity.Low->Type == EntityType_Stair)
+			{
+				P0 += D0;
+				if(!CollidedFromTheInside)
+				{
+					Entity.High->P.Z += HitEntity.Low->dZ;
+				}
+				break; 
+			}
+			else
+			{
+				P0 += BestTime * D0;
+				D0 *= (1.0f - BestTime);
+				D0              -= Dot(D0,							   WallNormal) * WallNormal;
+				Entity.High->dP.XY -= Dot(Entity.High->dP.XY, WallNormal) * WallNormal;
+			}
 		}
-
-		if(BestTime >= 1.0f) { break; }
 	}
 
-	Entity.High->P = P0;
-	Entity.High->dP = (ddP * SecondsToUpdate) + Entity.High->dP;
+	Entity.High->P.XY = P0;
+	Entity.High->dP.XY = (ddP * SecondsToUpdate) + Entity.High->dP.XY;
 
 	if(Entity.High->dP.X != 0.0f && Entity.High->dP.Y != 0.0f)
 	{
@@ -648,20 +687,17 @@ GetCenterOfRoom(world_map* WorldMap, v3s AbsTileC, world_map_position A,
 	return Result;
 }
 
-internal_function v2
+internal_function void
 SetCamera(game_state* GameState, world_map_position NewCameraPosition)
 {
-	v2 Result = {};
-
 	v3 Diff = GetWorldMapPosDifference(GameState->WorldMap, NewCameraPosition, 
 																								GameState->CameraPosition);
 
 	GameState->CameraPosition = NewCameraPosition;
-	Result = Diff.XY;
 
 	world_map* WorldMap = GameState->WorldMap;
 
-	v2 HighFrequencyUpdateDim = v2{3.0f, 2.0f}*WorldMap->ChunkSideInMeters;
+	v2 HighFrequencyUpdateDim = v2{2.0f, 2.0f}*WorldMap->ChunkSideInMeters;
 
 	rectangle2 CameraUpdateBounds = RectCenterDim(v2{0,0}, HighFrequencyUpdateDim);
 
@@ -681,29 +717,25 @@ SetCamera(game_state* GameState, world_map_position NewCameraPosition)
 		if(Low->HighEntityIndex)
 		{
 			high_entity* High = GameState->HighEntities + Low->HighEntityIndex;
-			High->P -= Result;
+			High->P -= Diff;
 
-			if((Low->WorldP.ChunkP.Z != NewCameraPosition.ChunkP.Z) ||
-				 !IsInRectangle(CameraUpdateBounds, High->P))
+			if(!(IsInRectangle(CameraUpdateBounds, High->P.XY) && (Absolute(High->P.Z) <= 0.5f)))
 			{
 				MapEntityIntoLow(GameState, LowEntityIndex);
 			}
 		}
 		else
 		{
-			if(Low->WorldP.ChunkP.Z == NewCameraPosition.ChunkP.Z &&
-				 IsInRectangle(CameraUpdateAbsBounds, Low->WorldP.ChunkP.XY))
+			if(IsInRectangle(CameraUpdateAbsBounds, Low->WorldP.ChunkP.XY))
 			{
-				v3 RelCamP = GetWorldMapPosDifference(WorldMap, Low->WorldP, NewCameraPosition).XY;
-				if(IsInRectangle(CameraUpdateBounds, RelCamP.XY))
+				v3 RelCamP = GetWorldMapPosDifference(WorldMap, Low->WorldP, NewCameraPosition);
+				if(IsInRectangle(CameraUpdateBounds, RelCamP.XY) && (Absolute(RelCamP.Z) <= 0.5f))
 				{
 					MapEntityIntoHigh(GameState, LowEntityIndex);
 				}
 			}
 		}
 	}
-
-	return Result;
 }
 
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
@@ -855,14 +887,30 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		entity Entity = GetEntityByHighIndex(GameState, HighEntityIndex);
 
 		v2 CollisionMarkerPixelDim = 
-			Hadamard(Entity.Low->Dim, {PixelsPerMeter, PixelsPerMeter});
+			Hadamard(Entity.Low->Dim.XY, {PixelsPerMeter, PixelsPerMeter});
 		m22 GameSpaceToScreenSpace = 
 		{PixelsPerMeter, 0             ,
-			0             ,-PixelsPerMeter};
+		 0             ,-PixelsPerMeter};
 
-		v2 EntityCameraPixelDelta = GameSpaceToScreenSpace * Entity.High->P;
+		v2 EntityCameraPixelDelta = GameSpaceToScreenSpace * Entity.High->P.XY;
+		//TODO(bjorn)Add z axis jump.
 		v2 EntityPixelPos = ScreenCenter + EntityCameraPixelDelta;
 
+		if(Entity.Low->Type == EntityType_Stair)
+		{
+			v3 StairColor = {};
+			if(Entity.Low->dZ == 1)
+			{
+				v3 LightGreen = {0.5f, 1, 0.5f};
+				StairColor = LightGreen;
+			}
+			if(Entity.Low->dZ == -1)
+			{
+				v3 LightRed = {1, 0.5f, 0.5f};
+				StairColor = LightRed;
+			}
+			DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), StairColor);
+		}
 		if(Entity.Low->Type == EntityType_Wall)
 		{
 			v3 White = {1, 1, 1};
@@ -872,7 +920,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		{
 			v2 PlayerPixelDim = Hadamard({0.75f, 1.0f}, 
 																	 (v2)v2s{TileSideInPixels, TileSideInPixels});
-
 
 			if(Entity.Low->WorldP.ChunkP.Z == GameState->CameraPosition.ChunkP.Z)
 			{

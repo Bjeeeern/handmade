@@ -283,6 +283,5 @@ IndexInOldChunkFound:;
 	Block->EntityIndexes[Block->EntityIndexCount++] = LowEntityIndex;
 }
 
-
 #define WORLD_MAP_H
 #endif

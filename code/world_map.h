@@ -272,6 +272,7 @@ IndexInOldChunkFound:;
 			NewChunk->Block = WorldMap->FreeBlock;
 			WorldMap->FreeBlock = WorldMap->FreeBlock->Next;
 			NewChunk->Block->Next = Block;
+			Block = NewChunk->Block;
 		}
 		else
 		{

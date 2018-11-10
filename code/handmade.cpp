@@ -22,32 +22,64 @@ enum entity_type
 	EntityType_Player,
 	EntityType_Wall,
 	EntityType_Stair,
+	EntityType_Ground,
+	EntityType_Wheel,
+	EntityType_CarFrame,
+	EntityType_Engine,
 };
 
 struct high_entity
 {
+	u32 LowEntityIndex;
+
 	v3 P;
 	v3 dP;
 
-	b32 IsOnStairs;
-
-	u32 FacingDirection;
-
-	u32 LowEntityIndex;
+	union
+	{
+		struct
+		{
+			b32 IsOnStairs;
+			u32 FacingDirection;
+		} Player;
+	};
 };
 
 struct low_entity
 {
 	entity_type Type;
+	u32 HighEntityIndex;
 
 	world_map_position WorldP;
 	v3 Dim;
 
 	b32 Collides;
 
-	f32 dZ;
-
-	u32 HighEntityIndex;
+	union
+	{
+		struct
+		{
+			f32 dZ;
+		} Stair;
+		struct
+		{
+			u32 Vehicle;
+		} Wheel;
+		struct
+		{
+			u32 RidingVehicle;
+		} Player;
+		struct
+		{
+			u32 Wheels[4];
+			u32 DriverSeat;
+			u32 Engine;
+		} CarFrame;
+		struct
+		{
+			u32 Vehicle;
+		} Engine;
+	};
 };
 
 struct entity
@@ -74,11 +106,12 @@ struct game_state
 
 	u32 HighEntityCount;
 	u32 LowEntityCount;
-	high_entity HighEntities[256];
+	high_entity HighEntities[1024];
 	low_entity LowEntities[100000];
 
 	loaded_bitmap Backdrop;
-	loaded_bitmap Tree;
+	loaded_bitmap Rock;
+	loaded_bitmap Dirt;
 
 	hero_bitmaps HeroBitmaps[4];
 };
@@ -179,6 +212,7 @@ AddEntity(game_state* GameState, entity_type Type, world_map_position WorldPos)
 
 	GameState->LowEntityCount++;
 	Assert(GameState->LowEntityCount < ArrayCount(GameState->LowEntities));
+	Assert(IsCanonical(GameState->WorldMap, WorldPos.Offset_));
 
 	LowIndex = GameState->LowEntityCount;
 	low_entity* Low = GameState->LowEntities + LowIndex;
@@ -214,6 +248,88 @@ AddPlayer(game_state* GameState)
 }
 
 	internal_function u32
+AddCarFrame(game_state* GameState, world_map_position WorldPos)
+{
+	u32 LowIndex = AddEntity(GameState, EntityType_CarFrame, WorldPos);
+	low_entity* Low = GameState->LowEntities + LowIndex;
+
+	Low->Dim = v2{2, 4};
+	Low->Collides = true;
+
+	return LowIndex;
+}
+
+	internal_function u32
+AddEngine(game_state* GameState, world_map_position WorldPos)
+{
+	u32 LowIndex = AddEntity(GameState, EntityType_Engine, WorldPos);
+	low_entity* Low = GameState->LowEntities + LowIndex;
+
+	Low->Dim = v2{1, 0.6f};
+	Low->Collides = true;
+
+	return LowIndex;
+}
+
+	internal_function u32
+AddWheel(game_state* GameState, world_map_position WorldPos)
+{
+	u32 LowIndex = AddEntity(GameState, EntityType_Wheel, WorldPos);
+	low_entity* Low = GameState->LowEntities + LowIndex;
+
+	Low->Dim = v2{0.2f, 0.5f};
+	Low->Collides = true;
+
+	return LowIndex;
+}
+
+internal_function void
+MoveCarPartsToStartingPosition(u32 CarFrameLowIndex)
+{
+}
+
+	internal_function u32
+AddCar(game_state* GameState, world_map_position WorldPos)
+{
+	u32 CarFrameLowIndex = AddCarFrame(GameState, WorldPos);
+	low_entity* CarFrameEntity = GameState->LowEntities + CarFrameLowIndex;
+
+	CarFrameEntity->CarFrame.Engine = AddEngine(GameState, WorldPos);
+
+	CarFrameEntity->CarFrame.Wheels[0] = AddWheel(GameState, WorldPos);
+	CarFrameEntity->CarFrame.Wheels[1] = AddWheel(GameState, WorldPos);
+	CarFrameEntity->CarFrame.Wheels[2] = AddWheel(GameState, WorldPos);
+	CarFrameEntity->CarFrame.Wheels[3] = AddWheel(GameState, WorldPos);
+
+	low_entity* EngineEntity = GameState->LowEntities + CarFrameEntity->CarFrame.Engine;
+	EngineEntity->Engine.Vehicle = CarFrameLowIndex;
+
+	for(s32 WheelIndex = 0;
+			WheelIndex < 4;
+			WheelIndex++)
+	{
+		low_entity* WheelEntity = GameState->LowEntities + CarFrameEntity->CarFrame.Wheels[WheelIndex];
+		WheelEntity->Wheel.Vehicle = CarFrameLowIndex;
+	}
+
+	MoveCarPartsToStartingPosition(CarFrameLowIndex);
+
+	return CarFrameLowIndex;
+}
+
+	internal_function u32
+AddGround(game_state* GameState, world_map_position WorldPos)
+{
+	u32 LowIndex = AddEntity(GameState, EntityType_Ground, WorldPos);
+	low_entity* Low = GameState->LowEntities + LowIndex;
+
+	Low->Dim = v2{1, 1} * GameState->WorldMap->TileSideInMeters;
+	Low->Collides = false;
+
+	return LowIndex;
+}
+
+	internal_function u32
 AddWall(game_state* GameState, world_map_position WorldPos)
 {
 	u32 LowIndex = AddEntity(GameState, EntityType_Wall, WorldPos);
@@ -233,7 +349,7 @@ AddStair(game_state* GameState, world_map_position WorldPos, f32 dZ)
 
 	Low->Dim = v3{1, 1, 1} * GameState->WorldMap->TileSideInMeters;
 	Low->Collides = true;
-	Low->dZ = dZ;
+	Low->Stair.dZ = dZ;
 
 	return LowIndex;
 }
@@ -244,9 +360,13 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	GameState->Backdrop = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
 																		 "data/test/test_background.bmp");
 
-	GameState->Tree = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
-																		 "data/test2/tree00.bmp");
-	GameState->Tree.Alignment = {40, 70};
+	GameState->Rock = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+																		 "data/test2/rock00.bmp");
+	GameState->Rock.Alignment = {35, 41};
+
+	GameState->Dirt = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+																		 "data/test2/ground00.bmp");
+	GameState->Dirt.Alignment = {133, 56};
 
 	hero_bitmaps Hero = {};
 	Hero.Head = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
@@ -442,6 +562,14 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 				}
 
 				world_map_position WorldPos = GetChunkPosFromAbsTile(WorldMap, AbsTile);
+				if(TileValue ==  1)
+				{
+					AddGround(GameState, WorldPos);
+				}
+				if(TileValue ==  2)
+				{
+					AddWall(GameState, WorldPos);
+				}
 				if(TileValue == 3)
 				{
 					AddStair(GameState, WorldPos, 1);
@@ -449,10 +577,6 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 				if(TileValue == 4)
 				{
 					AddStair(GameState, WorldPos, -1);
-				}
-				if(TileValue ==  2)
-				{
-					AddWall(GameState, WorldPos);
 				}
 			}
 		}
@@ -619,7 +743,7 @@ MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsT
 				P0 += D0;
 				if(!CollidedFromTheInside)
 				{
-					Entity.High->P.Z += HitEntity.Low->dZ;
+					Entity.High->P.Z += HitEntity.Low->Stair.dZ;
 				}
 				break; 
 			}
@@ -642,22 +766,22 @@ MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsT
 		{
 			if(Entity.High->dP.X > 0)
 			{
-				Entity.High->FacingDirection = 3;
+				Entity.High->Player.FacingDirection = 3;
 			}
 			else
 			{
-				Entity.High->FacingDirection = 1;
+				Entity.High->Player.FacingDirection = 1;
 			}
 		}
 		else
 		{
 			if(Entity.High->dP.Y > 0)
 			{
-				Entity.High->FacingDirection = 2;
+				Entity.High->Player.FacingDirection = 2;
 			}
 			else
 			{
-				Entity.High->FacingDirection = 0;
+				Entity.High->Player.FacingDirection = 0;
 			}
 		}
 	}
@@ -941,12 +1065,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		if(Entity.Low->Type == EntityType_Stair)
 		{
 			v3 StairColor = {};
-			if(Entity.Low->dZ == 1)
+			if(Entity.Low->Stair.dZ == 1)
 			{
 				v3 LightGreen = {0.5f, 1, 0.5f};
 				StairColor = LightGreen;
 			}
-			if(Entity.Low->dZ == -1)
+			if(Entity.Low->Stair.dZ == -1)
 			{
 				v3 LightRed = {1, 0.5f, 0.5f};
 				StairColor = LightRed;
@@ -959,8 +1083,17 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			v3 LightYellow = {0.5f, 0.5f, 0.0f};
 			DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim * 0.9f), LightYellow);
 #endif
-			DrawBitmap(Buffer, &GameState->Tree, EntityPixelPos - GameState->Tree.Alignment, 
-								 (v2)GameState->Tree.Dim);
+			DrawBitmap(Buffer, &GameState->Rock, EntityPixelPos - GameState->Rock.Alignment, 
+								 (v2)GameState->Rock.Dim);
+		}
+		if(Entity.Low->Type == EntityType_Ground)
+		{
+			v3 LightBrown = {0.55f, 0.45f, 0.33f};
+			DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim * 0.9f), LightBrown);
+#if 0
+			DrawBitmap(Buffer, &GameState->Dirt, EntityPixelPos - GameState->Dirt.Alignment, 
+								 (v2)GameState->Dirt.Dim * 1.2f);
+#endif
 		}
 		if(Entity.Low->Type == EntityType_Player)
 		{
@@ -972,7 +1105,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				v3 Yellow = {1.0f, 1.0f, 0.0f};
 				DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), Yellow);
 
-				hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity.High->FacingDirection]);
+				hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity.High->Player.FacingDirection]);
 
 				DrawBitmap(Buffer, &Hero->Torso, EntityPixelPos - Hero->Torso.Alignment, 
 									 (v2)Hero->Torso.Dim);

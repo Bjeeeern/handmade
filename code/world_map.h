@@ -3,8 +3,6 @@
 #include "math.h"
 #include "platform.h"
 
-#define WORLD_CHUNK_SAFETY_MARGIN 
-
 struct entity_block
 {
 	u32 EntityIndexCount;
@@ -44,12 +42,12 @@ GetWorldChunk(world_map *WorldMap, v3s PotentialChunkP, memory_arena* Arena = 0)
 {
   world_chunk *WorldChunk = 0;
 
-	Assert(PotentialChunkP.X <  WorldMap->ChunkSafetyMargin &&
-				 PotentialChunkP.Y <  WorldMap->ChunkSafetyMargin &&
-				 PotentialChunkP.Z <  WorldMap->ChunkSafetyMargin &&
-				 PotentialChunkP.X > -WorldMap->ChunkSafetyMargin &&
-				 PotentialChunkP.Y > -WorldMap->ChunkSafetyMargin &&
-				 PotentialChunkP.Z > -WorldMap->ChunkSafetyMargin);
+	Assert(PotentialChunkP.X < (max_s32 - WorldMap->ChunkSafetyMargin) &&
+				 PotentialChunkP.Y < (max_s32 - WorldMap->ChunkSafetyMargin) &&
+				 PotentialChunkP.Z < (max_s32 - WorldMap->ChunkSafetyMargin) &&
+				 PotentialChunkP.X > (min_s32 + WorldMap->ChunkSafetyMargin) &&
+				 PotentialChunkP.Y > (min_s32 + WorldMap->ChunkSafetyMargin) &&
+				 PotentialChunkP.Z > (min_s32 + WorldMap->ChunkSafetyMargin));
 
 	s32 HashValue = 19 * PotentialChunkP.X + 7 * PotentialChunkP.Y + 3 * PotentialChunkP.Z;
 	s32 HashSlot = HashValue & (ArrayCount(WorldMap->HashMap) - 1);
@@ -77,6 +75,11 @@ GetWorldChunk(world_map *WorldMap, v3s PotentialChunkP, memory_arena* Arena = 0)
 				WorldChunk = NewChunk;
 
 				SlotFoundOrCreated = true;
+				break;
+			}
+			else
+			{
+				//TODO(bjorn): Is it ok to reach this code-path or is it a bug?
 				break;
 			}
 		}
@@ -187,7 +190,7 @@ GetWorldMapPosDifference(world_map *WorldMap, world_map_position A, world_map_po
 }
 
 	inline world_map_position
-Offset(world_map *WorldMap, world_map_position OldPosition, v3 Offset)
+OffsetWorldPos(world_map *WorldMap, world_map_position OldPosition, v3 Offset)
 {
 	OldPosition.Offset_ += Offset;
 	return RecanonilizePosition(WorldMap, OldPosition);

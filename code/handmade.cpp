@@ -5,6 +5,7 @@
 #include "random.h"
 #include "renderer.h"
 #include "resource.h"
+#include "entity.h"
 
 //
 // NOTE(bjorn): These structs only have a meaning within the game.
@@ -15,77 +16,6 @@ struct hero_bitmaps
 	loaded_bitmap Head;
 	loaded_bitmap Cape;
 	loaded_bitmap Torso;
-};
-
-enum entity_type
-{
-	EntityType_Player,
-	EntityType_Wall,
-	EntityType_Stair,
-	EntityType_Ground,
-	EntityType_Wheel,
-	EntityType_CarFrame,
-	EntityType_Engine,
-};
-
-struct high_entity
-{
-	u32 LowEntityIndex;
-
-	v3 P;
-	v3 dP;
-
-	union
-	{
-		struct
-		{
-			b32 IsOnStairs;
-			u32 FacingDirection;
-		} Player;
-	};
-};
-
-struct low_entity
-{
-	entity_type Type;
-	u32 HighEntityIndex;
-
-	world_map_position WorldP;
-	v3 Dim;
-
-	b32 Collides;
-
-	union
-	{
-		struct
-		{
-			f32 dZ;
-		} Stair;
-		struct
-		{
-			u32 Vehicle;
-		} Wheel;
-		struct
-		{
-			u32 RidingVehicle;
-		} Player;
-		struct
-		{
-			u32 Wheels[4];
-			u32 DriverSeat;
-			u32 Engine;
-		} CarFrame;
-		struct
-		{
-			u32 Vehicle;
-		} Engine;
-	};
-};
-
-struct entity
-{
-	high_entity* High;
-	low_entity* Low;
 };
 
 struct game_state
@@ -148,7 +78,7 @@ MapEntityIntoLow(game_state* GameState, u32 LowIndex)
 	if(HighIndex)
 	{
 		high_entity* High = GameState->HighEntities + HighIndex;
-		Low->WorldP = Offset(GameState->WorldMap, GameState->CameraP, High->P);
+		Low->WorldP = OffsetWorldPos(GameState->WorldMap, GameState->CameraP, High->P);
 		Low->HighEntityIndex = 0;
 
 		if(HighIndex != GameState->HighEntityCount)
@@ -170,6 +100,7 @@ GetEntityByLowIndex(game_state *GameState, u32 LowEntityIndex)
 
 	if(0 < LowEntityIndex && LowEntityIndex <= GameState->LowEntityCount)
 	{
+		Result.LowEntityIndex = LowEntityIndex;
 		Result.Low = GameState->LowEntities + LowEntityIndex;
 		if(Result.Low->HighEntityIndex)
 		{
@@ -196,6 +127,7 @@ GetEntityByHighIndex(game_state *GameState, u32 HighEntityIndex)
 
 		Assert(Result.High->LowEntityIndex);
 		Result.Low = GameState->LowEntities + Result.High->LowEntityIndex;
+		Result.LowEntityIndex = Result.High->LowEntityIndex;
 	}
 	else
 	{
@@ -228,8 +160,8 @@ AddEntity(game_state* GameState, entity_type Type, world_map_position WorldPos)
 	internal_function u32
 AddPlayer(game_state* GameState)
 {
-	world_map_position InitP = Offset(GameState->WorldMap, GameState->CameraP, 
-																		GetChunkPosFromAbsTile(GameState->WorldMap, 
+	world_map_position InitP = OffsetWorldPos(GameState->WorldMap, GameState->CameraP, 
+																						GetChunkPosFromAbsTile(GameState->WorldMap, 
 																													 v3s{-2, 1, 0}).Offset_);
 
 	u32 LowIndex = AddEntity(GameState, EntityType_Player, InitP);
@@ -253,7 +185,7 @@ AddCarFrame(game_state* GameState, world_map_position WorldPos)
 	u32 LowIndex = AddEntity(GameState, EntityType_CarFrame, WorldPos);
 	low_entity* Low = GameState->LowEntities + LowIndex;
 
-	Low->Dim = v2{2, 4};
+	Low->Dim = v2{4, 6};
 	Low->Collides = true;
 
 	return LowIndex;
@@ -265,7 +197,7 @@ AddEngine(game_state* GameState, world_map_position WorldPos)
 	u32 LowIndex = AddEntity(GameState, EntityType_Engine, WorldPos);
 	low_entity* Low = GameState->LowEntities + LowIndex;
 
-	Low->Dim = v2{1, 0.6f};
+	Low->Dim = v2{3, 2};
 	Low->Collides = true;
 
 	return LowIndex;
@@ -277,42 +209,74 @@ AddWheel(game_state* GameState, world_map_position WorldPos)
 	u32 LowIndex = AddEntity(GameState, EntityType_Wheel, WorldPos);
 	low_entity* Low = GameState->LowEntities + LowIndex;
 
-	Low->Dim = v2{0.2f, 0.5f};
+	Low->Dim = v2{0.6f, 1.5f};
 	Low->Collides = true;
 
 	return LowIndex;
 }
 
 internal_function void
-MoveCarPartsToStartingPosition(u32 CarFrameLowIndex)
+MoveCarPartsToStartingPosition(game_state* GameState, u32 CarFrameLowIndex)
 {
+	entity CarFrameEntity = GetEntityByLowIndex(GameState, CarFrameLowIndex);
+	if(CarFrameEntity.Low)
+	{
+		entity EngineEntity = GetEntityByLowIndex(GameState, CarFrameEntity.Low->CarFrame.Engine);
+		if(EngineEntity.Low)
+		{
+			OffsetAndChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, 
+																		EngineEntity, CarFrameEntity.Low->WorldP, 
+																		v3{0, 1.5f, 0});
+		}
+
+		for(s32 WheelIndex = 0;
+				WheelIndex < 4;
+				WheelIndex++)
+		{
+			entity WheelEntity = 
+				GetEntityByLowIndex(GameState, CarFrameEntity.Low->CarFrame.Wheels[WheelIndex]);
+			if(WheelEntity.Low)
+			{
+				f32 dX = ((WheelIndex % 2) - 0.5f) * 2.0f;
+				f32 dY = ((WheelIndex / 2) - 0.5f) * 2.0f;
+				v2 D = v2{dX, dY};
+
+				v2 O = (Hadamard(D, CarFrameEntity.Low->Dim.XY * 0.5f) - 
+								Hadamard(D, WheelEntity.Low->Dim.XY * 0.5f));
+
+				OffsetAndChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, 
+																			WheelEntity, CarFrameEntity.Low->WorldP, (v3)O);
+			}
+		}
+	}
 }
 
 	internal_function u32
 AddCar(game_state* GameState, world_map_position WorldPos)
 {
 	u32 CarFrameLowIndex = AddCarFrame(GameState, WorldPos);
-	low_entity* CarFrameEntity = GameState->LowEntities + CarFrameLowIndex;
+	entity CarFrameEntity = GetEntityByLowIndex(GameState, CarFrameLowIndex);
 
-	CarFrameEntity->CarFrame.Engine = AddEngine(GameState, WorldPos);
+	CarFrameEntity.Low->CarFrame.Engine = AddEngine(GameState, WorldPos);
 
-	CarFrameEntity->CarFrame.Wheels[0] = AddWheel(GameState, WorldPos);
-	CarFrameEntity->CarFrame.Wheels[1] = AddWheel(GameState, WorldPos);
-	CarFrameEntity->CarFrame.Wheels[2] = AddWheel(GameState, WorldPos);
-	CarFrameEntity->CarFrame.Wheels[3] = AddWheel(GameState, WorldPos);
+	CarFrameEntity.Low->CarFrame.Wheels[0] = AddWheel(GameState, WorldPos);
+	CarFrameEntity.Low->CarFrame.Wheels[1] = AddWheel(GameState, WorldPos);
+	CarFrameEntity.Low->CarFrame.Wheels[2] = AddWheel(GameState, WorldPos);
+	CarFrameEntity.Low->CarFrame.Wheels[3] = AddWheel(GameState, WorldPos);
 
-	low_entity* EngineEntity = GameState->LowEntities + CarFrameEntity->CarFrame.Engine;
+	low_entity* EngineEntity = GameState->LowEntities + CarFrameEntity.Low->CarFrame.Engine;
 	EngineEntity->Engine.Vehicle = CarFrameLowIndex;
 
 	for(s32 WheelIndex = 0;
 			WheelIndex < 4;
 			WheelIndex++)
 	{
-		low_entity* WheelEntity = GameState->LowEntities + CarFrameEntity->CarFrame.Wheels[WheelIndex];
+		low_entity* WheelEntity = (GameState->LowEntities + 
+															 CarFrameEntity.Low->CarFrame.Wheels[WheelIndex]);
 		WheelEntity->Wheel.Vehicle = CarFrameLowIndex;
 	}
 
-	MoveCarPartsToStartingPosition(CarFrameLowIndex);
+	MoveCarPartsToStartingPosition(GameState, CarFrameLowIndex);
 
 	return CarFrameLowIndex;
 }
@@ -437,7 +401,12 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	{
 		u32 EntityIndex = AddPlayer(GameState);
 		GameState->PlayerIndexForKeyboard[0] = EntityIndex;
+		AddCar(GameState, OffsetWorldPos(GameState->WorldMap, 
+																		 GetEntityByLowIndex(GameState, EntityIndex).Low->WorldP, 
+																		 {3.0f, 0, 0})
+					 );
 	}
+
 
 	u32 ScreenX = 0;
 	u32 ScreenY = 0;
@@ -456,7 +425,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 
 
 	for(u32 ScreenIndex = 0;
-			ScreenIndex < 50;
+			ScreenIndex < 500;
 			++ScreenIndex)
 	{
 		//TODO(bjorn): Implement a random number generator!
@@ -656,14 +625,6 @@ TestWall(v2 Axis, v2 P0, v2 D0, f32 Wall, v2 MinEdge, v2 MaxEdge, f32* BestTime)
 	return Hit;
 }
 
-internal_function world_map_position
-MapCameraPosToWorldPos(world_map_position CameraP, world_map* WorldMap, v3 EntityP)
-{
-	world_map_position Result = CameraP;
-	Result.Offset_ += EntityP;
-	return RecanonilizePosition(WorldMap, Result);
-}
-
 	internal_function void
 MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsToUpdate, 
 					 world_map* WorldMap, world_map_position CameraP)
@@ -786,10 +747,8 @@ MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsT
 		}
 	}
 
-	world_map_position NewWorldP = MapCameraPosToWorldPos(CameraP, WorldMap, Entity.High->P);
-	ChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, 
-											 Entity.High->LowEntityIndex, &Entity.Low->WorldP, &NewWorldP);
-  Entity.Low->WorldP = NewWorldP;
+	OffsetAndChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, 
+																Entity, CameraP, Entity.High->P);
 }
 
 	internal_function world_map_position 
@@ -841,10 +800,8 @@ SetCamera(game_state* GameState, world_map_position NewCameraP)
 
 	rectangle3 CameraUpdateBounds = RectCenterDim(v3{0,0,0}, HighFrequencyUpdateDim);
 
-	world_map_position MinWorldP = MapCameraPosToWorldPos(NewCameraP, WorldMap, 
-																												CameraUpdateBounds.Min);
-	world_map_position MaxWorldP = MapCameraPosToWorldPos(NewCameraP, WorldMap, 
-																												CameraUpdateBounds.Max);
+	world_map_position MinWorldP = OffsetWorldPos(WorldMap, NewCameraP, CameraUpdateBounds.Min);
+	world_map_position MaxWorldP = OffsetWorldPos(WorldMap, NewCameraP, CameraUpdateBounds.Max);
 
 	rectangle3s CameraUpdateAbsBounds = RectMinMax(MinWorldP.ChunkP, MaxWorldP.ChunkP);
 
@@ -1089,7 +1046,21 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		if(Entity.Low->Type == EntityType_Ground)
 		{
 			v3 LightBrown = {0.55f, 0.45f, 0.33f};
-			DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim * 0.9f), LightBrown);
+			DrawRectangle(Buffer, 
+										RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim * 0.9f), LightBrown);
+#if 0
+			DrawBitmap(Buffer, &GameState->Dirt, EntityPixelPos - GameState->Dirt.Alignment, 
+								 (v2)GameState->Dirt.Dim * 1.2f);
+#endif
+		}
+		if(Entity.Low->Type == EntityType_Wheel ||
+			 Entity.Low->Type == EntityType_CarFrame ||
+			 Entity.Low->Type == EntityType_Engine)
+		{
+			v3 Color = {1, 1, 1};
+			if(Entity.Low->Type == EntityType_Engine) { Color = {0, 1, 0}; }
+			if(Entity.Low->Type == EntityType_Wheel) { Color = {0.2f, 0.2f, 0.2f}; }
+			DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), Color);
 #if 0
 			DrawBitmap(Buffer, &GameState->Dirt, EntityPixelPos - GameState->Dirt.Alignment, 
 								 (v2)GameState->Dirt.Dim * 1.2f);

@@ -7,10 +7,6 @@
 #include "resource.h"
 #include "entity.h"
 
-//
-// NOTE(bjorn): These structs only have a meaning within the game.
-// Pi32
-
 struct hero_bitmaps
 {
 	loaded_bitmap Head;
@@ -34,10 +30,7 @@ struct game_state
 	u32 PlayerIndexForController[ArrayCount(((game_input*)0)->Keyboards)];
 	u32 PlayerIndexForKeyboard[ArrayCount(((game_input*)0)->Controllers)];
 
-	u32 HighEntityCount;
-	u32 LowEntityCount;
-	high_entity HighEntities[1024];
-	low_entity LowEntities[100000];
+	entities Entities;
 
 	loaded_bitmap Backdrop;
 	loaded_bitmap Rock;
@@ -46,187 +39,76 @@ struct game_state
 	hero_bitmaps HeroBitmaps[4];
 };
 
-internal_function void
-MapEntityIntoHigh(game_state* GameState, u32 LowIndex)
-{
-	low_entity* Low = GameState->LowEntities + LowIndex;
-	if(!Low->HighEntityIndex)
-	{
-		if(GameState->HighEntityCount < (ArrayCount(GameState->HighEntities) - 1))
-		{
-			u32 HighIndex = ++GameState->HighEntityCount;
-			Low->HighEntityIndex = HighIndex;
-
-			high_entity* High = GameState->HighEntities + HighIndex;
-
-			*High = {};
-			High->LowEntityIndex = LowIndex;
-			High->P = GetWorldMapPosDifference(GameState->WorldMap, Low->WorldP, GameState->CameraP);
-		}
-		else
-		{
-			InvalidCodePath;
-		}
-	}
-}
-
-	internal_function void
-MapEntityIntoLow(game_state* GameState, u32 LowIndex)
-{
-	low_entity* Low = GameState->LowEntities + LowIndex;
-	u32 HighIndex = Low->HighEntityIndex;
-	if(HighIndex)
-	{
-		high_entity* High = GameState->HighEntities + HighIndex;
-		Low->WorldP = OffsetWorldPos(GameState->WorldMap, GameState->CameraP, High->P);
-		Low->HighEntityIndex = 0;
-
-		if(HighIndex != GameState->HighEntityCount)
-		{
-			high_entity* HighAtEnd = GameState->HighEntities + GameState->HighEntityCount;
-			*High = *HighAtEnd;
-
-			low_entity* AffectedLow = GameState->LowEntities + HighAtEnd->LowEntityIndex;
-			AffectedLow->HighEntityIndex = HighIndex;
-		}
-		GameState->HighEntityCount -= 1;
-	}
-}
-
-	inline entity
-GetEntityByLowIndex(game_state *GameState, u32 LowEntityIndex)
-{
-	entity Result = {};
-
-	if(0 < LowEntityIndex && LowEntityIndex <= GameState->LowEntityCount)
-	{
-		Result.LowEntityIndex = LowEntityIndex;
-		Result.Low = GameState->LowEntities + LowEntityIndex;
-		if(Result.Low->HighEntityIndex)
-		{
-			Result.High = GameState->HighEntities + Result.Low->HighEntityIndex;
-		}
-	}
-	else
-	{
-		// NOTE(bjorn): I often use this to check whether an index is valid or not.
-		//InvalidCodePath;
-	}
-
-	return Result;
-}
-
-	inline entity
-GetEntityByHighIndex(game_state *GameState, u32 HighEntityIndex)
-{
-	entity Result = {};
-
-	if(0 < HighEntityIndex && HighEntityIndex <= GameState->HighEntityCount)
-	{
-		Result.High = GameState->HighEntities + HighEntityIndex;
-
-		Assert(Result.High->LowEntityIndex);
-		Result.Low = GameState->LowEntities + Result.High->LowEntityIndex;
-		Result.LowEntityIndex = Result.High->LowEntityIndex;
-	}
-	else
-	{
-		InvalidCodePath;
-	}
-
-	return Result;
-}
-
-	internal_function u32
-AddEntity(game_state* GameState, entity_type Type, world_map_position WorldPos)
-{
-	u32 LowIndex = {};
-
-	GameState->LowEntityCount++;
-	Assert(GameState->LowEntityCount < ArrayCount(GameState->LowEntities));
-	Assert(IsCanonical(GameState->WorldMap, WorldPos.Offset_));
-
-	LowIndex = GameState->LowEntityCount;
-	low_entity* Low = GameState->LowEntities + LowIndex;
-	*Low = {};
-	Low->Type = Type;
-	Low->WorldP = WorldPos;
-
-	ChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, LowIndex, 0, &Low->WorldP);
-
-	return LowIndex;
-}
-
-	internal_function u32
+	internal_function entity
 AddPlayer(game_state* GameState)
 {
 	world_map_position InitP = OffsetWorldPos(GameState->WorldMap, GameState->CameraP, 
 																						GetChunkPosFromAbsTile(GameState->WorldMap, 
 																													 v3s{-2, 1, 0}).Offset_);
 
-	u32 LowIndex = AddEntity(GameState, EntityType_Player, InitP);
-	low_entity* Low = GameState->LowEntities + LowIndex;
+	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
+													 EntityType_Player, InitP);
 
-	Low->Dim = v2{0.5f, 0.3f} * GameState->WorldMap->TileSideInMeters;
-	Low->Collides = true;
+	Entity.Low->Dim = v2{0.5f, 0.3f} * GameState->WorldMap->TileSideInMeters;
+	Entity.Low->Collides = true;
 
-	entity Test = GetEntityByLowIndex(GameState, GameState->CameraFollowingPlayerIndex);
+	entity Test = GetEntityByLowIndex(&GameState->Entities, GameState->CameraFollowingPlayerIndex);
 	if(!Test.Low)
 	{
-		GameState->CameraFollowingPlayerIndex = LowIndex;
+		GameState->CameraFollowingPlayerIndex = Entity.LowEntityIndex;
 	}
 
-	return LowIndex;
+	return Entity;
 }
 
-	internal_function u32
+	internal_function entity
 AddCarFrame(game_state* GameState, world_map_position WorldPos)
 {
-	u32 LowIndex = AddEntity(GameState, EntityType_CarFrame, WorldPos);
-	low_entity* Low = GameState->LowEntities + LowIndex;
+	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
+														EntityType_CarFrame, WorldPos);
 
-	Low->Dim = v2{4, 6};
-	Low->Collides = true;
+	Entity.Low->Dim = v2{4, 6};
+	Entity.Low->Collides = true;
 
-	return LowIndex;
+	return Entity;
 }
 
-	internal_function u32
+	internal_function entity
 AddEngine(game_state* GameState, world_map_position WorldPos)
 {
-	u32 LowIndex = AddEntity(GameState, EntityType_Engine, WorldPos);
-	low_entity* Low = GameState->LowEntities + LowIndex;
+	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
+													 	EntityType_Engine, WorldPos);
 
-	Low->Dim = v2{3, 2};
-	Low->Collides = true;
+	Entity.Low->Dim = v2{3, 2};
 
-	return LowIndex;
+	return Entity;
 }
 
-	internal_function u32
+	internal_function entity
 AddWheel(game_state* GameState, world_map_position WorldPos)
 {
-	u32 LowIndex = AddEntity(GameState, EntityType_Wheel, WorldPos);
-	low_entity* Low = GameState->LowEntities + LowIndex;
+	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
+													 	EntityType_Wheel, WorldPos);
 
-	Low->Dim = v2{0.6f, 1.5f};
-	Low->Collides = true;
+	Entity.Low->Dim = v2{0.6f, 1.5f};
 
-	return LowIndex;
+	return Entity;
 }
 
 internal_function void
-MoveCarPartsToStartingPosition(game_state* GameState, u32 CarFrameLowIndex)
+MoveCarPartsToStartingPosition(memory_arena* WorldArena, world_map* WorldMap, entities* Entities,
+															 u32 CarFrameLowIndex)
 {
-	entity CarFrameEntity = GetEntityByLowIndex(GameState, CarFrameLowIndex);
+	Assert(CarFrameLowIndex);
+	entity CarFrameEntity = GetEntityByLowIndex(Entities, CarFrameLowIndex);
+	Assert(CarFrameEntity.Low);
 	if(CarFrameEntity.Low)
 	{
-		entity EngineEntity = GetEntityByLowIndex(GameState, CarFrameEntity.Low->CarFrame.Engine);
+		entity EngineEntity = GetEntityByLowIndex(Entities, CarFrameEntity.Low->CarFrame.Engine);
 		if(EngineEntity.Low)
 		{
-			OffsetAndChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, 
-																		EngineEntity, CarFrameEntity.Low->WorldP, 
-																		v3{0, 1.5f, 0});
+			OffsetAndChangeEntityLocation(WorldArena, WorldMap, EngineEntity, 
+																		CarFrameEntity.Low->WorldP, v3{0, 1.5f, 0});
 		}
 
 		for(s32 WheelIndex = 0;
@@ -234,7 +116,7 @@ MoveCarPartsToStartingPosition(game_state* GameState, u32 CarFrameLowIndex)
 				WheelIndex++)
 		{
 			entity WheelEntity = 
-				GetEntityByLowIndex(GameState, CarFrameEntity.Low->CarFrame.Wheels[WheelIndex]);
+				GetEntityByLowIndex(Entities, CarFrameEntity.Low->CarFrame.Wheels[WheelIndex]);
 			if(WheelEntity.Low)
 			{
 				f32 dX = ((WheelIndex % 2) - 0.5f) * 2.0f;
@@ -244,78 +126,72 @@ MoveCarPartsToStartingPosition(game_state* GameState, u32 CarFrameLowIndex)
 				v2 O = (Hadamard(D, CarFrameEntity.Low->Dim.XY * 0.5f) - 
 								Hadamard(D, WheelEntity.Low->Dim.XY * 0.5f));
 
-				OffsetAndChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, 
-																			WheelEntity, CarFrameEntity.Low->WorldP, (v3)O);
+				OffsetAndChangeEntityLocation(WorldArena, WorldMap, WheelEntity, 
+																			CarFrameEntity.Low->WorldP, (v3)O);
 			}
 		}
 	}
 }
 
-	internal_function u32
+	internal_function entity
 AddCar(game_state* GameState, world_map_position WorldPos)
 {
-	u32 CarFrameLowIndex = AddCarFrame(GameState, WorldPos);
-	entity CarFrameEntity = GetEntityByLowIndex(GameState, CarFrameLowIndex);
+	entity CarFrameEntity = AddCarFrame(GameState, WorldPos);
 
-	CarFrameEntity.Low->CarFrame.Engine = AddEngine(GameState, WorldPos);
-
-	CarFrameEntity.Low->CarFrame.Wheels[0] = AddWheel(GameState, WorldPos);
-	CarFrameEntity.Low->CarFrame.Wheels[1] = AddWheel(GameState, WorldPos);
-	CarFrameEntity.Low->CarFrame.Wheels[2] = AddWheel(GameState, WorldPos);
-	CarFrameEntity.Low->CarFrame.Wheels[3] = AddWheel(GameState, WorldPos);
-
-	low_entity* EngineEntity = GameState->LowEntities + CarFrameEntity.Low->CarFrame.Engine;
-	EngineEntity->Engine.Vehicle = CarFrameLowIndex;
+	entity EngineEntity = AddEngine(GameState, WorldPos);
+	CarFrameEntity.Low->CarFrame.Engine = EngineEntity.LowEntityIndex;
+	EngineEntity.Low->Engine.Vehicle = CarFrameEntity.LowEntityIndex;
 
 	for(s32 WheelIndex = 0;
 			WheelIndex < 4;
 			WheelIndex++)
 	{
-		low_entity* WheelEntity = (GameState->LowEntities + 
-															 CarFrameEntity.Low->CarFrame.Wheels[WheelIndex]);
-		WheelEntity->Wheel.Vehicle = CarFrameLowIndex;
+    entity WheelEntity = AddWheel(GameState, WorldPos);
+		CarFrameEntity.Low->CarFrame.Wheels[WheelIndex] = WheelEntity.LowEntityIndex;
+		WheelEntity.Low->Wheel.Vehicle = CarFrameEntity.LowEntityIndex;
 	}
 
-	MoveCarPartsToStartingPosition(GameState, CarFrameLowIndex);
+	MoveCarPartsToStartingPosition(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
+																 CarFrameEntity.LowEntityIndex);
 
-	return CarFrameLowIndex;
+	return CarFrameEntity;
 }
 
-	internal_function u32
+	internal_function entity
 AddGround(game_state* GameState, world_map_position WorldPos)
 {
-	u32 LowIndex = AddEntity(GameState, EntityType_Ground, WorldPos);
-	low_entity* Low = GameState->LowEntities + LowIndex;
+	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
+													 EntityType_Ground, WorldPos);
 
-	Low->Dim = v2{1, 1} * GameState->WorldMap->TileSideInMeters;
-	Low->Collides = false;
+	Entity.Low->Dim = v2{1, 1} * GameState->WorldMap->TileSideInMeters;
+	Entity.Low->Collides = false;
 
-	return LowIndex;
+	return Entity;
 }
 
-	internal_function u32
+	internal_function entity
 AddWall(game_state* GameState, world_map_position WorldPos)
 {
-	u32 LowIndex = AddEntity(GameState, EntityType_Wall, WorldPos);
-	low_entity* Low = GameState->LowEntities + LowIndex;
+	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
+													 EntityType_Wall, WorldPos);
 
-	Low->Dim = v2{1, 1} * GameState->WorldMap->TileSideInMeters;
-	Low->Collides = true;
+	Entity.Low->Dim = v2{1, 1} * GameState->WorldMap->TileSideInMeters;
+	Entity.Low->Collides = true;
 
-	return LowIndex;
+	return Entity;
 }
 
-	internal_function u32
+	internal_function entity
 AddStair(game_state* GameState, world_map_position WorldPos, f32 dZ)
 {
-	u32 LowIndex = AddEntity(GameState, EntityType_Stair, WorldPos);
-	low_entity* Low = GameState->LowEntities + LowIndex;
+	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
+													 	EntityType_Stair, WorldPos);
 
-	Low->Dim = v3{1, 1, 1} * GameState->WorldMap->TileSideInMeters;
-	Low->Collides = true;
-	Low->Stair.dZ = dZ;
+	Entity.Low->Dim = v3{1, 1, 1} * GameState->WorldMap->TileSideInMeters;
+	Entity.Low->Collides = true;
+	Entity.Low->Stair.dZ = dZ;
 
-	return LowIndex;
+	return Entity;
 }
 
 	internal_function void
@@ -399,12 +275,9 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 
 	GameState->CameraP = GetChunkPosFromAbsTile(WorldMap, GameState->RoomOrigin);
 	{
-		u32 EntityIndex = AddPlayer(GameState);
-		GameState->PlayerIndexForKeyboard[0] = EntityIndex;
-		AddCar(GameState, OffsetWorldPos(GameState->WorldMap, 
-																		 GetEntityByLowIndex(GameState, EntityIndex).Low->WorldP, 
-																		 {3.0f, 0, 0})
-					 );
+		entity Player = AddPlayer(GameState);
+		GameState->PlayerIndexForKeyboard[0] = Player.LowEntityIndex;
+		AddCar(GameState, OffsetWorldPos(GameState->WorldMap, Player.Low->WorldP, {3.0f, 0, 0}));
 	}
 
 
@@ -533,7 +406,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 				world_map_position WorldPos = GetChunkPosFromAbsTile(WorldMap, AbsTile);
 				if(TileValue ==  1)
 				{
-					AddGround(GameState, WorldPos);
+					//AddGround(GameState, WorldPos);
 				}
 				if(TileValue ==  2)
 				{
@@ -653,10 +526,10 @@ MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsT
 		b32 CollidedFromTheInside = false;
 
 		for(u32 CollisionHighEntityIndex = 1;
-				CollisionHighEntityIndex <= GameState->HighEntityCount;
+				CollisionHighEntityIndex <= GameState->Entities.HighEntityCount;
 				CollisionHighEntityIndex++)
 		{
-			entity CollisionEntity = GetEntityByHighIndex(GameState, CollisionHighEntityIndex);
+			entity CollisionEntity = GetEntityByHighIndex(&GameState->Entities, CollisionHighEntityIndex);
 			if(CollisionEntity.Low->Collides && 
 				 Entity.Low->HighEntityIndex != CollisionHighEntityIndex)
 			{
@@ -769,31 +642,13 @@ GetCenterOfRoom(world_map* WorldMap, v3s AbsTileC, world_map_position A,
 	return Result;
 }
 
-inline b32
-ValidateEntityPairs(game_state* GameState)
-{
-	for(u32 HighEntityIndex = 1;
-			HighEntityIndex <= GameState->HighEntityCount;
-			HighEntityIndex++)
-	{
-		u32 LowEntityIndex = GameState->HighEntities[HighEntityIndex].LowEntityIndex;
-		if(GameState->LowEntities[LowEntityIndex].HighEntityIndex != HighEntityIndex) { return false; }
-	}
-
-	return true;
-}
-
 internal_function void
-SetCamera(game_state* GameState, world_map_position NewCameraP)
+SetCamera(world_map* WorldMap, entities* Entities, 
+					world_map_position* CameraP, world_map_position NewCameraP)
 {
-	Assert(ValidateEntityPairs(GameState));
+	Assert(ValidateEntityPairs(Entities));
 
-	v3 Diff = GetWorldMapPosDifference(GameState->WorldMap, NewCameraP, 
-																								GameState->CameraP);
-
-	GameState->CameraP = NewCameraP;
-
-	world_map* WorldMap = GameState->WorldMap;
+	*CameraP = NewCameraP;
 
 	//TODO(bjorn): Think more about render distances.
 	v3 HighFrequencyUpdateDim = v3{2.0f, 2.0f, 1.0f/TILES_PER_CHUNK}*WorldMap->ChunkSideInMeters;
@@ -828,27 +683,27 @@ SetCamera(game_state* GameState, world_map_position NewCameraP)
 								Index < Block->EntityIndexCount;
 								Index++)
 						{
-							u32 LowEntityIndex = Block->EntityIndexes[Index];
-							Assert(LowEntityIndex);
-							low_entity* Low = GameState->LowEntities + LowEntityIndex;
+							entity Entity = GetEntityByLowIndex(Entities, Block->EntityIndexes[Index]);
+							Assert(Entity.Low);
 
-							v3 RelCamP = GetWorldMapPosDifference(WorldMap, Low->WorldP, NewCameraP);
+							v3 RelCamP = GetWorldMapPosDifference(WorldMap, Entity.Low->WorldP, NewCameraP);
 
-							if(Low->HighEntityIndex)
+							if(Entity.High)
 							{
-								high_entity* High = GameState->HighEntities + Low->HighEntityIndex;
-								High->P = RelCamP;
+								Entity.High->P = RelCamP;
 
-								if(!IsInRectangle(CameraUpdateBounds, High->P))
+								if(!IsInRectangle(CameraUpdateBounds, Entity.High->P))
 								{
-									MapEntityIntoLow(GameState, LowEntityIndex);
+									world_map_position WorldP = 
+										OffsetWorldPos(WorldMap, NewCameraP, Entity.High->P);
+									MapEntityIntoLow(Entities, Entity.LowEntityIndex, WorldP);
 								}
 							}
 							else
 							{
 								if(IsInRectangle(CameraUpdateBounds, RelCamP))
 								{
-									MapEntityIntoHigh(GameState, LowEntityIndex);
+									MapEntityIntoHigh(Entities, Entity.LowEntityIndex, RelCamP);
 								}
 							}
 						}
@@ -858,7 +713,7 @@ SetCamera(game_state* GameState, world_map_position NewCameraP)
 		}
 	}
 
-	Assert(ValidateEntityPairs(GameState));
+	Assert(ValidateEntityPairs(Entities));
 }
 
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
@@ -877,6 +732,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	}
 
 	world_map* WorldMap = GameState->WorldMap;
+	entities* Entities = &GameState->Entities;
 
 	//
 	// NOTE(bjorn): Movement
@@ -889,7 +745,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		if(Controller->IsConnected)
 		{
 			u32 ControlledEntityIndex = GameState->PlayerIndexForController[ControllerIndex];
-			entity ControlledEntity = GetEntityByLowIndex(GameState, ControlledEntityIndex);
+			entity ControlledEntity = GetEntityByLowIndex(Entities, ControlledEntityIndex);
 
 			if(ControlledEntity.Low)
 			{
@@ -915,7 +771,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			{
 				if(Controller->Start.EndedDown && Controller->Start.HalfTransitionCount)
 				{
-					GameState->PlayerIndexForController[ControllerIndex] = AddPlayer(GameState);
+					GameState->PlayerIndexForController[ControllerIndex] = AddPlayer(GameState).LowEntityIndex;
 				}
 			}
 		}
@@ -929,7 +785,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		if(Keyboard->IsConnected)
 		{
 			u32 ControlledEntityIndex = GameState->PlayerIndexForKeyboard[KeyboardIndex];
-			entity ControlledEntity = GetEntityByLowIndex(GameState, ControlledEntityIndex);
+			entity ControlledEntity = GetEntityByLowIndex(Entities, ControlledEntityIndex);
 
 			if(ControlledEntity.Low)
 			{
@@ -971,7 +827,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	// NOTE(bjorn): Update camera
 	//
-	entity CameraTarget = GetEntityByLowIndex(GameState, GameState->CameraFollowingPlayerIndex);
+	entity CameraTarget = 
+		GetEntityByLowIndex(Entities, GameState->CameraFollowingPlayerIndex);
 	if(CameraTarget.Low)
 	{
 #if 0
@@ -982,7 +839,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 																													 GameState->RoomHeightInTiles);
 		SetCamera(GameState, NewCameraP);
 #else
-		SetCamera(GameState, CameraTarget.Low->WorldP);
+		SetCamera(WorldMap, Entities, &GameState->CameraP, CameraTarget.Low->WorldP);
 #endif
 	}
 
@@ -1004,10 +861,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
 
 	for(u32 HighEntityIndex = 1;
-			HighEntityIndex <= GameState->HighEntityCount;
+			HighEntityIndex <= GameState->Entities.HighEntityCount;
 			HighEntityIndex++)
 	{
-		entity Entity = GetEntityByHighIndex(GameState, HighEntityIndex);
+		entity Entity = GetEntityByHighIndex(Entities, HighEntityIndex);
 
 		v2 CollisionMarkerPixelDim = 
 			Hadamard(Entity.Low->Dim.XY, {PixelsPerMeter, PixelsPerMeter});
@@ -1060,7 +917,19 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			v3 Color = {1, 1, 1};
 			if(Entity.Low->Type == EntityType_Engine) { Color = {0, 1, 0}; }
 			if(Entity.Low->Type == EntityType_Wheel) { Color = {0.2f, 0.2f, 0.2f}; }
-			DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), Color);
+
+			if(Entity.Low->Type == EntityType_Wheel) 
+			{ 
+				local_persist f32 a = 0;
+				m22 Rot = { Cos(a), Sin(a),
+									 -Sin(a), Cos(a)};
+				v2 D = {0, 1};
+				Entity.High->D = (v3)Normalize(Rot * D); 
+				a += SecondsToUpdate;
+			}
+
+			DrawFrame(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), 
+								Entity.High->D.XY, Color);
 #if 0
 			DrawBitmap(Buffer, &GameState->Dirt, EntityPixelPos - GameState->Dirt.Alignment, 
 								 (v2)GameState->Dirt.Dim * 1.2f);

@@ -107,7 +107,7 @@ MoveCarPartsToStartingPosition(memory_arena* WorldArena, world_map* WorldMap, en
 		entity EngineEntity = GetEntityByLowIndex(Entities, CarFrameEntity.Low->CarFrame.Engine);
 		if(EngineEntity.Low)
 		{
-			OffsetAndChangeEntityLocation(WorldArena, WorldMap, EngineEntity, 
+			OffsetAndChangeEntityLocation(WorldArena, WorldMap, &EngineEntity, 
 																		CarFrameEntity.Low->WorldP, v3{0, 1.5f, 0});
 		}
 
@@ -126,11 +126,42 @@ MoveCarPartsToStartingPosition(memory_arena* WorldArena, world_map* WorldMap, en
 				v2 O = (Hadamard(D, CarFrameEntity.Low->Dim.XY * 0.5f) - 
 								Hadamard(D, WheelEntity.Low->Dim.XY * 0.5f));
 
-				OffsetAndChangeEntityLocation(WorldArena, WorldMap, WheelEntity, 
+				OffsetAndChangeEntityLocation(WorldArena, WorldMap, &WheelEntity, 
 																			CarFrameEntity.Low->WorldP, (v3)O);
 			}
 		}
 	}
+}
+
+internal_function void
+DismountEntityFromCar(memory_arena* WorldArena, world_map* WorldMap, entity* Entity, entity* Car)
+{
+	Assert(Car->Low->Type == EntityType_CarFrame);
+
+	Car->Low->CarFrame.DriverSeat = 0;
+	Entity->Low->Player.RidingVehicle = 0;
+
+	v3 Offset = {4.0f, 0, 0};
+	if(Entity->High && Car->High)
+	{
+		Entity->High->P = Car->High->P + Offset;
+	}
+	OffsetAndChangeEntityLocation(WorldArena, WorldMap, Entity, Car->Low->WorldP, Offset);
+}
+internal_function void
+MountEntityOnCar(memory_arena* WorldArena, world_map* WorldMap, entity* Entity, entity* Car)
+{
+	Assert(Car->Low->Type == EntityType_CarFrame);
+
+	Car->Low->CarFrame.DriverSeat = Entity->LowEntityIndex;
+	Entity->Low->Player.RidingVehicle = Car->LowEntityIndex;
+
+	//TODO(bjorn) What happens if you mount a car outside of the high entity zone.
+	if(Entity->High && Car->High)
+	{
+		Entity->High->P = Car->High->P;
+	}
+	OffsetAndChangeEntityLocation(WorldArena, WorldMap, Entity, Car->Low->WorldP, {});
 }
 
 	internal_function entity
@@ -404,21 +435,21 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 				}
 
 				world_map_position WorldPos = GetChunkPosFromAbsTile(WorldMap, AbsTile);
-				if(TileValue ==  1)
+				if((TileValue ==  1) && !(TileX % 3) && !(TileY % 3))
 				{
-					//AddGround(GameState, WorldPos);
+					AddGround(GameState, WorldPos);
 				}
 				if(TileValue ==  2)
 				{
-					AddWall(GameState, WorldPos);
+					//AddWall(GameState, WorldPos);
 				}
 				if(TileValue == 3)
 				{
-					AddStair(GameState, WorldPos, 1);
+					//AddStair(GameState, WorldPos, 1);
 				}
 				if(TileValue == 4)
 				{
-					AddStair(GameState, WorldPos, -1);
+					//AddStair(GameState, WorldPos, -1);
 				}
 			}
 		}
@@ -502,6 +533,8 @@ TestWall(v2 Axis, v2 P0, v2 D0, f32 Wall, v2 MinEdge, v2 MaxEdge, f32* BestTime)
 MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsToUpdate, 
 					 world_map* WorldMap, world_map_position CameraP)
 {
+	entities* Entities = &GameState->Entities;
+
 	v2 OldPos = Entity.High->P.XY;
 
 	v2 ddP = InputDirection * 85.0f;
@@ -525,13 +558,10 @@ MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsT
 		b32 HitDetected = false;
 		b32 CollidedFromTheInside = false;
 
-		for(u32 CollisionHighEntityIndex = 1;
-				CollisionHighEntityIndex <= GameState->Entities.HighEntityCount;
-				CollisionHighEntityIndex++)
+		LoopOverHighEntitiesNamed(CollisionEntity)
 		{
-			entity CollisionEntity = GetEntityByHighIndex(&GameState->Entities, CollisionHighEntityIndex);
 			if(CollisionEntity.Low->Collides && 
-				 Entity.Low->HighEntityIndex != CollisionHighEntityIndex)
+				 Entity.Low->HighEntityIndex != CollisionEntity.Low->HighEntityIndex)
 			{
 
 				v2 BottomLeftEdge = CollisionEntity.High->P.XY - 
@@ -620,8 +650,8 @@ MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsT
 		}
 	}
 
-	OffsetAndChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, 
-																Entity, CameraP, Entity.High->P);
+	OffsetAndChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, &Entity, 
+																CameraP, Entity.High->P);
 }
 
 	internal_function world_map_position 
@@ -716,6 +746,83 @@ SetCamera(world_map* WorldMap, entities* Entities,
 	Assert(ValidateEntityPairs(Entities));
 }
 
+internal_function void
+TurnWheels(entities* Entities, entity* CarFrameEntity, v2 InputDirection, f32 SecondsToUpdate)
+{
+	if(InputDirection.X == 0.0f) return;
+
+	Assert(CarFrameEntity->High);
+	if(CarFrameEntity->High)
+	{
+		f32 TurnRate = 3.0f;
+
+		f32 a = tau32 * 0.25f;
+	  m22 Rot90CCW = { Cos(a), Sin(a),
+		                -Sin(a), Cos(a)};
+
+		entity LeftFrontWheel = GetEntityByLowIndex(Entities, CarFrameEntity->Low->CarFrame.Wheels[2]);
+		entity RightFrontWheel = GetEntityByLowIndex(Entities, CarFrameEntity->Low->CarFrame.Wheels[3]);
+
+		Assert(LeftFrontWheel.High);
+		Assert(RightFrontWheel.High);
+		
+		v2 CarD = CarFrameEntity->High->D.XY;
+		v2 TD = Rot90CCW * CarD;
+
+		v2 NewD = Normalize(LeftFrontWheel.High->D.XY + TD * -InputDirection.X * 
+												TurnRate * SecondsToUpdate);
+		if(Dot(NewD, CarD) < 0.70710678118f) //NOTE(bjorn): Cos(45 deg) 
+		{
+			a = pi32 * 0.25f;
+			if(InputDirection.X > 0.0f)
+			{
+			  m22 Rot45CW  = { Cos(a),-Sin(a),
+			  	               Sin(a), Cos(a)};
+				NewD = Rot45CW * CarD;
+			}
+			else
+			{
+			  m22 Rot45CCW = { Cos(a), Sin(a),
+			  	              -Sin(a), Cos(a)};
+				NewD = Rot45CCW * CarD;
+			}
+			NewD = Normalize(NewD);
+		}
+
+		Assert(LenghtSquared(NewD) <= 1.001f);
+		Assert(LenghtSquared(NewD) >= 0.999f);
+
+		LeftFrontWheel.High->D = NewD;
+		RightFrontWheel.High->D = NewD;
+	}
+}
+
+internal_function void
+PropelCar(entities* Entities, entity* CarFrame, f32 SecondsToUpdate)
+{
+	Assert(CarFrame->High);
+	if(CarFrame->High)
+	{
+		entity LeftFrontWheel = GetEntityByLowIndex(Entities, CarFrame->Low->CarFrame.Wheels[2]);
+		entity RightFrontWheel = GetEntityByLowIndex(Entities, CarFrame->Low->CarFrame.Wheels[3]);
+
+		Assert(LeftFrontWheel.High);
+		Assert(RightFrontWheel.High);
+
+		f32 MoveSpeed = 3.0f;
+
+		v2 DeltaP = LeftFrontWheel.High->D.XY * MoveSpeed * SecondsToUpdate;
+		v2 OldFrontP = (LeftFrontWheel.High->P.XY + RightFrontWheel.High->P.XY) * 0.5f;
+		v2 NewFrontP = OldFrontP + DeltaP;
+
+		v2 OldP = CarFrame->High->P.XY;
+		v2 NewD = Normalize(NewFrontP - OldP);
+		v2 NewP = NewFrontP + Distance(OldP, OldFrontP) * (-NewD);
+
+		//UpdateCarPos(CarFrame, NewP, NewD);
+	}
+}
+
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
 	Assert( (&GetController(Input, 0)->Struct_Terminator - 
@@ -731,6 +838,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		Memory->IsInitialized = true;
 	}
 
+	memory_arena* WorldArena = &GameState->WorldArena;
 	world_map* WorldMap = GameState->WorldMap;
 	entities* Entities = &GameState->Entities;
 
@@ -771,7 +879,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			{
 				if(Controller->Start.EndedDown && Controller->Start.HalfTransitionCount)
 				{
-					GameState->PlayerIndexForController[ControllerIndex] = AddPlayer(GameState).LowEntityIndex;
+					GameState->PlayerIndexForController[ControllerIndex] = 
+						AddPlayer(GameState).LowEntityIndex;
 				}
 			}
 		}
@@ -815,9 +924,54 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				if(ControlledEntity.High)
 				{
-					MoveEntity(GameState, ControlledEntity, 
-										 InputDirection, SecondsToUpdate, 
-										 WorldMap, GameState->CameraP);
+					if(ControlledEntity.Low->Type == EntityType_Player)
+					{
+						if(Keyboard->E.EndedDown && Keyboard->E.HalfTransitionCount)
+						{
+							if(ControlledEntity.Low->Player.RidingVehicle)
+							{
+								entity Vehicle = GetEntityByLowIndex(Entities, 
+																										 ControlledEntity.Low->Player.RidingVehicle);
+								DismountEntityFromCar(WorldArena, WorldMap, &ControlledEntity, &Vehicle);
+							}
+							else
+							{
+								LoopOverHighEntities
+								{
+									if(Entity.Low->Type == EntityType_CarFrame && 
+										 Distance(Entity.High->P, ControlledEntity.High->P) < 4.0f)
+									{
+										MountEntityOnCar(WorldArena, WorldMap, &ControlledEntity, &Entity);
+										break;
+									}
+								}
+							}
+						}
+						if(ControlledEntity.Low->Player.RidingVehicle)
+						{
+							entity CarFrame = 
+								GetEntityByLowIndex(Entities, ControlledEntity.Low->Player.RidingVehicle);
+							Assert(CarFrame.Low->Type == EntityType_CarFrame);
+
+							TurnWheels(Entities, &CarFrame, InputDirection, SecondsToUpdate);
+							if(Keyboard->Space.EndedDown)
+							{
+								PropelCar(Entities, &CarFrame, SecondsToUpdate);
+							}
+						}
+						else
+						{
+							MoveEntity(GameState, ControlledEntity, 
+												 InputDirection, SecondsToUpdate, 
+												 WorldMap, GameState->CameraP);
+						}
+					}
+					else
+					{
+						MoveEntity(GameState, ControlledEntity, 
+											 InputDirection, SecondsToUpdate, 
+											 WorldMap, GameState->CameraP);
+					}
 				}
 			}
 		}
@@ -833,10 +987,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	{
 #if 0
 		world_map_position NewCameraP = GetCenterOfRoom(WorldMap, 
-																													 GameState->RoomOrigin,
-																													 CameraTarget.Low->WorldP,
-																													 GameState->RoomWidthInTiles,
-																													 GameState->RoomHeightInTiles);
+																										GameState->RoomOrigin,
+																										CameraTarget.Low->WorldP,
+																										GameState->RoomWidthInTiles,
+																										GameState->RoomHeightInTiles);
 		SetCamera(GameState, NewCameraP);
 #else
 		SetCamera(WorldMap, Entities, &GameState->CameraP, CameraTarget.Low->WorldP);
@@ -860,14 +1014,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 	v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
 
-	for(u32 HighEntityIndex = 1;
-			HighEntityIndex <= GameState->Entities.HighEntityCount;
-			HighEntityIndex++)
+	LoopOverHighEntities
 	{
-		entity Entity = GetEntityByHighIndex(Entities, HighEntityIndex);
-
-		v2 CollisionMarkerPixelDim = 
-			Hadamard(Entity.Low->Dim.XY, {PixelsPerMeter, PixelsPerMeter});
+		v2 CollisionMarkerPixelDim = Hadamard(Entity.Low->Dim.XY, {PixelsPerMeter, PixelsPerMeter});
 		m22 GameSpaceToScreenSpace = 
 		{PixelsPerMeter, 0             ,
 		 0             ,-PixelsPerMeter};
@@ -902,12 +1051,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		}
 		if(Entity.Low->Type == EntityType_Ground)
 		{
+#if 1
+			DrawBitmap(Buffer, &GameState->Dirt, EntityPixelPos - GameState->Dirt.Alignment, 
+								 (v2)GameState->Dirt.Dim * 1.2f);
+#else
 			v3 LightBrown = {0.55f, 0.45f, 0.33f};
 			DrawRectangle(Buffer, 
 										RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim * 0.9f), LightBrown);
-#if 0
-			DrawBitmap(Buffer, &GameState->Dirt, EntityPixelPos - GameState->Dirt.Alignment, 
-								 (v2)GameState->Dirt.Dim * 1.2f);
 #endif
 		}
 		if(Entity.Low->Type == EntityType_Wheel ||
@@ -917,16 +1067,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			v3 Color = {1, 1, 1};
 			if(Entity.Low->Type == EntityType_Engine) { Color = {0, 1, 0}; }
 			if(Entity.Low->Type == EntityType_Wheel) { Color = {0.2f, 0.2f, 0.2f}; }
-
-			if(Entity.Low->Type == EntityType_Wheel) 
-			{ 
-				local_persist f32 a = 0;
-				m22 Rot = { Cos(a), Sin(a),
-									 -Sin(a), Cos(a)};
-				v2 D = {0, 1};
-				Entity.High->D = (v3)Normalize(Rot * D); 
-				a += SecondsToUpdate;
-			}
 
 			DrawFrame(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), 
 								Entity.High->D.XY, Color);

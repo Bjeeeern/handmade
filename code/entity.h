@@ -170,21 +170,24 @@ GetEntityByHighIndex(entities* Entities, u32 HighEntityIndex)
 	}
 	else
 	{
-		InvalidCodePath;
+		// NOTE(bjorn): I use this in looping over high entities to check whether I
+		// finished looping or not.
+		//InvalidCodePath;
 	}
 
 	return Result;
 }
 
 inline void
-OffsetAndChangeEntityLocation(memory_arena* Arena, world_map* WorldMap, entity Entity, 
+OffsetAndChangeEntityLocation(memory_arena* Arena, world_map* WorldMap, entity* Entity, 
 															world_map_position WorldP, v3 dP)
 {
-	if(Entity.Low)
+	if(Entity->Low)
 	{
 		world_map_position NewWorldP = OffsetWorldPos(WorldMap, WorldP, dP);
-		ChangeEntityLocation(Arena, WorldMap, Entity.LowEntityIndex, &WorldP, &NewWorldP);
-		Entity.Low->WorldP = NewWorldP;
+		ChangeEntityLocation(Arena, WorldMap, Entity->LowEntityIndex, 
+												 &(Entity->Low->WorldP), &NewWorldP);
+		Entity->Low->WorldP = NewWorldP;
 	}
 }
 

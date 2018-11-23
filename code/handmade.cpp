@@ -756,9 +756,9 @@ TurnWheels(entities* Entities, entity* CarFrameEntity, v2 InputDirection, f32 Se
 	{
 		f32 TurnRate = 3.0f;
 
-		f32 a = tau32 * 0.25f;
-	  m22 Rot90CCW = { Cos(a), Sin(a),
-		                -Sin(a), Cos(a)};
+		f32 Deg90 = tau32 * 0.25f;
+	  m22 Rot90CW = { 0,-1,
+		                1, 0};
 
 		entity LeftFrontWheel = GetEntityByLowIndex(Entities, CarFrameEntity->Low->CarFrame.Wheels[2]);
 		entity RightFrontWheel = GetEntityByLowIndex(Entities, CarFrameEntity->Low->CarFrame.Wheels[3]);
@@ -767,23 +767,24 @@ TurnWheels(entities* Entities, entity* CarFrameEntity, v2 InputDirection, f32 Se
 		Assert(RightFrontWheel.High);
 		
 		v2 CarD = CarFrameEntity->High->D.XY;
-		v2 TD = Rot90CCW * CarD;
+		v2 TD = Rot90CW * CarD;
 
 		v2 NewD = Normalize(LeftFrontWheel.High->D.XY + TD * -InputDirection.X * 
 												TurnRate * SecondsToUpdate);
-		if(Dot(NewD, CarD) < 0.70710678118f) //NOTE(bjorn): Cos(45 deg) 
+
+		f32 Deg45 = pi32 * 0.25f;
+		if(Dot(NewD, CarD) < Cos(Deg45))
 		{
-			a = pi32 * 0.25f;
-			if(InputDirection.X > 0.0f)
+			if(InputDirection.X < 0.0f)
 			{
-			  m22 Rot45CW  = { Cos(a),-Sin(a),
-			  	               Sin(a), Cos(a)};
+			  m22 Rot45CW  = { Cos(Deg45),-Sin(Deg45),
+			  	               Sin(Deg45), Cos(Deg45)};
 				NewD = Rot45CW * CarD;
 			}
 			else
 			{
-			  m22 Rot45CCW = { Cos(a), Sin(a),
-			  	              -Sin(a), Cos(a)};
+			  m22 Rot45CCW = { Cos(Deg45), Sin(Deg45),
+			  	              -Sin(Deg45), Cos(Deg45)};
 				NewD = Rot45CCW * CarD;
 			}
 			NewD = Normalize(NewD);
@@ -797,8 +798,97 @@ TurnWheels(entities* Entities, entity* CarFrameEntity, v2 InputDirection, f32 Se
 	}
 }
 
-internal_function void
-PropelCar(entities* Entities, entity* CarFrame, f32 SecondsToUpdate)
+internal_function v2
+GetCoordinatesRelativeTransform(v2 Origo, v2 Y, v2 A)
+{
+	v2 Result;
+
+	m22 Rot90CW = {0,-1,
+								 1, 0};
+	v2 X = Rot90CW * Y;
+
+	Result = v2{Dot(A - Origo, X), Dot(A - Origo, Y)};
+
+	return Result;
+}
+
+internal_function v2
+GetGlobalPosFromRelativeCoordinates(v2 Origo, v2 Y, v2 A)
+{
+	v2 Result;
+
+	m22 Rot90CW = {0,-1,
+								 1, 0};
+	v2 X = Rot90CW * Y;
+
+	Result = Origo + X * A.X + Y * A.Y;
+
+	return Result;
+}
+
+	internal_function void
+UpdateCarPos(memory_arena* WorldArena, world_map* WorldMap, entities* Entities, 
+						 entity* CarFrame, world_map_position* CameraP, v2 NewP, v2 NewD)
+{
+	v2 OldP = CarFrame->High->P.XY;
+	v2 OldD = CarFrame->High->D.XY;
+
+	CarFrame->High->P = NewP;
+	CarFrame->High->D = NewD;
+	OffsetAndChangeEntityLocation(WorldArena, WorldMap, CarFrame, *CameraP, (v2)NewP);
+
+
+	entity EngineEntity = GetEntityByLowIndex(Entities, CarFrame->Low->CarFrame.Engine);
+	if(EngineEntity.High)
+	{
+		v2 RelPos = GetCoordinatesRelativeTransform(OldP, OldD, EngineEntity.High->P.XY);
+		v2 RelDir = GetCoordinatesRelativeTransform(OldP, OldD, EngineEntity.High->P.XY + 
+																								EngineEntity.High->D.XY);
+		v2 NewPos = GetGlobalPosFromRelativeCoordinates(NewP, NewD, RelPos);
+		v2 NewDir = GetGlobalPosFromRelativeCoordinates(NewP, NewD, RelDir) - NewPos;
+
+		EngineEntity.High->P = NewPos;
+		EngineEntity.High->D = Normalize(NewDir);
+		OffsetAndChangeEntityLocation(WorldArena, WorldMap, &EngineEntity, *CameraP, (v3)NewPos);
+	}
+
+	entity DriverEntity = GetEntityByLowIndex(Entities, CarFrame->Low->CarFrame.DriverSeat);
+	if(DriverEntity.High)
+	{
+		v2 RelPos = GetCoordinatesRelativeTransform(OldP, OldD, DriverEntity.High->P.XY);
+		v2 RelDir = GetCoordinatesRelativeTransform(OldP, OldD, DriverEntity.High->P.XY + 
+																								DriverEntity.High->D.XY);
+		v2 NewPos = GetGlobalPosFromRelativeCoordinates(NewP, NewD, RelPos);
+		v2 NewDir = GetGlobalPosFromRelativeCoordinates(NewP, NewD, RelDir) - NewPos;
+
+		DriverEntity.High->P = NewPos;
+		DriverEntity.High->D = Normalize(NewDir);
+		OffsetAndChangeEntityLocation(WorldArena, WorldMap, &DriverEntity, *CameraP, (v3)NewPos);
+	}
+
+	for(s32 WheelIndex = 0;
+			WheelIndex < 4;
+			WheelIndex++)
+	{
+		entity WheelEntity = GetEntityByLowIndex(Entities, CarFrame->Low->CarFrame.Wheels[WheelIndex]);
+		if(WheelEntity.High)
+		{
+			v2 RelPos = GetCoordinatesRelativeTransform(OldP, OldD, WheelEntity.High->P.XY);
+			v2 RelDir = GetCoordinatesRelativeTransform(OldP, OldD, WheelEntity.High->P.XY + 
+																									WheelEntity.High->D.XY);
+			v2 NewPos = GetGlobalPosFromRelativeCoordinates(NewP, NewD, RelPos);
+			v2 NewDir = GetGlobalPosFromRelativeCoordinates(NewP, NewD, RelDir) - NewPos;
+
+			WheelEntity.High->P = NewPos;
+			WheelEntity.High->D = Normalize(NewDir);
+			OffsetAndChangeEntityLocation(WorldArena, WorldMap, &WheelEntity, *CameraP, (v3)NewPos);
+		}
+	}
+}
+
+	internal_function void
+PropelCar(memory_arena* WorldArena, world_map* WorldMap, entities* Entities, 
+					entity* CarFrame, world_map_position* CameraP, f32 SecondsToUpdate)
 {
 	Assert(CarFrame->High);
 	if(CarFrame->High)
@@ -809,7 +899,7 @@ PropelCar(entities* Entities, entity* CarFrame, f32 SecondsToUpdate)
 		Assert(LeftFrontWheel.High);
 		Assert(RightFrontWheel.High);
 
-		f32 MoveSpeed = 3.0f;
+		f32 MoveSpeed = 7.0f;
 
 		v2 DeltaP = LeftFrontWheel.High->D.XY * MoveSpeed * SecondsToUpdate;
 		v2 OldFrontP = (LeftFrontWheel.High->P.XY + RightFrontWheel.High->P.XY) * 0.5f;
@@ -819,7 +909,7 @@ PropelCar(entities* Entities, entity* CarFrame, f32 SecondsToUpdate)
 		v2 NewD = Normalize(NewFrontP - OldP);
 		v2 NewP = NewFrontP + Distance(OldP, OldFrontP) * (-NewD);
 
-		//UpdateCarPos(CarFrame, NewP, NewD);
+		UpdateCarPos(WorldArena, WorldMap, Entities, CarFrame, CameraP, NewP, NewD);
 	}
 }
 
@@ -956,7 +1046,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							TurnWheels(Entities, &CarFrame, InputDirection, SecondsToUpdate);
 							if(Keyboard->Space.EndedDown)
 							{
-								PropelCar(Entities, &CarFrame, SecondsToUpdate);
+								PropelCar(WorldArena, WorldMap, Entities, &CarFrame, 
+													&GameState->CameraP, SecondsToUpdate);
 							}
 						}
 						else
@@ -1070,6 +1161,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 			DrawFrame(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), 
 								Entity.High->D.XY, Color);
+			DrawLine(Buffer, EntityPixelPos, EntityPixelPos + Hadamard(Entity.High->D.XY, v2{1, -1}) * 40.0f, {1, 0, 0});
 #if 0
 			DrawBitmap(Buffer, &GameState->Dirt, EntityPixelPos - GameState->Dirt.Alignment, 
 								 (v2)GameState->Dirt.Dim * 1.2f);

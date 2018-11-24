@@ -60,8 +60,8 @@ GetWorldChunk(world_map *WorldMap, v3s PotentialChunkP, memory_arena* Arena = 0)
 		{
 			if(WorldChunk->ChunkP == PotentialChunkP)
 			{
-				Assert(WorldChunk->Block);
-				SlotFoundOrCreated = true;
+				//NOTE(bjorn): There is a chunk in this area but possibly no block.
+				SlotFoundOrCreated = WorldChunk->Block != 0;
 				break;
 			}
 			else if(WorldChunk->Next)
@@ -79,7 +79,7 @@ GetWorldChunk(world_map *WorldMap, v3s PotentialChunkP, memory_arena* Arena = 0)
 			}
 			else
 			{
-				//TODO(bjorn): Is it ok to reach this code-path or is it a bug?
+				//NOTE(bjorn): There is yet no chunk in this area.
 				break;
 			}
 		}

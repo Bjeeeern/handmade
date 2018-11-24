@@ -1128,7 +1128,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	// NOTE(bjorn): Rendering
 	//
-	s32 TileSideInPixels = 60;
+	s32 TileSideInPixels = 20;
 	f32 PixelsPerMeter = (f32)TileSideInPixels / WorldMap->TileSideInMeters;
 
 	DrawRectangle(Buffer, 
@@ -1198,7 +1198,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 			DrawFrame(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), 
 								Entity.High->D.XY, Color);
-			DrawLine(Buffer, EntityPixelPos, EntityPixelPos + Hadamard(Entity.High->D.XY, v2{1, -1}) * 40.0f, {1, 0, 0});
+			DrawLine(Buffer, EntityPixelPos, EntityPixelPos + 
+							 Hadamard(Entity.High->D.XY, v2{1, -1}) * 40.0f, {1, 0, 0});
 #if 0
 			DrawBitmap(Buffer, &GameState->Dirt, EntityPixelPos - GameState->Dirt.Alignment, 
 								 (v2)GameState->Dirt.Dim * 1.2f);

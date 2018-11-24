@@ -747,6 +747,36 @@ SetCamera(world_map* WorldMap, entities* Entities,
 }
 
 internal_function void
+AlignWheelsForward(entities* Entities, entity* CarFrameEntity, f32 SecondsToUpdate)
+{
+		entity LeftFrontWheel = GetEntityByLowIndex(Entities, CarFrameEntity->Low->CarFrame.Wheels[2]);
+		entity RightFrontWheel = GetEntityByLowIndex(Entities, CarFrameEntity->Low->CarFrame.Wheels[3]);
+
+		Assert(LeftFrontWheel.High);
+		Assert(RightFrontWheel.High);
+
+		f32 TurnRate = 0.5f;
+		v3 CarDir = CarFrameEntity->High->D;
+		v3 WheelDir = LeftFrontWheel.High->D;
+
+		f32 S = Distance(CarDir, WheelDir);
+		f32 M = SecondsToUpdate * TurnRate;
+
+		v3 NewDir; 
+		if(S <= M)
+		{
+			NewDir = CarDir;
+		}
+		else
+		{
+			NewDir = WheelDir + Normalize(CarDir - WheelDir) * M;
+		}
+
+		LeftFrontWheel.High->D = NewDir;
+		RightFrontWheel.High->D = NewDir;
+}
+
+internal_function void
 TurnWheels(entities* Entities, entity* CarFrameEntity, v2 InputDirection, f32 SecondsToUpdate)
 {
 	if(InputDirection.X == 0.0f) return;
@@ -1043,9 +1073,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								GetEntityByLowIndex(Entities, ControlledEntity.Low->Player.RidingVehicle);
 							Assert(CarFrame.Low->Type == EntityType_CarFrame);
 
-							TurnWheels(Entities, &CarFrame, InputDirection, SecondsToUpdate);
+							if(InputDirection.X)
+							{
+								TurnWheels(Entities, &CarFrame, InputDirection, SecondsToUpdate);
+							}
 							if(Keyboard->Space.EndedDown)
 							{
+								if(InputDirection.X == 0)
+								{
+									AlignWheelsForward(Entities, &CarFrame, SecondsToUpdate);
+								}
 								PropelCar(WorldArena, WorldMap, Entities, &CarFrame, 
 													&GameState->CameraP, SecondsToUpdate);
 							}

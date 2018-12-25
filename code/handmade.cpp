@@ -7,6 +7,15 @@
 #include "resource.h"
 #include "entity.h"
 
+// QUICK TODO
+//
+// generate world as you drive
+// car engine that is settable by mouse click and drag
+// collide with rocks
+// ai cars
+//
+
+
 struct hero_bitmaps
 {
 	loaded_bitmap Head;
@@ -755,7 +764,7 @@ AlignWheelsForward(entities* Entities, entity* CarFrameEntity, f32 SecondsToUpda
 		Assert(LeftFrontWheel.High);
 		Assert(RightFrontWheel.High);
 
-		f32 TurnRate = 0.5f;
+		f32 TurnRate = Lenght(CarFrameEntity->High->dP) * 0.05f;
 		v3 CarDir = CarFrameEntity->High->D;
 		v3 WheelDir = LeftFrontWheel.High->D;
 
@@ -784,7 +793,8 @@ TurnWheels(entities* Entities, entity* CarFrameEntity, v2 InputDirection, f32 Se
 	Assert(CarFrameEntity->High);
 	if(CarFrameEntity->High)
 	{
-		f32 TurnRate = 3.0f;
+		f32 TurnRate = Lenght(CarFrameEntity->High->dP) * 0.15f;
+		TurnRate = Clamp(TurnRate, 0.5f, 3.0f); 
 
 		f32 Deg90 = tau32 * 0.25f;
 	  m22 Rot90CW = { 0,-1,
@@ -799,23 +809,26 @@ TurnWheels(entities* Entities, entity* CarFrameEntity, v2 InputDirection, f32 Se
 		v2 CarD = CarFrameEntity->High->D.XY;
 		v2 TD = Rot90CW * CarD;
 
-		v2 NewD = Normalize(LeftFrontWheel.High->D.XY + TD * -InputDirection.X * 
-												TurnRate * SecondsToUpdate);
+		v2 NewD = Normalize(LeftFrontWheel.High->D.XY + 
+												TD * -InputDirection.X * TurnRate * SecondsToUpdate);
 
-		f32 Deg45 = pi32 * 0.25f;
-		if(Dot(NewD, CarD) < Cos(Deg45))
+		f32 MaxDeg = pi32 * (0.25f - Lenght(CarFrameEntity->High->dP) * 0.01f);
+		MaxDeg = Clamp(MaxDeg, pi32 * 0.10f, pi32 * 0.25f); 
+
+		b32 RotatedMoreThanXDegrees = Dot(NewD, CarD) < Cos(MaxDeg);
+		if(RotatedMoreThanXDegrees)
 		{
 			if(InputDirection.X < 0.0f)
 			{
-			  m22 Rot45CW  = { Cos(Deg45),-Sin(Deg45),
-			  	               Sin(Deg45), Cos(Deg45)};
-				NewD = Rot45CW * CarD;
+			  m22 RotCW  = { Cos(MaxDeg),-Sin(MaxDeg),
+			  	               Sin(MaxDeg), Cos(MaxDeg)};
+				NewD = RotCW * CarD;
 			}
 			else
 			{
-			  m22 Rot45CCW = { Cos(Deg45), Sin(Deg45),
-			  	              -Sin(Deg45), Cos(Deg45)};
-				NewD = Rot45CCW * CarD;
+			  m22 RotCCW = { Cos(MaxDeg), Sin(MaxDeg),
+			  	              -Sin(MaxDeg), Cos(MaxDeg)};
+				NewD = RotCCW * CarD;
 			}
 			NewD = Normalize(NewD);
 		}
@@ -863,10 +876,10 @@ UpdateCarPos(memory_arena* WorldArena, world_map* WorldMap, entities* Entities,
 	v2 OldP = CarFrame->High->P.XY;
 	v2 OldD = CarFrame->High->D.XY;
 
-	CarFrame->High->P = NewP;
 	CarFrame->High->D = NewD;
-	OffsetAndChangeEntityLocation(WorldArena, WorldMap, CarFrame, *CameraP, (v2)NewP);
+	CarFrame->High->P = NewP;
 
+	OffsetAndChangeEntityLocation(WorldArena, WorldMap, CarFrame, *CameraP, (v2)NewP);
 
 	entity EngineEntity = GetEntityByLowIndex(Entities, CarFrame->Low->CarFrame.Engine);
 	if(EngineEntity.High)
@@ -929,17 +942,29 @@ PropelCar(memory_arena* WorldArena, world_map* WorldMap, entities* Entities,
 		Assert(LeftFrontWheel.High);
 		Assert(RightFrontWheel.High);
 
-		f32 MoveSpeed = 7.0f;
+		v3 ddP = CarFrame->High->ddP;
+		ddP += -0.5f * CarFrame->High->dP;
 
-		v2 DeltaP = LeftFrontWheel.High->D.XY * MoveSpeed * SecondsToUpdate;
-		v2 OldFrontP = (LeftFrontWheel.High->P.XY + RightFrontWheel.High->P.XY) * 0.5f;
-		v2 NewFrontP = OldFrontP + DeltaP;
+		v3 DeltaP = (0.5f * ddP * Square(SecondsToUpdate) + 
+								 (CarFrame->High->dP * SecondsToUpdate));
+		CarFrame->High->dP += (ddP * SecondsToUpdate);
 
-		v2 OldP = CarFrame->High->P.XY;
-		v2 NewD = Normalize(NewFrontP - OldP);
-		v2 NewP = NewFrontP + Distance(OldP, OldFrontP) * (-NewD);
+		v3 OldFrontP = (LeftFrontWheel.High->P + RightFrontWheel.High->P) * 0.5f;
+		v3 NewFrontP = OldFrontP + Lenght(DeltaP) * LeftFrontWheel.High->D;
 
-		UpdateCarPos(WorldArena, WorldMap, Entities, CarFrame, CameraP, NewP, NewD);
+		v3 OldP = CarFrame->High->P;
+		v3 NewD = Normalize(NewFrontP - OldP);
+		v3 NewP = NewFrontP + Distance(OldP, OldFrontP) * (-NewD);
+
+		CarFrame->High->dP = NewD * Lenght(CarFrame->High->dP);
+		CarFrame->High->ddP = NewD * Lenght(CarFrame->High->ddP);
+
+		if(Lenght(CarFrame->High->ddP) < 0.1f && Lenght(CarFrame->High->dP) < 0.4f)
+		{
+			CarFrame->High->dP = {};
+		}
+
+		UpdateCarPos(WorldArena, WorldMap, Entities, CarFrame, CameraP, NewP.XY, NewD.XY);
 	}
 }
 
@@ -988,7 +1013,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 										 WorldMap, GameState->CameraP);
 				}
 
-				if(Controller->Start.EndedDown && Controller->Start.HalfTransitionCount)
+				if(Clicked(Controller, Start))
 				{
 					//TODO(bjorn) Implement RemoveEntity();
 					//GameState->EntityResidencies[ControlledEntityIndex] = EntityResidence_Nonexistent;
@@ -997,7 +1022,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			}
 			else
 			{
-				if(Controller->Start.EndedDown && Controller->Start.HalfTransitionCount)
+				if(Clicked(Controller, Start))
 				{
 					GameState->PlayerIndexForController[ControllerIndex] = 
 						AddPlayer(GameState).LowEntityIndex;
@@ -1020,19 +1045,19 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			{
 				v2 InputDirection = {};
 
-				if(Keyboard->S.EndedDown)
+				if(Held(Keyboard, S))
 				{
 					InputDirection.Y += -1;
 				}
-				if(Keyboard->A.EndedDown)
+				if(Held(Keyboard, A))
 				{
 					InputDirection.X += -1;
 				}
-				if(Keyboard->W.EndedDown)
+				if(Held(Keyboard, W))
 				{
 					InputDirection.Y += 1;
 				}
-				if(Keyboard->D.EndedDown)
+				if(Held(Keyboard, D))
 				{
 					InputDirection.X += 1;
 				}
@@ -1046,7 +1071,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				{
 					if(ControlledEntity.Low->Type == EntityType_Player)
 					{
-						if(Keyboard->E.EndedDown && Keyboard->E.HalfTransitionCount)
+						if(Clicked(Keyboard, E))
 						{
 							if(ControlledEntity.Low->Player.RidingVehicle)
 							{
@@ -1074,18 +1099,25 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							Assert(CarFrame.Low->Type == EntityType_CarFrame);
 
 							if(InputDirection.X)
-							{
-								TurnWheels(Entities, &CarFrame, InputDirection, SecondsToUpdate);
+							{ 
+								TurnWheels(Entities, &CarFrame, InputDirection, SecondsToUpdate); 
 							}
-							if(Keyboard->Space.EndedDown)
-							{
-								if(InputDirection.X == 0)
+							else
+							{ 
+								AlignWheelsForward(Entities, &CarFrame, SecondsToUpdate); 
+							}
+
+							if(Clicked(Keyboard, Space))
+							{ 
+								CarFrame.High->ddP = CarFrame.High->D * (Lenght(CarFrame.High->ddP) + 3.0f);
+								if(Lenght(CarFrame.High->ddP) > 11.0f)
 								{
-									AlignWheelsForward(Entities, &CarFrame, SecondsToUpdate);
+									CarFrame.High->ddP = {}; 
 								}
-								PropelCar(WorldArena, WorldMap, Entities, &CarFrame, 
-													&GameState->CameraP, SecondsToUpdate);
 							}
+
+							PropelCar(WorldArena, WorldMap, Entities, &CarFrame, 
+												&GameState->CameraP, SecondsToUpdate);
 						}
 						else
 						{
@@ -1128,7 +1160,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	// NOTE(bjorn): Rendering
 	//
-	s32 TileSideInPixels = 20;
+	s32 TileSideInPixels = 60;
 	f32 PixelsPerMeter = (f32)TileSideInPixels / WorldMap->TileSideInMeters;
 
 	DrawRectangle(Buffer, 

@@ -206,13 +206,15 @@ AreInSameChunk(world_map* WorldMap, world_map_position* A, world_map_position* B
 	return Result;
 }
 
+//TODO(bjorn): Should hashmap chunks that contains no blocks in the hashmap be
+//recycled like blocks are?
 inline void
 ChangeEntityLocation(memory_arena* Arena, world_map* WorldMap, u32 LowEntityIndex,
 										 world_map_position* OldP, world_map_position* NewP)
 {
 	if(OldP && AreInSameChunk(WorldMap, OldP, NewP))
 	{
-		return; //NOTE(): Entity not needed to be moved.
+		return; //NOTE(Bjorn): Entity not needed to be moved.
 	}
 	else
 	{

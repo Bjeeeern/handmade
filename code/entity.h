@@ -21,6 +21,7 @@ struct high_entity
 	v3 D;
 	v3 P;
 	v3 dP;
+	v3 ddP;
 
 	union
 	{

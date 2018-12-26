@@ -30,6 +30,11 @@ struct high_entity
 			b32 IsOnStairs;
 			u32 FacingDirection;
 		} Player;
+		struct
+		{
+			//TODO(bjorn): Use this to move out the turning code to the cars update loop.
+			b32 AutoPilot;
+		} CarFrame;
 	};
 };
 

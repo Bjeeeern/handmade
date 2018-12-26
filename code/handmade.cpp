@@ -343,7 +343,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	{
 		//TODO(bjorn): Implement a random number generator!
 		Assert(RandomNumberIndex < ArrayCount(RandomNumberTable));
-		u32 RandomChoice = RandomNumberTable[RandomNumberIndex++] % 3;
+		u32 RandomChoice = RandomNumberTable[RandomNumberIndex++] % 1;
 
 		if(RandomChoice == 2)
 		{
@@ -444,7 +444,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 				}
 
 				world_map_position WorldPos = GetChunkPosFromAbsTile(WorldMap, AbsTile);
-				if((TileValue ==  1) && !(TileX % 3) && !(TileY % 3))
+				if((TileValue ==  1) && !(TileX % 5) && !(TileY % 3))
 				{
 					AddGround(GameState, WorldPos);
 				}
@@ -567,7 +567,7 @@ MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsT
 		b32 HitDetected = false;
 		b32 CollidedFromTheInside = false;
 
-		LoopOverHighEntitiesNamed(CollisionEntity)
+		for(LoopOverHighEntitiesNamed(CollisionEntity))
 		{
 			if(CollisionEntity.Low->Collides && 
 				 Entity.Low->HighEntityIndex != CollisionEntity.Low->HighEntityIndex)
@@ -939,9 +939,6 @@ PropelCar(memory_arena* WorldArena, world_map* WorldMap, entities* Entities,
 		entity LeftFrontWheel = GetEntityByLowIndex(Entities, CarFrame->Low->CarFrame.Wheels[2]);
 		entity RightFrontWheel = GetEntityByLowIndex(Entities, CarFrame->Low->CarFrame.Wheels[3]);
 
-		Assert(LeftFrontWheel.High);
-		Assert(RightFrontWheel.High);
-
 		v3 ddP = CarFrame->High->ddP;
 		ddP += -0.5f * CarFrame->High->dP;
 
@@ -949,12 +946,24 @@ PropelCar(memory_arena* WorldArena, world_map* WorldMap, entities* Entities,
 								 (CarFrame->High->dP * SecondsToUpdate));
 		CarFrame->High->dP += (ddP * SecondsToUpdate);
 
-		v3 OldFrontP = (LeftFrontWheel.High->P + RightFrontWheel.High->P) * 0.5f;
-		v3 NewFrontP = OldFrontP + Lenght(DeltaP) * LeftFrontWheel.High->D;
+		v3 OldFrontP = CarFrame->High->P + CarFrame->High->D * CarFrame->Low->Dim.Y * 0.5f;
+		v3 NewFrontP;
+		if(LeftFrontWheel.High)
+		{
+			NewFrontP = OldFrontP + LeftFrontWheel.High->D * Lenght(DeltaP);
+		}
+		else if(LeftFrontWheel.High)
+		{
+			NewFrontP = OldFrontP + LeftFrontWheel.High->D * Lenght(DeltaP);
+		}
+		else
+		{
+			NewFrontP = OldFrontP + CarFrame->High->D * Lenght(DeltaP);
+		}
 
 		v3 OldP = CarFrame->High->P;
 		v3 NewD = Normalize(NewFrontP - OldP);
-		v3 NewP = NewFrontP + Distance(OldP, OldFrontP) * (-NewD);
+		v3 NewP = NewFrontP - NewD * Distance(OldP, OldFrontP);
 
 		CarFrame->High->dP = NewD * Lenght(CarFrame->High->dP);
 		CarFrame->High->ddP = NewD * Lenght(CarFrame->High->ddP);
@@ -1081,7 +1090,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							}
 							else
 							{
-								LoopOverHighEntities
+								for(LoopOverHighEntities)
 								{
 									if(Entity.Low->Type == EntityType_CarFrame && 
 										 Distance(Entity.High->P, ControlledEntity.High->P) < 4.0f)
@@ -1115,9 +1124,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 									CarFrame.High->ddP = {}; 
 								}
 							}
-
-							PropelCar(WorldArena, WorldMap, Entities, &CarFrame, 
-												&GameState->CameraP, SecondsToUpdate);
 						}
 						else
 						{
@@ -1137,6 +1143,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		}
 	}
 
+	for(LoopOverHighEntities)
+	{
+		if(Entity.Low->Type == EntityType_CarFrame)
+		{
+			PropelCar(WorldArena, WorldMap, Entities, &Entity, &GameState->CameraP, SecondsToUpdate);
+		}
+	}
 
 	//
 	// NOTE(bjorn): Update camera
@@ -1174,7 +1187,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 	v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
 
-	LoopOverHighEntities
+	for(LoopOverHighEntities)
 	{
 		v2 CollisionMarkerPixelDim = Hadamard(Entity.Low->Dim.XY, {PixelsPerMeter, PixelsPerMeter});
 		m22 GameSpaceToScreenSpace = 

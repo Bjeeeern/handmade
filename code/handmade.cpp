@@ -820,15 +820,15 @@ TurnWheels(entities* Entities, entity* CarFrameEntity, v2 InputDirection, f32 Se
 		{
 			if(InputDirection.X < 0.0f)
 			{
-			  m22 RotCW  = { Cos(MaxDeg),-Sin(MaxDeg),
-			  	               Sin(MaxDeg), Cos(MaxDeg)};
-				NewD = RotCW * CarD;
+			  m22 RotCCW  = { Cos(MaxDeg),-Sin(MaxDeg),
+			  	              Sin(MaxDeg), Cos(MaxDeg)};
+				NewD = RotCCW * CarD;
 			}
 			else
 			{
-			  m22 RotCCW = { Cos(MaxDeg), Sin(MaxDeg),
-			  	              -Sin(MaxDeg), Cos(MaxDeg)};
-				NewD = RotCCW * CarD;
+			  m22 RotCW = { Cos(MaxDeg), Sin(MaxDeg),
+			  	           -Sin(MaxDeg), Cos(MaxDeg)};
+				NewD = RotCW * CarD;
 			}
 			NewD = Normalize(NewD);
 		}
@@ -1271,6 +1271,131 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			}
 		}
 	}
+
+#if 1
+	v2 ac = {200.0f, 300.0f};
+	v2 bc = ac + v2{200.0f, 0.0f};
+	v2 cc = bc + v2{200.0f, 0.0f};
+
+	local_persist v2 ad = {0.0f, 1.0f};
+	local_persist v2 bd = {0.0f, 1.0f};
+
+	v2 adim = {50.0f, 200.0f};
+	v2 bdim = {100.0f, 100.0f};
+
+	v2 ps[8] = {};
+	v2 dir_ord[4] = {{-1, 1}, {1, 1}, {1, -1}, {-1, -1}};
+	for(int i = 0; i < 8; i++)
+	{
+		m22 cw = { 0, 1,
+							-1, 0};
+		f32 x = dir_ord[i%4].X;
+		f32 y = dir_ord[i%4].Y;
+
+		b32 is_b = i / 4;
+		if(is_b)
+		{
+			ps[i] = ((cw * bd) * x * bdim.X + bd * y * bdim.Y) * 0.5f;
+		}
+		else
+		{
+			ps[i] = ((cw * ad) * x * adim.X + ad * y * adim.Y) * 0.5f;
+		}
+	}
+
+	s32 asi = 0;
+	s32 bsi;
+	if(Dot(ad, bd) > 0)
+	{
+		if(Cross((v3)ad, (v3)bd).Z > 0)
+		{
+			bsi = 5;
+		}
+		else
+		{
+			bsi = 4;
+		}
+	}
+	else
+	{
+		if(Cross((v3)ad, (v3)bd).Z > 0)
+		{
+			bsi = 6;
+		}
+		else
+		{
+			bsi = 7;
+		}
+	}
+
+	{
+		v2 s = cc + ps[asi] + ps[bsi];
+
+		v2 p;
+		for(int i = 0; i < 4; i++)
+		{
+			{
+				s32 j = asi + i;
+				v2 a = ps[(j+0)%4];
+				v2 b = ps[(j+1)%4];
+
+				v2 diff = b - a;
+				p = s + diff;
+				DrawLine(Buffer, s, p, {0, 0, 1});
+				s = p;
+			}
+			{
+				s32 j = bsi + i;
+				v2 a = ps[(j+0)%4 + 4];
+				v2 b = ps[(j+1)%4 + 4];
+
+				v2 diff = b - a;
+				p = s + diff;
+				DrawLine(Buffer, s, p, {0, 0, 1});
+				s = p;
+			}
+		}
+
+		s = ac + ps[0];
+		for(int i = 0; i < 4; i++)
+		{
+			v2 a = ps[i];
+			v2 b = ps[(i+1)%4 + (i/4)*4];
+
+			v2 diff = b - a;
+			p = s + diff;
+			DrawLine(Buffer, s, p, {1, 0, 0});
+			s = p;
+		}
+		DrawLine(Buffer, ac, ac + ad * 60.0f, {1, 0, 0});
+
+		s = bc + ps[4];
+		for(int i = 4; i < 8; i++)
+		{
+			v2 a = ps[i];
+			v2 b = ps[(i+1)%4 + (i/4)*4];
+
+			v2 diff = b - a;
+			p = s + diff;
+			DrawLine(Buffer, s, p, {0, 1, 0});
+			s = p;
+		}
+		DrawLine(Buffer, bc, bc + bd * 60.0f, {1, 0, 0});
+	}
+
+	f32 deg = pi32 * 0.1f * SecondsToUpdate;
+	m22 RotCW  = { Cos(deg),-Sin(deg),
+								 Sin(deg), Cos(deg)};
+	deg = pi32 * 0.05f * SecondsToUpdate;
+	m22 RotCCW  = { Cos(deg), Sin(deg),
+								 -Sin(deg), Cos(deg)};
+	bd = Normalize(RotCW * bd);
+	game_keyboard* Keyboard = GetKeyboard(Input, 0);
+	if(Held(Keyboard, Space))
+	{
+		ad = Normalize(RotCCW * ad);
+	}
+#endif
 }
 
 	internal_function void

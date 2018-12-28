@@ -48,6 +48,9 @@ struct low_entity
 
 	b32 Collides;
 
+	f32 DecelerationFactor;
+	f32 AccelerationFactor;
+
 	union
 	{
 		struct

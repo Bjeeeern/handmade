@@ -60,6 +60,8 @@ AddPlayer(game_state* GameState)
 
 	Entity.Low->Dim = v2{0.5f, 0.3f} * GameState->WorldMap->TileSideInMeters;
 	Entity.Low->Collides = true;
+	Entity.Low->DecelerationFactor = -8.5f;
+	Entity.Low->AccelerationFactor = 85.0f;
 
 	entity Test = GetEntityByLowIndex(&GameState->Entities, GameState->CameraFollowingPlayerIndex);
 	if(!Test.Low)
@@ -177,6 +179,7 @@ MountEntityOnCar(memory_arena* WorldArena, world_map* WorldMap, entity* Entity, 
 AddCar(game_state* GameState, world_map_position WorldPos)
 {
 	entity CarFrameEntity = AddCarFrame(GameState, WorldPos);
+	CarFrameEntity.Low->DecelerationFactor = -0.5f;
 
 	entity EngineEntity = AddEngine(GameState, WorldPos);
 	CarFrameEntity.Low->CarFrame.Engine = EngineEntity.LowEntityIndex;
@@ -191,8 +194,8 @@ AddCar(game_state* GameState, world_map_position WorldPos)
 		WheelEntity.Low->Wheel.Vehicle = CarFrameEntity.LowEntityIndex;
 	}
 
-	MoveCarPartsToStartingPosition(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
-																 CarFrameEntity.LowEntityIndex);
+	MoveCarPartsToStartingPosition(&GameState->WorldArena, GameState->WorldMap, 
+																 &GameState->Entities, CarFrameEntity.LowEntityIndex);
 
 	return CarFrameEntity;
 }
@@ -450,7 +453,10 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 				}
 				if(TileValue ==  2)
 				{
-					//AddWall(GameState, WorldPos);
+					if(!ScreenIndex)
+					{
+						AddWall(GameState, WorldPos);
+					}
 				}
 				if(TileValue == 3)
 				{
@@ -512,51 +518,261 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	}
 }
 
-internal_function b32
-TestWall(v2 Axis, v2 P0, v2 D0, f32 Wall, v2 MinEdge, v2 MaxEdge, f32* BestTime)
+//NOTE(bjorn): Lazy fix. https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection
+// I dont even understand the maths behind it.
+struct intersection_result
 {
-	b32 Hit = false;
-	v2 Coaxis = {Axis.Y, Axis.X};
-
-	if(Dot(D0, Axis) != 0.0f)
+	b32 Valid;
+	f32 t;
+};
+internal_function intersection_result
+GetTimeOfIntersectionWithLineSegment(v2 P, v2 Delta, v2 A, v2 B)
+{
+	intersection_result Result = {};
+	v2 PD = P+Delta;
+	f32 denominator = (P.X-PD.X) * (A.Y-B.Y) - (P.Y-PD.Y) * (A.X-B.X);
+	if(denominator != 0)
 	{
-		f32 t = (Wall - Dot(P0, Axis)) / Dot(D0, Axis);
-
-		if(0 < t && t < *BestTime)
+		f32 u = -(((P.X-PD.X) * (P.Y-A.Y) - (P.Y-PD.Y) * (P.X-A.X)) / denominator);
+		if((u >= 0.0f) && (u <= 1.0f))
 		{
-			v2 P1 = P0 + t * D0;
-
-			if(Dot(MinEdge, Coaxis) < Dot(P1, Coaxis) && Dot(P1, Coaxis) < Dot(MaxEdge, Coaxis))
-			{
-				f32 tEpsilon = 0.0001f;
-				*BestTime = Max(0.0f, t - tEpsilon);
-				Hit = true;
-			}
+			Result.Valid = true;
+			Result.t = ((P.X-A.X) * (A.Y-B.Y) - (P.Y-A.Y) * (A.X-B.X)) / denominator;
 		}
 	}
 
-	return Hit;
+	return Result;
 }
 
+struct collision_result
+{
+	b32 Hit;
+  f32 TimeOfImpact;
+	v2 Normal;
+};
+
+internal_function collision_result 
+MinkowskiSumCollision(entity* CollisionEntity, entity* Entity, v2 DeltaP)
+{
+	collision_result Result = {};
+
+	v2 EntD    = Entity->High->D.XY;
+	v2 ColEntD = CollisionEntity->High->D.XY;
+
+	v2 EntP    = Entity->High->P.XY;
+	v2 ColEntP = CollisionEntity->High->P.XY;
+
+	v2 ps[8] = {};
+	v2 dir_ord[4] = {{-1, 1}, {1, 1}, {1, -1}, {-1, -1}};
+	m22 cw = { 0,-1,
+						 1, 0};
+	for(int i = 0; i < 4; i++)
+	{
+		f32 x = dir_ord[i%4].X;
+		f32 y = dir_ord[i%4].Y;
+
+		v2 ToCorner = Hadamard(v2{x, y}, CollisionEntity->Low->Dim.XY) * 0.5f;
+		ps[i] = cw * ColEntD * ToCorner.X + 
+			           ColEntD * ToCorner.Y;
+	}
+	for(int i = 4; i < 8; i++)
+	{
+		f32 x = dir_ord[i%4].X;
+		f32 y = dir_ord[i%4].Y;
+
+		v2 ToCorner = Hadamard(v2{x, y}, Entity->Low->Dim.XY) * 0.5f;
+		ps[i] = cw * EntD * ToCorner.X + 
+			           EntD * ToCorner.Y;
+	}
+
+	s32 SecondEdgeIndex;
+	if(Dot(ColEntD, EntD) > 0)
+	{
+		if(Cross((v3)ColEntD, (v3)EntD).Z > 0)
+		{
+			SecondEdgeIndex = 4;
+		}
+		else
+		{
+			SecondEdgeIndex = 5;
+		}
+	}
+	else
+	{
+		if(Cross((v3)ColEntD, (v3)EntD).Z > 0)
+		{
+			SecondEdgeIndex = 7;
+		}
+		else
+		{
+			SecondEdgeIndex = 6;
+		}
+	}
+
+	v2 EdgeStart = ColEntP + ps[0] + ps[SecondEdgeIndex];
+	for(int i = 0; i < 4; i++)
+	{
+		{
+			s32 j = 0 + i;
+			v2 diff = (ps[(j+1)%4 + 0] - 
+								 ps[(j+0)%4 + 0]);
+
+			v2 p0 = EdgeStart;
+			v2 p1 = EdgeStart + diff;
+
+			intersection_result Test = GetTimeOfIntersectionWithLineSegment(EntP, DeltaP, p0, p1);
+			if(Test.Valid && (Test.t >= 0.0f) && (Test.t <= 1.0f))
+			{
+				Result.Hit = true;
+				Result.TimeOfImpact = Test.t;
+				v2 n = cw * diff;
+				if(Dot(DeltaP, n) > 0) { n *= -1; } 
+				Result.Normal = Normalize(n);
+				break;
+			}
+
+			EdgeStart = p1;
+		}
+		{
+			s32 j = SecondEdgeIndex + i;
+			v2 diff = (ps[(j+1)%4 + 4] - 
+								 ps[(j+0)%4 + 4]);
+
+			v2 p0 = EdgeStart;
+			v2 p1 = EdgeStart + diff;
+
+			intersection_result Test = GetTimeOfIntersectionWithLineSegment(EntP, DeltaP, p0, p1);
+			if(Test.Valid && (0.0f <= Test.t ) && (Test.t <= 1.0f))
+			{
+				Result.Hit = true;
+				Result.TimeOfImpact = Test.t;
+				v2 n = cw * diff;
+				if(Dot(DeltaP, n) > 0) { n *= -1; } 
+				Result.Normal = Normalize(n);
+				break;
+			}
+
+			EdgeStart = p1;
+		}
+	}
+
+	f32 tEpsilon = 0.1f;             
+	Result.TimeOfImpact = Max(0.0f, Result.TimeOfImpact - tEpsilon);
+	return Result;
+}
+
+#if HANDMADE_INTERNAL
+internal_function void
+DEBUGMinkowskiSum(game_offscreen_buffer* Buffer, entity* A, entity* B, 
+									m22 GameSpaceToScreenSpace, v2 ScreenCenter)
+{
+	v2 ad = A->High->D.XY;
+	v2 bd = B->High->D.XY;
+
+	v2 adim = A->Low->Dim.XY;
+	v2 bdim = B->Low->Dim.XY;
+
+	v2 ps[8] = {};
+	v2 dir_ord[4] = {{-1, 1}, {1, 1}, {1, -1}, {-1, -1}};
+	m22 cw = { 0,-1,
+						 1, 0};
+	for(int i = 0; i < 4; i++)
+	{
+		f32 x = dir_ord[i%4].X;
+		f32 y = dir_ord[i%4].Y;
+
+		v2 ToCorner = Hadamard(v2{x, y}, adim) * 0.5f;
+		ps[i] = cw * ad * ToCorner.X + 
+			           ad * ToCorner.Y;
+	}
+	for(int i = 4; i < 8; i++)
+	{
+		f32 x = dir_ord[i%4].X;
+		f32 y = dir_ord[i%4].Y;
+
+		v2 ToCorner = Hadamard(v2{x, y}, bdim) * 0.5f;
+		ps[i] = cw * bd * ToCorner.X + 
+			           bd * ToCorner.Y;
+	}
+
+	s32 asi = 0;
+	s32 bsi;
+	if(Dot(ad, bd) > 0)
+	{
+		if(Cross((v3)ad, (v3)bd).Z > 0)
+		{
+			bsi = 4;
+		}
+		else
+		{
+			bsi = 5;
+		}
+	}
+	else
+	{
+		if(Cross((v3)ad, (v3)bd).Z > 0)
+		{
+			bsi = 7;
+		}
+		else
+		{
+			bsi = 6;
+		}
+	}
+
+	{
+		v2 EdgeStart = A->High->P.XY + ps[asi] + ps[bsi];
+		for(int i = 0; i < 4; i++)
+		{
+			{
+				s32 j = 0 + i;
+				v2 diff = (ps[(j+1)%4 + 0] - 
+									 ps[(j+0)%4 + 0]);
+
+				v2 p0 = EdgeStart;
+				v2 p1 = EdgeStart + diff;
+
+				DrawLine(Buffer, 
+								 ScreenCenter + GameSpaceToScreenSpace * p0, 
+								 ScreenCenter + GameSpaceToScreenSpace * p1, {0, 0, 1});
+
+				EdgeStart = p1;
+			}
+			{
+				s32 j = bsi + i;
+				v2 diff = (ps[(j+1)%4 + 4] - 
+									 ps[(j+0)%4 + 4]);
+
+				v2 p0 = EdgeStart;
+				v2 p1 = EdgeStart + diff;
+
+				DrawLine(Buffer, 
+								 ScreenCenter + GameSpaceToScreenSpace * p0, 
+								 ScreenCenter + GameSpaceToScreenSpace * p1, {0, 0, 1});
+
+				EdgeStart = p1;
+			}
+		}
+	}
+}
+#endif
+
 	internal_function void
-MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsToUpdate, 
+MoveEntity(game_state* GameState, entity Entity, f32 SecondsToUpdate, 
 					 world_map* WorldMap, world_map_position CameraP)
 {
 	entities* Entities = &GameState->Entities;
 
-	v2 OldPos = Entity.High->P.XY;
-
-	v2 ddP = InputDirection * 85.0f;
+	v2 ddP = Entity.High->ddP.XY;
 	//TODO(casey): ODE here!
-	ddP += -8.5f * Entity.High->dP.XY;
+	ddP += Entity.Low->DecelerationFactor * Entity.High->dP.XY;
 
-	v2 D0 = (0.5f * ddP * Square(SecondsToUpdate) + (Entity.High->dP.XY * SecondsToUpdate));
+	v2 P = Entity.High->P.XY;
+	v2 Delta = (0.5f * ddP * Square(SecondsToUpdate) + (Entity.High->dP.XY * SecondsToUpdate));
 
 	//
 	// NOTE(bjorn): Collision check after movement
 	//
-	v2 P0 = OldPos;
-	v2 D1 = D0;
 	for(s32 Steps = 3;
 			Steps > 0;
 			Steps--)
@@ -572,20 +788,36 @@ MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsT
 			if(CollisionEntity.Low->Collides && 
 				 Entity.Low->HighEntityIndex != CollisionEntity.Low->HighEntityIndex)
 			{
+				//TODO(bjorn): Funky stuff will happen if I don't deal with inside
+				//outside stuff. For example; if the object is small enough and if the
+				//player travel fast enough he might hit the inner wall instead of the
+				//outer wall.
+				collision_result Test = MinkowskiSumCollision(&CollisionEntity, &Entity, Delta);
 
+				if(Test.Hit && Test.TimeOfImpact < BestTime)
+				{
+					HitDetected = Test.Hit;
+
+					HitEntity = CollisionEntity;
+
+					CollidedFromTheInside = false;
+					BestTime = Test.TimeOfImpact;
+					WallNormal = Test.Normal;
+				}
+#if 0
 				v2 BottomLeftEdge = CollisionEntity.High->P.XY - 
 					(CollisionEntity.Low->Dim.XY + Entity.Low->Dim.XY) * 0.5f;
 
 				v2 TopRightEdge = CollisionEntity.High->P.XY + 
 					(CollisionEntity.Low->Dim.XY + Entity.Low->Dim.XY) * 0.5f;
 
-				b32 RightWallTest = TestWall({1,0}, P0, D0, TopRightEdge.X, 
-																		 BottomLeftEdge, TopRightEdge, &BestTime);
-				b32 LeftWallTest = TestWall({1,0}, P0, D0, BottomLeftEdge.X, 
-																		BottomLeftEdge, TopRightEdge, &BestTime);
-				b32 TopWallTest = TestWall({0,1}, P0, D0, TopRightEdge.Y, 
-																	 BottomLeftEdge, TopRightEdge, &BestTime);
-				b32 BottomWallTest = TestWall({0,1}, P0, D0, BottomLeftEdge.Y, 
+				b32 RightWallTest  = TestWall({1,0}, P, Delta, TopRightEdge.X, 
+																			BottomLeftEdge, TopRightEdge, &BestTime);
+				b32 LeftWallTest   = TestWall({1,0}, P, Delta, BottomLeftEdge.X, 
+																			BottomLeftEdge, TopRightEdge, &BestTime);
+				b32 TopWallTest    = TestWall({0,1}, P, Delta, TopRightEdge.Y, 
+																			BottomLeftEdge, TopRightEdge, &BestTime);
+				b32 BottomWallTest = TestWall({0,1}, P, Delta, BottomLeftEdge.Y, 
 																			BottomLeftEdge, TopRightEdge, &BestTime);
 
 				if(RightWallTest || LeftWallTest || TopWallTest || BottomWallTest)
@@ -593,19 +825,20 @@ MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsT
 					HitDetected = true;
 					HitEntity = CollisionEntity;
 
-					CollidedFromTheInside = IsInRectangle(RectMinMax(BottomLeftEdge, TopRightEdge), P0);
+					CollidedFromTheInside = IsInRectangle(RectMinMax(BottomLeftEdge, TopRightEdge), P);
 				}
 
 				if(RightWallTest)  { WallNormal = { 1, 0}; }
 				if(LeftWallTest)   { WallNormal = {-1, 0}; }
 				if(TopWallTest)    { WallNormal = { 0, 1}; }
 				if(BottomWallTest) { WallNormal = { 0,-1}; }
+#endif
 			}
 		}
 
 		if(BestTime >= 1.0f && !HitDetected) 
 		{ 
-			P0 += D0;
+			P += Delta;
 			break; 
 		}
 
@@ -613,7 +846,7 @@ MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsT
 		{
 			if(HitEntity.Low->Type == EntityType_Stair)
 			{
-				P0 += D0;
+				P += Delta;
 				if(!CollidedFromTheInside)
 				{
 					Entity.High->P.Z += HitEntity.Low->Stair.dZ;
@@ -622,15 +855,15 @@ MoveEntity(game_state* GameState, entity Entity, v2 InputDirection, f32 SecondsT
 			}
 			else
 			{
-				P0 += BestTime * D0;
-				D0 *= (1.0f - BestTime);
-				D0              -= Dot(D0,							   WallNormal) * WallNormal;
+				P += BestTime * Delta;
+				Delta *= (1.0f - BestTime);
+				Delta              -= Dot(Delta,					    WallNormal) * WallNormal;
 				Entity.High->dP.XY -= Dot(Entity.High->dP.XY, WallNormal) * WallNormal;
 			}
 		}
 	}
 
-	Entity.High->P.XY = P0;
+	Entity.High->P.XY = P;
 	Entity.High->dP.XY = (ddP * SecondsToUpdate) + Entity.High->dP.XY;
 
 	if(Entity.High->dP.X != 0.0f && Entity.High->dP.Y != 0.0f)
@@ -905,7 +1138,7 @@ UpdateCarPos(memory_arena* WorldArena, world_map* WorldMap, entities* Entities,
 		v2 NewDir = GetGlobalPosFromRelativeCoordinates(NewP, NewD, RelDir) - NewPos;
 
 		DriverEntity.High->P = NewPos;
-		DriverEntity.High->D = Normalize(NewDir);
+		//DriverEntity.High->D = Normalize(NewDir);
 		OffsetAndChangeEntityLocation(WorldArena, WorldMap, &DriverEntity, *CameraP, (v3)NewPos);
 	}
 
@@ -940,7 +1173,7 @@ PropelCar(memory_arena* WorldArena, world_map* WorldMap, entities* Entities,
 		entity RightFrontWheel = GetEntityByLowIndex(Entities, CarFrame->Low->CarFrame.Wheels[3]);
 
 		v3 ddP = CarFrame->High->ddP;
-		ddP += -0.5f * CarFrame->High->dP;
+		ddP += CarFrame->Low->DecelerationFactor * CarFrame->High->dP;
 
 		v3 DeltaP = (0.5f * ddP * Square(SecondsToUpdate) + 
 								 (CarFrame->High->dP * SecondsToUpdate));
@@ -996,9 +1229,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	world_map* WorldMap = GameState->WorldMap;
 	entities* Entities = &GameState->Entities;
 
-	//
-	// NOTE(bjorn): Movement
-	//
 	for(s32 ControllerIndex = 0;
 			ControllerIndex < ArrayCount(Input->Controllers);
 			ControllerIndex++)
@@ -1017,9 +1247,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				if(ControlledEntity.High)
 				{
-					MoveEntity(GameState, ControlledEntity, 
-										 InputDirection, SecondsToUpdate, 
-										 WorldMap, GameState->CameraP);
+					ControlledEntity.High->ddP = InputDirection * ControlledEntity.Low->AccelerationFactor;
 				}
 
 				if(Clicked(Controller, Start))
@@ -1127,35 +1355,34 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						}
 						else
 						{
-							MoveEntity(GameState, ControlledEntity, 
-												 InputDirection, SecondsToUpdate, 
-												 WorldMap, GameState->CameraP);
+							ControlledEntity.High->ddP = 
+								InputDirection * ControlledEntity.Low->AccelerationFactor;
 						}
-					}
-					else
-					{
-						MoveEntity(GameState, ControlledEntity, 
-											 InputDirection, SecondsToUpdate, 
-											 WorldMap, GameState->CameraP);
 					}
 				}
 			}
 		}
 	}
 
+	//
+	// NOTE(bjorn): Movement
+	//
 	for(LoopOverHighEntities)
 	{
 		if(Entity.Low->Type == EntityType_CarFrame)
 		{
 			PropelCar(WorldArena, WorldMap, Entities, &Entity, &GameState->CameraP, SecondsToUpdate);
 		}
+		else if(Entity.Low->Type == EntityType_Player && !Entity.Low->Player.RidingVehicle)
+		{
+			MoveEntity(GameState, Entity, SecondsToUpdate, WorldMap, GameState->CameraP);
+		}
 	}
 
 	//
 	// NOTE(bjorn): Update camera
 	//
-	entity CameraTarget = 
-		GetEntityByLowIndex(Entities, GameState->CameraFollowingPlayerIndex);
+	entity CameraTarget = GetEntityByLowIndex(Entities, GameState->CameraFollowingPlayerIndex);
 	if(CameraTarget.Low)
 	{
 #if 0
@@ -1221,6 +1448,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #endif
 			DrawBitmap(Buffer, &GameState->Rock, EntityPixelPos - GameState->Rock.Alignment, 
 								 (v2)GameState->Rock.Dim);
+#if 0
+			u32 ControlledEntityIndex = GameState->PlayerIndexForKeyboard[0];
+			entity Player = GetEntityByLowIndex(Entities, ControlledEntityIndex);
+			DEBUGMinkowskiSum(Buffer, &Entity, &Player, GameSpaceToScreenSpace, ScreenCenter);
+#endif
 		}
 		if(Entity.Low->Type == EntityType_Ground)
 		{
@@ -1245,6 +1477,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								Entity.High->D.XY, Color);
 			DrawLine(Buffer, EntityPixelPos, EntityPixelPos + 
 							 Hadamard(Entity.High->D.XY, v2{1, -1}) * 40.0f, {1, 0, 0});
+
+#if 0
+			u32 ControlledEntityIndex = GameState->PlayerIndexForKeyboard[0];
+			entity Player = GetEntityByLowIndex(Entities, ControlledEntityIndex);
+			DEBUGMinkowskiSum(Buffer, &Entity, &Player, GameSpaceToScreenSpace, ScreenCenter);
+#endif
 #if 0
 			DrawBitmap(Buffer, &GameState->Dirt, EntityPixelPos - GameState->Dirt.Alignment, 
 								 (v2)GameState->Dirt.Dim * 1.2f);
@@ -1272,130 +1510,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		}
 	}
 
-#if 1
-	v2 ac = {200.0f, 300.0f};
-	v2 bc = ac + v2{200.0f, 0.0f};
-	v2 cc = bc + v2{200.0f, 0.0f};
-
-	local_persist v2 ad = {0.0f, 1.0f};
-	local_persist v2 bd = {0.0f, 1.0f};
-
-	v2 adim = {50.0f, 200.0f};
-	v2 bdim = {100.0f, 100.0f};
-
-	v2 ps[8] = {};
-	v2 dir_ord[4] = {{-1, 1}, {1, 1}, {1, -1}, {-1, -1}};
-	for(int i = 0; i < 8; i++)
-	{
-		m22 cw = { 0, 1,
-							-1, 0};
-		f32 x = dir_ord[i%4].X;
-		f32 y = dir_ord[i%4].Y;
-
-		b32 is_b = i / 4;
-		if(is_b)
-		{
-			ps[i] = ((cw * bd) * x * bdim.X + bd * y * bdim.Y) * 0.5f;
-		}
-		else
-		{
-			ps[i] = ((cw * ad) * x * adim.X + ad * y * adim.Y) * 0.5f;
-		}
-	}
-
-	s32 asi = 0;
-	s32 bsi;
-	if(Dot(ad, bd) > 0)
-	{
-		if(Cross((v3)ad, (v3)bd).Z > 0)
-		{
-			bsi = 5;
-		}
-		else
-		{
-			bsi = 4;
-		}
-	}
-	else
-	{
-		if(Cross((v3)ad, (v3)bd).Z > 0)
-		{
-			bsi = 6;
-		}
-		else
-		{
-			bsi = 7;
-		}
-	}
-
-	{
-		v2 s = cc + ps[asi] + ps[bsi];
-
-		v2 p;
-		for(int i = 0; i < 4; i++)
-		{
-			{
-				s32 j = asi + i;
-				v2 a = ps[(j+0)%4];
-				v2 b = ps[(j+1)%4];
-
-				v2 diff = b - a;
-				p = s + diff;
-				DrawLine(Buffer, s, p, {0, 0, 1});
-				s = p;
-			}
-			{
-				s32 j = bsi + i;
-				v2 a = ps[(j+0)%4 + 4];
-				v2 b = ps[(j+1)%4 + 4];
-
-				v2 diff = b - a;
-				p = s + diff;
-				DrawLine(Buffer, s, p, {0, 0, 1});
-				s = p;
-			}
-		}
-
-		s = ac + ps[0];
-		for(int i = 0; i < 4; i++)
-		{
-			v2 a = ps[i];
-			v2 b = ps[(i+1)%4 + (i/4)*4];
-
-			v2 diff = b - a;
-			p = s + diff;
-			DrawLine(Buffer, s, p, {1, 0, 0});
-			s = p;
-		}
-		DrawLine(Buffer, ac, ac + ad * 60.0f, {1, 0, 0});
-
-		s = bc + ps[4];
-		for(int i = 4; i < 8; i++)
-		{
-			v2 a = ps[i];
-			v2 b = ps[(i+1)%4 + (i/4)*4];
-
-			v2 diff = b - a;
-			p = s + diff;
-			DrawLine(Buffer, s, p, {0, 1, 0});
-			s = p;
-		}
-		DrawLine(Buffer, bc, bc + bd * 60.0f, {1, 0, 0});
-	}
-
-	f32 deg = pi32 * 0.1f * SecondsToUpdate;
-	m22 RotCW  = { Cos(deg),-Sin(deg),
-								 Sin(deg), Cos(deg)};
-	deg = pi32 * 0.05f * SecondsToUpdate;
-	m22 RotCCW  = { Cos(deg), Sin(deg),
-								 -Sin(deg), Cos(deg)};
-	bd = Normalize(RotCW * bd);
-	game_keyboard* Keyboard = GetKeyboard(Input, 0);
-	if(Held(Keyboard, Space))
-	{
-		ad = Normalize(RotCCW * ad);
-	}
-#endif
 }
 
 	internal_function void

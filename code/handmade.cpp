@@ -737,7 +737,10 @@ MoveEntity(game_state* GameState, entity Entity, f32 SecondsToUpdate,
 				//the inside. Maybe doing a search on all the intersecting edges is the
 				//solution to this. Coupled with a sphere test edge + object reduction
 				//only searching in local space.
-				f32 WallEpsilon = 0.0001f;
+				//
+				//Turns out that I can basically solve it by raising the threshold by a
+				//lot. If I go too far though the guy starts bouncing.
+				f32 WallEpsilon = 0.02f;
 				if(CollidedFromOutsideInto)
 				{
 					P += BestTime * DeltaP + Normalize(-DeltaP) * WallEpsilon;
@@ -1341,7 +1344,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #endif
 			DrawBitmap(Buffer, &GameState->Rock, EntityPixelPos - GameState->Rock.Alignment, 
 								 (v2)GameState->Rock.Dim);
-#if 1
+#if 0
 			u32 ControlledEntityIndex = GameState->PlayerIndexForKeyboard[0];
 			entity Player = GetEntityByLowIndex(Entities, ControlledEntityIndex);
 			DEBUGMinkowskiSum(Buffer, &Entity, &Player, GameSpaceToScreenSpace, ScreenCenter);
@@ -1371,7 +1374,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			DrawLine(Buffer, EntityPixelPos, EntityPixelPos + 
 							 Hadamard(Entity.High->D.XY, v2{1, -1}) * 40.0f, {1, 0, 0});
 
-#if 1
+#if 0
 			u32 ControlledEntityIndex = GameState->PlayerIndexForKeyboard[0];
 			entity Player = GetEntityByLowIndex(Entities, ControlledEntityIndex);
 			DEBUGMinkowskiSum(Buffer, &Entity, &Player, GameSpaceToScreenSpace, ScreenCenter);

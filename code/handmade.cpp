@@ -732,6 +732,11 @@ MoveEntity(game_state* GameState, entity Entity, f32 SecondsToUpdate,
 			}
 			else
 			{
+				//TODO(bjorn): As it is right now, if the player get into a sharp wedge
+				//and move about, it is possible to get past one edge and walk about on
+				//the inside. Maybe doing a search on all the intersecting edges is the
+				//solution to this. Coupled with a sphere test edge + object reduction
+				//only searching in local space.
 				f32 WallEpsilon = 0.0001f;
 				if(CollidedFromOutsideInto)
 				{

@@ -547,212 +547,109 @@ GetTimeOfIntersectionWithLineSegment(v2 P, v2 Delta, v2 A, v2 B)
 struct collision_result
 {
 	b32 Hit;
+	b32 Inside;
   f32 TimeOfImpact;
 	v2 Normal;
 };
 
-internal_function collision_result 
-MinkowskiSumCollision(entity* CollisionEntity, entity* Entity, v2 DeltaP)
+struct polygon
 {
-	collision_result Result = {};
+	s32 NodeCount;
+	v2 Nodes[8];
+};
+	internal_function polygon 
+MinkowskiSum(entity* Target, entity* Movable)
+{
+	polygon Result = {};
 
-	v2 EntD    = Entity->High->D.XY;
-	v2 ColEntD = CollisionEntity->High->D.XY;
+	Result.NodeCount = 8;
 
-	v2 EntP    = Entity->High->P.XY;
-	v2 ColEntP = CollisionEntity->High->P.XY;
+	v2 MovableP = Movable->High->P.XY;
+	v2 MovableD = Movable->High->D.XY;
 
-	v2 ps[8] = {};
-	v2 dir_ord[4] = {{-1, 1}, {1, 1}, {1, -1}, {-1, -1}};
-	m22 cw = { 0,-1,
-						 1, 0};
-	for(int i = 0; i < 4; i++)
+	v2 TargetP  = Target->High->P.XY;
+	v2 TargetD  = Target->High->D.XY;
+
+	v2 CornerVectors[8] = {};
+	v2 OrderOfCorners[4] = {{-1, 1}, {1, 1}, {1, -1}, {-1, -1}};
+	m22 ClockWise = { 0,-1,
+						        1, 0};
+	for(int CornerIndex = 0; 
+			CornerIndex < 4; 
+			CornerIndex++)
 	{
-		f32 x = dir_ord[i%4].X;
-		f32 y = dir_ord[i%4].Y;
-
-		v2 ToCorner = Hadamard(v2{x, y}, CollisionEntity->Low->Dim.XY) * 0.5f;
-		ps[i] = cw * ColEntD * ToCorner.X + 
-			           ColEntD * ToCorner.Y;
+		v2 CornerOffset = Hadamard(OrderOfCorners[CornerIndex%4], Target->Low->Dim.XY) * 0.5f;
+		CornerVectors[CornerIndex] = ClockWise * TargetD * CornerOffset.X + TargetD * CornerOffset.Y;
 	}
-	for(int i = 4; i < 8; i++)
+	for(int CornerIndex = 4; 
+			CornerIndex < 8; 
+			CornerIndex++)
 	{
-		f32 x = dir_ord[i%4].X;
-		f32 y = dir_ord[i%4].Y;
-
-		v2 ToCorner = Hadamard(v2{x, y}, Entity->Low->Dim.XY) * 0.5f;
-		ps[i] = cw * EntD * ToCorner.X + 
-			           EntD * ToCorner.Y;
+		v2 CornerOffset = Hadamard(OrderOfCorners[CornerIndex%4], Movable->Low->Dim.XY) * 0.5f;
+		CornerVectors[CornerIndex] = ClockWise * MovableD * CornerOffset.X + MovableD * CornerOffset.Y;
 	}
 
-	s32 SecondEdgeIndex;
-	if(Dot(ColEntD, EntD) > 0)
+	s32 CornerStartIndex;
+	if(Dot(TargetD, MovableD) > 0)
 	{
-		if(Cross((v3)ColEntD, (v3)EntD).Z > 0)
-		{
-			SecondEdgeIndex = 4;
-		}
-		else
-		{
-			SecondEdgeIndex = 5;
-		}
+		CornerStartIndex = (Cross((v3)TargetD, (v3)MovableD).Z > 0) ? 4 : 5;
 	}
 	else
 	{
-		if(Cross((v3)ColEntD, (v3)EntD).Z > 0)
-		{
-			SecondEdgeIndex = 7;
-		}
-		else
-		{
-			SecondEdgeIndex = 6;
-		}
+		CornerStartIndex = (Cross((v3)TargetD, (v3)MovableD).Z > 0) ? 7 : 6;
 	}
 
-	v2 EdgeStart = ColEntP + ps[0] + ps[SecondEdgeIndex];
-	for(int i = 0; i < 4; i++)
+	v2 EdgeStart = TargetP + CornerVectors[0] + CornerVectors[CornerStartIndex];
+	for(int CornerIndex = 0; 
+			CornerIndex < 4; 
+			CornerIndex++)
 	{
 		{
-			s32 j = 0 + i;
-			v2 diff = (ps[(j+1)%4 + 0] - 
-								 ps[(j+0)%4 + 0]);
+			s32 NodeIndex = 0                + CornerIndex;
+			v2 NodeDiff = (CornerVectors[(NodeIndex+1)%4 + 0] - 
+										 CornerVectors[(NodeIndex+0)%4 + 0]);
 
-			v2 p0 = EdgeStart;
-			v2 p1 = EdgeStart + diff;
-
-			intersection_result Test = GetTimeOfIntersectionWithLineSegment(EntP, DeltaP, p0, p1);
-			if(Test.Valid && (Test.t >= 0.0f) && (Test.t <= 1.0f))
-			{
-				Result.Hit = true;
-				Result.TimeOfImpact = Test.t;
-				v2 n = cw * diff;
-				if(Dot(DeltaP, n) > 0) { n *= -1; } 
-				Result.Normal = Normalize(n);
-				break;
-			}
-
-			EdgeStart = p1;
+			Result.Nodes[CornerIndex*2+0] = EdgeStart;
+			EdgeStart += NodeDiff;
 		}
 		{
-			s32 j = SecondEdgeIndex + i;
-			v2 diff = (ps[(j+1)%4 + 4] - 
-								 ps[(j+0)%4 + 4]);
+			s32 NodeIndex = CornerStartIndex + CornerIndex;
+			v2 NodeDiff = (CornerVectors[(NodeIndex+1)%4 + 4] - 
+										 CornerVectors[(NodeIndex+0)%4 + 4]);
 
-			v2 p0 = EdgeStart;
-			v2 p1 = EdgeStart + diff;
-
-			intersection_result Test = GetTimeOfIntersectionWithLineSegment(EntP, DeltaP, p0, p1);
-			if(Test.Valid && (0.0f <= Test.t ) && (Test.t <= 1.0f))
-			{
-				Result.Hit = true;
-				Result.TimeOfImpact = Test.t;
-				v2 n = cw * diff;
-				if(Dot(DeltaP, n) > 0) { n *= -1; } 
-				Result.Normal = Normalize(n);
-				break;
-			}
-
-			EdgeStart = p1;
+			Result.Nodes[CornerIndex*2+1] = EdgeStart;
+			EdgeStart += NodeDiff;
 		}
 	}
 
-	f32 tEpsilon = 0.1f;             
-	Result.TimeOfImpact = Max(0.0f, Result.TimeOfImpact - tEpsilon);
 	return Result;
 }
 
 #if HANDMADE_INTERNAL
 internal_function void
-DEBUGMinkowskiSum(game_offscreen_buffer* Buffer, entity* A, entity* B, 
+DEBUGMinkowskiSum(game_offscreen_buffer* Buffer, 
+									entity* A, entity* B, 
 									m22 GameSpaceToScreenSpace, v2 ScreenCenter)
 {
-	v2 ad = A->High->D.XY;
-	v2 bd = B->High->D.XY;
+	polygon Sum = MinkowskiSum(A, B);
 
-	v2 adim = A->Low->Dim.XY;
-	v2 bdim = B->Low->Dim.XY;
-
-	v2 ps[8] = {};
-	v2 dir_ord[4] = {{-1, 1}, {1, 1}, {1, -1}, {-1, -1}};
-	m22 cw = { 0,-1,
-						 1, 0};
-	for(int i = 0; i < 4; i++)
+	for(int i = 0; i < Sum.NodeCount; i++)
 	{
-		f32 x = dir_ord[i%4].X;
-		f32 y = dir_ord[i%4].Y;
+		v2 N0 = Sum.Nodes[i];
+		v2 N1 = Sum.Nodes[(i+1) % Sum.NodeCount];
+		m22 CounterClockWise = { 0, 1,
+							        		  -1, 0};
 
-		v2 ToCorner = Hadamard(v2{x, y}, adim) * 0.5f;
-		ps[i] = cw * ad * ToCorner.X + 
-			           ad * ToCorner.Y;
-	}
-	for(int i = 4; i < 8; i++)
-	{
-		f32 x = dir_ord[i%4].X;
-		f32 y = dir_ord[i%4].Y;
+		v2 WallNormal = Normalize(CounterClockWise * (N1 - N0));
 
-		v2 ToCorner = Hadamard(v2{x, y}, bdim) * 0.5f;
-		ps[i] = cw * bd * ToCorner.X + 
-			           bd * ToCorner.Y;
-	}
-
-	s32 asi = 0;
-	s32 bsi;
-	if(Dot(ad, bd) > 0)
-	{
-		if(Cross((v3)ad, (v3)bd).Z > 0)
-		{
-			bsi = 4;
-		}
-		else
-		{
-			bsi = 5;
-		}
-	}
-	else
-	{
-		if(Cross((v3)ad, (v3)bd).Z > 0)
-		{
-			bsi = 7;
-		}
-		else
-		{
-			bsi = 6;
-		}
-	}
-
-	{
-		v2 EdgeStart = A->High->P.XY + ps[asi] + ps[bsi];
-		for(int i = 0; i < 4; i++)
-		{
-			{
-				s32 j = 0 + i;
-				v2 diff = (ps[(j+1)%4 + 0] - 
-									 ps[(j+0)%4 + 0]);
-
-				v2 p0 = EdgeStart;
-				v2 p1 = EdgeStart + diff;
-
-				DrawLine(Buffer, 
-								 ScreenCenter + GameSpaceToScreenSpace * p0, 
-								 ScreenCenter + GameSpaceToScreenSpace * p1, {0, 0, 1});
-
-				EdgeStart = p1;
-			}
-			{
-				s32 j = bsi + i;
-				v2 diff = (ps[(j+1)%4 + 4] - 
-									 ps[(j+0)%4 + 4]);
-
-				v2 p0 = EdgeStart;
-				v2 p1 = EdgeStart + diff;
-
-				DrawLine(Buffer, 
-								 ScreenCenter + GameSpaceToScreenSpace * p0, 
-								 ScreenCenter + GameSpaceToScreenSpace * p1, {0, 0, 1});
-
-				EdgeStart = p1;
-			}
-		}
+		DrawLine(Buffer, 
+						 ScreenCenter + GameSpaceToScreenSpace * N0, 
+						 ScreenCenter + GameSpaceToScreenSpace * N1, 
+						 {0, 0, 1});
+		DrawLine(Buffer, 
+						 ScreenCenter + GameSpaceToScreenSpace * (N0 + N1) * 0.5f, 
+						 ScreenCenter + GameSpaceToScreenSpace * ((N0 + N1) * 0.5f + WallNormal * 0.2f), 
+						 {1, 0, 1});
 	}
 }
 #endif
@@ -768,7 +665,7 @@ MoveEntity(game_state* GameState, entity Entity, f32 SecondsToUpdate,
 	ddP += Entity.Low->DecelerationFactor * Entity.High->dP.XY;
 
 	v2 P = Entity.High->P.XY;
-	v2 Delta = (0.5f * ddP * Square(SecondsToUpdate) + (Entity.High->dP.XY * SecondsToUpdate));
+	v2 DeltaP = (0.5f * ddP * Square(SecondsToUpdate) + (Entity.High->dP.XY * SecondsToUpdate));
 
 	//
 	// NOTE(bjorn): Collision check after movement
@@ -781,73 +678,53 @@ MoveEntity(game_state* GameState, entity Entity, f32 SecondsToUpdate,
 		f32 BestTime = 1.0f;
 		entity HitEntity = {};
 		b32 HitDetected = false;
-		b32 CollidedFromTheInside = false;
 
 		for(LoopOverHighEntitiesNamed(CollisionEntity))
 		{
 			if(CollisionEntity.Low->Collides && 
 				 Entity.Low->HighEntityIndex != CollisionEntity.Low->HighEntityIndex)
 			{
-				//TODO(bjorn): Funky stuff will happen if I don't deal with inside
-				//outside stuff. For example; if the object is small enough and if the
-				//player travel fast enough he might hit the inner wall instead of the
-				//outer wall.
-				collision_result Test = MinkowskiSumCollision(&CollisionEntity, &Entity, Delta);
-
-				if(Test.Hit && Test.TimeOfImpact < BestTime)
+				polygon Sum = MinkowskiSum(&CollisionEntity, &Entity);
+				for(s32 NodeIndex = 0; 
+						NodeIndex < Sum.NodeCount; 
+						NodeIndex++)
 				{
-					HitDetected = Test.Hit;
+					v2 N0 = Sum.Nodes[NodeIndex];
+					v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
+					intersection_result Intersect = GetTimeOfIntersectionWithLineSegment(P, DeltaP, N0, N1);
+					if(Intersect.Valid &&
+						 (0.0f <= Intersect.t && Intersect.t <= 1.0f) &&
+						 Intersect.t < BestTime)
+					{
+						m22 CounterClockWise = { 0, 1,
+						      									-1, 0};
 
-					HitEntity = CollisionEntity;
+						HitDetected = true;
+						HitEntity = CollisionEntity;
 
-					CollidedFromTheInside = false;
-					BestTime = Test.TimeOfImpact;
-					WallNormal = Test.Normal;
-				}
-#if 0
-				v2 BottomLeftEdge = CollisionEntity.High->P.XY - 
-					(CollisionEntity.Low->Dim.XY + Entity.Low->Dim.XY) * 0.5f;
-
-				v2 TopRightEdge = CollisionEntity.High->P.XY + 
-					(CollisionEntity.Low->Dim.XY + Entity.Low->Dim.XY) * 0.5f;
-
-				b32 RightWallTest  = TestWall({1,0}, P, Delta, TopRightEdge.X, 
-																			BottomLeftEdge, TopRightEdge, &BestTime);
-				b32 LeftWallTest   = TestWall({1,0}, P, Delta, BottomLeftEdge.X, 
-																			BottomLeftEdge, TopRightEdge, &BestTime);
-				b32 TopWallTest    = TestWall({0,1}, P, Delta, TopRightEdge.Y, 
-																			BottomLeftEdge, TopRightEdge, &BestTime);
-				b32 BottomWallTest = TestWall({0,1}, P, Delta, BottomLeftEdge.Y, 
-																			BottomLeftEdge, TopRightEdge, &BestTime);
-
-				if(RightWallTest || LeftWallTest || TopWallTest || BottomWallTest)
-				{
-					HitDetected = true;
-					HitEntity = CollisionEntity;
-
-					CollidedFromTheInside = IsInRectangle(RectMinMax(BottomLeftEdge, TopRightEdge), P);
-				}
-
-				if(RightWallTest)  { WallNormal = { 1, 0}; }
-				if(LeftWallTest)   { WallNormal = {-1, 0}; }
-				if(TopWallTest)    { WallNormal = { 0, 1}; }
-				if(BottomWallTest) { WallNormal = { 0,-1}; }
-#endif
+						WallNormal = Normalize(CounterClockWise * (N1 - N0));
+						BestTime = Intersect.t;
+					}
+				}	
 			}
 		}
 
-		if(BestTime >= 1.0f && !HitDetected) 
+		if(!HitDetected) 
 		{ 
-			P += Delta;
+			P += DeltaP;
 			break; 
 		}
 
 		if(HitDetected)
 		{
+			b32 CollidedFromOutsideInto = Dot(WallNormal, DeltaP) < 0;
+
 			if(HitEntity.Low->Type == EntityType_Stair)
 			{
-				P += Delta;
-				if(!CollidedFromTheInside)
+				f32 WallEpsilon = 0.0001f;
+				P += BestTime * DeltaP - WallNormal * WallEpsilon;
+				DeltaP *= (1.0f - BestTime);
+				if(CollidedFromOutsideInto)
 				{
 					Entity.High->P.Z += HitEntity.Low->Stair.dZ;
 				}
@@ -855,10 +732,21 @@ MoveEntity(game_state* GameState, entity Entity, f32 SecondsToUpdate,
 			}
 			else
 			{
-				P += BestTime * Delta;
-				Delta *= (1.0f - BestTime);
-				Delta              -= Dot(Delta,					    WallNormal) * WallNormal;
-				Entity.High->dP.XY -= Dot(Entity.High->dP.XY, WallNormal) * WallNormal;
+				f32 WallEpsilon = 0.0001f;
+				if(CollidedFromOutsideInto)
+				{
+					P += BestTime * DeltaP + Normalize(-DeltaP) * WallEpsilon;
+					DeltaP *= (1.0f - BestTime);
+
+					DeltaP             -= Dot(DeltaP,					    WallNormal) * WallNormal;
+					Entity.High->dP.XY -= Dot(Entity.High->dP.XY, WallNormal) * WallNormal;
+					ddP                -= Dot(ddP,                WallNormal) * WallNormal;
+				}
+				else
+				{
+					P += BestTime * DeltaP + WallNormal * WallEpsilon;
+					DeltaP *= (1.0f - BestTime);
+				}
 			}
 		}
 	}
@@ -1448,7 +1336,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #endif
 			DrawBitmap(Buffer, &GameState->Rock, EntityPixelPos - GameState->Rock.Alignment, 
 								 (v2)GameState->Rock.Dim);
-#if 0
+#if 1
 			u32 ControlledEntityIndex = GameState->PlayerIndexForKeyboard[0];
 			entity Player = GetEntityByLowIndex(Entities, ControlledEntityIndex);
 			DEBUGMinkowskiSum(Buffer, &Entity, &Player, GameSpaceToScreenSpace, ScreenCenter);
@@ -1478,7 +1366,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			DrawLine(Buffer, EntityPixelPos, EntityPixelPos + 
 							 Hadamard(Entity.High->D.XY, v2{1, -1}) * 40.0f, {1, 0, 0});
 
-#if 0
+#if 1
 			u32 ControlledEntityIndex = GameState->PlayerIndexForKeyboard[0];
 			entity Player = GetEntityByLowIndex(Entities, ControlledEntityIndex);
 			DEBUGMinkowskiSum(Buffer, &Entity, &Player, GameSpaceToScreenSpace, ScreenCenter);

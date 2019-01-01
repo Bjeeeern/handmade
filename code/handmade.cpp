@@ -46,6 +46,8 @@ struct game_state
 	loaded_bitmap Dirt;
 
 	hero_bitmaps HeroBitmaps[4];
+
+	b32 DEBUG_VisualiseMinkowskiSum;
 };
 
 	internal_function entity
@@ -320,9 +322,8 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	{
 		entity Player = AddPlayer(GameState);
 		GameState->PlayerIndexForKeyboard[0] = Player.LowEntityIndex;
-		AddCar(GameState, OffsetWorldPos(GameState->WorldMap, Player.Low->WorldP, {3.0f, 0, 0}));
+		AddCar(GameState, OffsetWorldPos(GameState->WorldMap, Player.Low->WorldP, {3.0f, -2.0f, 0}));
 	}
-
 
 	u32 ScreenX = 0;
 	u32 ScreenY = 0;
@@ -1077,25 +1078,29 @@ PropelCar(memory_arena* WorldArena, world_map* WorldMap, entities* Entities,
 
 		v3 OldFrontP = CarFrame->High->P + CarFrame->High->D * CarFrame->Low->Dim.Y * 0.5f;
 		v3 NewFrontP;
+		f32 DeltaPSign;
 		if(LeftFrontWheel.High)
 		{
-			NewFrontP = OldFrontP + LeftFrontWheel.High->D * Lenght(DeltaP);
+			DeltaPSign = Sign(Dot(DeltaP, LeftFrontWheel.High->D));
+			NewFrontP = OldFrontP + LeftFrontWheel.High->D * Lenght(DeltaP) * DeltaPSign;
 		}
-		else if(LeftFrontWheel.High)
+		else if(RightFrontWheel.High)
 		{
-			NewFrontP = OldFrontP + LeftFrontWheel.High->D * Lenght(DeltaP);
+			DeltaPSign = Sign(Dot(DeltaP, RightFrontWheel.High->D));
+			NewFrontP = OldFrontP + RightFrontWheel.High->D * Lenght(DeltaP) * DeltaPSign;
 		}
 		else
 		{
-			NewFrontP = OldFrontP + CarFrame->High->D * Lenght(DeltaP);
+			DeltaPSign = Sign(Dot(DeltaP, CarFrame->High->D));
+			NewFrontP = OldFrontP + CarFrame->High->D * Lenght(DeltaP) * DeltaPSign;
 		}
 
 		v3 OldP = CarFrame->High->P;
 		v3 NewD = Normalize(NewFrontP - OldP);
 		v3 NewP = NewFrontP - NewD * Distance(OldP, OldFrontP);
 
-		CarFrame->High->dP = NewD * Lenght(CarFrame->High->dP);
-		CarFrame->High->ddP = NewD * Lenght(CarFrame->High->ddP);
+		CarFrame->High->dP  = NewD * Lenght(CarFrame->High->dP ) * Sign(Dot(CarFrame->High->dP,  CarFrame->High->D));
+		CarFrame->High->ddP = NewD * Lenght(CarFrame->High->ddP) * Sign(Dot(CarFrame->High->ddP, CarFrame->High->D));
 
 		if(Lenght(CarFrame->High->ddP) < 0.1f && Lenght(CarFrame->High->dP) < 0.4f)
 		{
@@ -1171,6 +1176,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		game_keyboard* Keyboard = GetKeyboard(Input, KeyboardIndex);
 		if(Keyboard->IsConnected)
 		{
+			if(Clicked(Keyboard, M))
+			{
+				GameState->DEBUG_VisualiseMinkowskiSum = !GameState->DEBUG_VisualiseMinkowskiSum;
+			}
+
 			u32 ControlledEntityIndex = GameState->PlayerIndexForKeyboard[KeyboardIndex];
 			entity ControlledEntity = GetEntityByLowIndex(Entities, ControlledEntityIndex);
 
@@ -1240,14 +1250,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								AlignWheelsForward(Entities, &CarFrame, SecondsToUpdate); 
 							}
 
-							if(Clicked(Keyboard, Space))
-							{ 
-								CarFrame.High->ddP = CarFrame.High->D * (Lenght(CarFrame.High->ddP) + 3.0f);
-								if(Lenght(CarFrame.High->ddP) > 11.0f)
-								{
-									CarFrame.High->ddP = {}; 
-								}
-							}
+							if(Clicked(Keyboard, One))   { 
+								CarFrame.High->ddP = CarFrame.High->D * -3.0f; }
+							if(Clicked(Keyboard, Two))   { CarFrame.High->ddP = CarFrame.High->D *  0.0f; }
+							if(Clicked(Keyboard, Three)) { CarFrame.High->ddP = CarFrame.High->D *  3.0f; }
+							if(Clicked(Keyboard, Four))  { CarFrame.High->ddP = CarFrame.High->D *  6.0f; }
+							if(Clicked(Keyboard, Five))  { CarFrame.High->ddP = CarFrame.High->D *  9.0f; }
 						}
 						else
 						{
@@ -1344,11 +1352,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #endif
 			DrawBitmap(Buffer, &GameState->Rock, EntityPixelPos - GameState->Rock.Alignment, 
 								 (v2)GameState->Rock.Dim);
-#if 0
-			u32 ControlledEntityIndex = GameState->PlayerIndexForKeyboard[0];
-			entity Player = GetEntityByLowIndex(Entities, ControlledEntityIndex);
-			DEBUGMinkowskiSum(Buffer, &Entity, &Player, GameSpaceToScreenSpace, ScreenCenter);
-#endif
+			if(GameState->DEBUG_VisualiseMinkowskiSum)
+			{
+				u32 ControlledEntityIndex = GameState->PlayerIndexForKeyboard[0];
+				entity Player = GetEntityByLowIndex(Entities, ControlledEntityIndex);
+				DEBUGMinkowskiSum(Buffer, &Entity, &Player, GameSpaceToScreenSpace, ScreenCenter);
+			}
 		}
 		if(Entity.Low->Type == EntityType_Ground)
 		{
@@ -1374,11 +1383,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			DrawLine(Buffer, EntityPixelPos, EntityPixelPos + 
 							 Hadamard(Entity.High->D.XY, v2{1, -1}) * 40.0f, {1, 0, 0});
 
-#if 0
-			u32 ControlledEntityIndex = GameState->PlayerIndexForKeyboard[0];
-			entity Player = GetEntityByLowIndex(Entities, ControlledEntityIndex);
-			DEBUGMinkowskiSum(Buffer, &Entity, &Player, GameSpaceToScreenSpace, ScreenCenter);
-#endif
+			if(GameState->DEBUG_VisualiseMinkowskiSum)
+			{
+				u32 ControlledEntityIndex = GameState->PlayerIndexForKeyboard[0];
+				entity Player = GetEntityByLowIndex(Entities, ControlledEntityIndex);
+				DEBUGMinkowskiSum(Buffer, &Entity, &Player, GameSpaceToScreenSpace, ScreenCenter);
+			}
 #if 0
 			DrawBitmap(Buffer, &GameState->Dirt, EntityPixelPos - GameState->Dirt.Alignment, 
 								 (v2)GameState->Dirt.Dim * 1.2f);

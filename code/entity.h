@@ -217,6 +217,10 @@ AddEntity(memory_arena* WorldArena, world_map* WorldMap, entities* Entities,
 	Result.Low->WorldP = WorldPos;
 
 	ChangeEntityLocation(WorldArena, WorldMap, Result.LowEntityIndex, 0, &Result.Low->WorldP);
+		//TODO(bjorn): Only calling set camera actually adds this entity to the high frequency
+		//set. As it is now we call the setcamera every frame but that might not
+		//always be true. Does add entity also check for the camera location when
+		//adding stuff.
 
 	return Result;
 }

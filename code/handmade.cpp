@@ -671,7 +671,7 @@ MoveEntity(game_state* GameState, entity Entity, f32 SecondsToUpdate,
 	//
 	// NOTE(bjorn): Collision check after movement
 	//
-	for(s32 Steps = 3;
+	for(s32 Steps = 2;
 			Steps > 0;
 			Steps--)
 	{
@@ -1060,54 +1060,205 @@ UpdateCarPos(memory_arena* WorldArena, world_map* WorldMap, entities* Entities,
 }
 
 	internal_function void
-PropelCar(memory_arena* WorldArena, world_map* WorldMap, entities* Entities, 
-					entity* CarFrame, world_map_position* CameraP, f32 SecondsToUpdate)
+MoveVehicle(memory_arena* WorldArena, world_map* WorldMap, entities* Entities, 
+					entity* Vehicle, world_map_position* CameraP, f32 SecondsToUpdate)
 {
-	Assert(CarFrame->High);
-	if(CarFrame->High)
+	Assert(Vehicle->High);
+	if(Vehicle->High)
 	{
-		entity LeftFrontWheel = GetEntityByLowIndex(Entities, CarFrame->Low->CarFrame.Wheels[2]);
-		entity RightFrontWheel = GetEntityByLowIndex(Entities, CarFrame->Low->CarFrame.Wheels[3]);
+		entity LeftFrontWheel = GetEntityByLowIndex(Entities, Vehicle->Low->CarFrame.Wheels[2]);
+		entity RightFrontWheel = GetEntityByLowIndex(Entities, Vehicle->Low->CarFrame.Wheels[3]);
 
-		v3 ddP = CarFrame->High->ddP;
-		ddP += CarFrame->Low->DecelerationFactor * CarFrame->High->dP;
+		v3 ddP = Vehicle->High->ddP;
+		ddP += Vehicle->Low->DecelerationFactor * Vehicle->High->dP;
 
-		v3 DeltaP = (0.5f * ddP * Square(SecondsToUpdate) + 
-								 (CarFrame->High->dP * SecondsToUpdate));
-		CarFrame->High->dP += (ddP * SecondsToUpdate);
+		v3 PrelDeltaP = (0.5f * ddP * Square(SecondsToUpdate) + 
+								 (Vehicle->High->dP * SecondsToUpdate));
+		Vehicle->High->dP += (ddP * SecondsToUpdate);
 
-		v3 OldFrontP = CarFrame->High->P + CarFrame->High->D * CarFrame->Low->Dim.Y * 0.5f;
+		v3 OldFrontP = Vehicle->High->P + Vehicle->High->D * Vehicle->Low->Dim.Y * 0.5f;
 		v3 NewFrontP;
 		f32 DeltaPSign;
 		if(LeftFrontWheel.High)
 		{
-			DeltaPSign = Sign(Dot(DeltaP, LeftFrontWheel.High->D));
-			NewFrontP = OldFrontP + LeftFrontWheel.High->D * Lenght(DeltaP) * DeltaPSign;
+			DeltaPSign = Sign(Dot(PrelDeltaP, LeftFrontWheel.High->D));
+			NewFrontP = OldFrontP + LeftFrontWheel.High->D * Lenght(PrelDeltaP) * DeltaPSign;
 		}
 		else if(RightFrontWheel.High)
 		{
-			DeltaPSign = Sign(Dot(DeltaP, RightFrontWheel.High->D));
-			NewFrontP = OldFrontP + RightFrontWheel.High->D * Lenght(DeltaP) * DeltaPSign;
+			DeltaPSign = Sign(Dot(PrelDeltaP, RightFrontWheel.High->D));
+			NewFrontP = OldFrontP + RightFrontWheel.High->D * Lenght(PrelDeltaP) * DeltaPSign;
 		}
 		else
 		{
-			DeltaPSign = Sign(Dot(DeltaP, CarFrame->High->D));
-			NewFrontP = OldFrontP + CarFrame->High->D * Lenght(DeltaP) * DeltaPSign;
+			DeltaPSign = Sign(Dot(PrelDeltaP, Vehicle->High->D));
+			NewFrontP = OldFrontP + Vehicle->High->D * Lenght(PrelDeltaP) * DeltaPSign;
 		}
 
-		v3 OldP = CarFrame->High->P;
+		v3 OldP = Vehicle->High->P;
 		v3 NewD = Normalize(NewFrontP - OldP);
 		v3 NewP = NewFrontP - NewD * Distance(OldP, OldFrontP);
 
-		CarFrame->High->dP  = NewD * Lenght(CarFrame->High->dP ) * Sign(Dot(CarFrame->High->dP,  CarFrame->High->D));
-		CarFrame->High->ddP = NewD * Lenght(CarFrame->High->ddP) * Sign(Dot(CarFrame->High->ddP, CarFrame->High->D));
-
-		if(Lenght(CarFrame->High->ddP) < 0.1f && Lenght(CarFrame->High->dP) < 0.4f)
+		//
+		// NOTE(bjorn): Collision check after movement
+		//
+		v2 P = NewP.XY;
+		v2 DeltaP = (NewP - OldP).XY;
+		for(s32 Steps = 2;
+				Steps > 0;
+				Steps--)
 		{
-			CarFrame->High->dP = {};
+			v2 WallNormal = {};
+			f32 BestTime = 1.0f;
+			entity HitEntity = {};
+			b32 HitDetected = false;
+			b32 Moveable = false;
+
+			for(LoopOverHighEntitiesNamed(CollisionEntity))
+			{
+				if(CollisionEntity.Low->Collides && 
+					 Vehicle->Low->HighEntityIndex != CollisionEntity.Low->HighEntityIndex)
+				{
+					polygon Sum = MinkowskiSum(&CollisionEntity, Vehicle);
+					for(s32 NodeIndex = 0; 
+							NodeIndex < Sum.NodeCount; 
+							NodeIndex++)
+					{
+						v2 N0 = Sum.Nodes[NodeIndex];
+						v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
+						intersection_result Intersect = 
+							GetTimeOfIntersectionWithLineSegment(P, DeltaP, N0, N1);
+						if(Intersect.Valid &&
+							 (0.0f <= Intersect.t && Intersect.t <= 1.0f) &&
+							 Intersect.t < BestTime)
+						{
+							m22 CounterClockWise = { 0, 1,
+							      									-1, 0};
+
+							HitDetected = true;
+							HitEntity = CollisionEntity;
+
+							WallNormal = Normalize(CounterClockWise * (N1 - N0));
+							BestTime = Intersect.t;
+
+							Moveable = Lenght(Vehicle->High->dP) > 10.0f;
+
+							if(true)//Moveable)
+							{
+								v3 Force = Vehicle->High->ddP * 0.1f;
+								HitEntity.High->ddP += Force;
+								Vehicle->High->ddP -= Force;
+							}
+						}
+					}	
+				}
+			}
+
+			if(!HitDetected) 
+			{ 
+				P += DeltaP;
+				break; 
+			}
+
+			if(HitDetected)
+			{
+				b32 CollidedFromOutsideInto = Dot(WallNormal, DeltaP) < 0;
+
+				//TODO(bjorn): As it is right now, if the player get into a sharp wedge
+				//and move about, it is possible to get past one edge and walk about on
+				//the inside. Maybe doing a search on all the intersecting edges is the
+				//solution to this. Coupled with a sphere test edge + object reduction
+				//only searching in local space.
+				//
+				//Turns out that I can basically solve it by raising the threshold by a
+				//lot. If I go too far though the guy starts bouncing.
+				f32 WallEpsilon = 0.02f;
+				if(CollidedFromOutsideInto)
+				{
+					P += BestTime * DeltaP + Normalize(-DeltaP) * WallEpsilon;
+					DeltaP *= (1.0f - BestTime);
+
+					DeltaP             -= Dot(DeltaP,					    WallNormal) * WallNormal;
+					Vehicle->High->dP.XY -= Dot(Vehicle->High->dP.XY, WallNormal) * WallNormal;
+					//ddP                -= Dot(ddP,                WallNormal) * WallNormal;
+				}
+				else
+				{
+					P += BestTime * DeltaP + WallNormal * WallEpsilon;
+					DeltaP *= (1.0f - BestTime);
+				}
+			}
 		}
 
-		UpdateCarPos(WorldArena, WorldMap, Entities, CarFrame, CameraP, NewP.XY, NewD.XY);
+		NewP = P;
+
+		//TODO (bjorn): Check if the rotation made us get stuck inside anything and if so dont rotate (If the power-struggle is won).
+#if 0
+		{
+			v2 WallNormal = {};
+			f32 BestTime = 1.0f;
+			entity HitEntity = {};
+			b32 HitDetected = false;
+
+			for(LoopOverHighEntitiesNamed(CollisionEntity))
+			{
+				if(CollisionEntity.Low->Collides && 
+					 Entity.Low->HighEntityIndex != CollisionEntity.Low->HighEntityIndex)
+				{
+					polygon Sum = MinkowskiSum(&CollisionEntity, &Entity);
+					for(s32 NodeIndex = 0; 
+							NodeIndex < Sum.NodeCount; 
+							NodeIndex++)
+					{
+						v2 N0 = Sum.Nodes[NodeIndex];
+						v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
+						intersection_result Intersect = GetTimeOfIntersectionWithLineSegment(P, DeltaP, N0, N1);
+						if(Intersect.Valid &&
+							 (0.0f <= Intersect.t && Intersect.t <= 1.0f) &&
+							 Intersect.t < BestTime)
+						{
+							m22 CounterClockWise = { 0, 1,
+																-1, 0};
+
+							HitDetected = true;
+							HitEntity = CollisionEntity;
+
+							WallNormal = Normalize(CounterClockWise * (N1 - N0));
+							BestTime = Intersect.t;
+						}
+					}	
+
+					if(HitDetected)
+					{
+						if()
+						{
+						}
+					}
+				}
+			}
+
+			if(!HitDetected) 
+			{ 
+				P += DeltaP;
+				break; 
+			}
+			else
+			{
+			}
+		}
+#endif
+
+		Vehicle->High->dP  = NewD * Lenght(Vehicle->High->dP ) * 
+			Sign(Dot(Vehicle->High->dP,  Vehicle->High->D));
+		Vehicle->High->ddP = NewD * Lenght(Vehicle->High->ddP) * 
+			Sign(Dot(Vehicle->High->ddP, Vehicle->High->D));
+
+		if(Lenght(Vehicle->High->ddP) < 0.1f && Lenght(Vehicle->High->dP) < 0.4f)
+		{
+			Vehicle->High->dP = {};
+		}
+
+		UpdateCarPos(WorldArena, WorldMap, Entities, Vehicle, CameraP, NewP.XY, NewD.XY);
 	}
 }
 
@@ -1275,9 +1426,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	{
 		if(Entity.Low->Type == EntityType_CarFrame)
 		{
-			PropelCar(WorldArena, WorldMap, Entities, &Entity, &GameState->CameraP, SecondsToUpdate);
+			MoveVehicle(WorldArena, WorldMap, Entities, &Entity, &GameState->CameraP, SecondsToUpdate);
 		}
 		else if(Entity.Low->Type == EntityType_Player && !Entity.Low->Player.RidingVehicle)
+		{
+			MoveEntity(GameState, Entity, SecondsToUpdate, WorldMap, GameState->CameraP);
+		}
+		else if(Entity.Low->Type == EntityType_Wall)
 		{
 			MoveEntity(GameState, Entity, SecondsToUpdate, WorldMap, GameState->CameraP);
 		}
@@ -1323,7 +1478,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		v2 CollisionMarkerPixelDim = Hadamard(Entity.Low->Dim.XY, {PixelsPerMeter, PixelsPerMeter});
 		m22 GameSpaceToScreenSpace = 
 		{PixelsPerMeter, 0             ,
-		 0             ,-PixelsPerMeter};
+			0             ,-PixelsPerMeter};
 
 		v2 EntityCameraPixelDelta = GameSpaceToScreenSpace * Entity.High->P.XY;
 		//TODO(bjorn)Add z axis jump.

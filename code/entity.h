@@ -47,6 +47,7 @@ struct low_entity
 	v3 Dim;
 
 	b32 Collides;
+	b32 Attached;
 
 	f32 DecelerationFactor;
 	f32 AccelerationFactor;

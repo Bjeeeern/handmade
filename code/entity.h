@@ -3,6 +3,12 @@
 #include "types_and_defines.h"
 #include "world_map.h"
 
+#define LoopOverHighEntitiesNamed(name) \
+	entity name = GetEntityByHighIndex(Entities, 1); \
+	name##.High; \
+	name = GetEntityByHighIndex(Entities, name##.Low->HighIndex+1)
+#define LoopOverHighEntities LoopOverHighEntitiesNamed(Entity)
+
 enum entity_type
 {
 	EntityType_Player,
@@ -16,7 +22,7 @@ enum entity_type
 
 struct high_entity
 {
-	u32 LowEntityIndex;
+	u32 LowIndex;
 
 	v3 D;
 	v3 P;
@@ -41,7 +47,7 @@ struct high_entity
 struct low_entity
 {
 	entity_type Type;
-	u32 HighEntityIndex;
+	u32 HighIndex;
 
 	world_map_position WorldP;
 	v3 Dim;
@@ -49,6 +55,7 @@ struct low_entity
 	b32 Collides;
 	b32 Attached;
 
+	f32 Mass;
 	f32 DecelerationFactor;
 	f32 AccelerationFactor;
 
@@ -81,7 +88,7 @@ struct low_entity
 
 struct entity
 {
-	u32 LowEntityIndex;
+	u32 LowIndex;
 	high_entity* High;
 	low_entity* Low;
 };
@@ -98,17 +105,17 @@ internal_function void
 MapEntityIntoHigh(entities* Entities, u32 LowIndex, v3 P)
 {
 	low_entity* Low = Entities->LowEntities + LowIndex;
-	if(!Low->HighEntityIndex)
+	if(!Low->HighIndex)
 	{
 		if(Entities->HighEntityCount < (ArrayCount(Entities->HighEntities) - 1))
 		{
 			u32 HighIndex = ++Entities->HighEntityCount;
-			Low->HighEntityIndex = HighIndex;
+			Low->HighIndex = HighIndex;
 
 			high_entity* High = Entities->HighEntities + HighIndex;
 
 			*High = {};
-			High->LowEntityIndex = LowIndex;
+			High->LowIndex = LowIndex;
 			High->P = P;
 			High->D = {0, 1, 0};
 		}
@@ -123,37 +130,37 @@ MapEntityIntoHigh(entities* Entities, u32 LowIndex, v3 P)
 MapEntityIntoLow(entities* Entities, u32 LowIndex, world_map_position WorldP)
 {
 	low_entity* Low = Entities->LowEntities + LowIndex;
-	u32 HighIndex = Low->HighEntityIndex;
+	u32 HighIndex = Low->HighIndex;
 	if(HighIndex)
 	{
 		high_entity* High = Entities->HighEntities + HighIndex;
 		Low->WorldP = WorldP;
-		Low->HighEntityIndex = 0;
+		Low->HighIndex = 0;
 
 		if(HighIndex != Entities->HighEntityCount)
 		{
 			high_entity* HighAtEnd = Entities->HighEntities + Entities->HighEntityCount;
 			*High = *HighAtEnd;
 
-			low_entity* AffectedLow = Entities->LowEntities + HighAtEnd->LowEntityIndex;
-			AffectedLow->HighEntityIndex = HighIndex;
+			low_entity* AffectedLow = Entities->LowEntities + HighAtEnd->LowIndex;
+			AffectedLow->HighIndex = HighIndex;
 		}
 		Entities->HighEntityCount -= 1;
 	}
 }
 
 	inline entity
-GetEntityByLowIndex(entities* Entities, u32 LowEntityIndex)
+GetEntityByLowIndex(entities* Entities, u32 LowIndex)
 {
 	entity Result = {};
 
-	if(0 < LowEntityIndex && LowEntityIndex <= Entities->LowEntityCount)
+	if(0 < LowIndex && LowIndex <= Entities->LowEntityCount)
 	{
-		Result.LowEntityIndex = LowEntityIndex;
-		Result.Low = Entities->LowEntities + LowEntityIndex;
-		if(Result.Low->HighEntityIndex)
+		Result.LowIndex = LowIndex;
+		Result.Low = Entities->LowEntities + LowIndex;
+		if(Result.Low->HighIndex)
 		{
-			Result.High = Entities->HighEntities + Result.Low->HighEntityIndex;
+			Result.High = Entities->HighEntities + Result.Low->HighIndex;
 		}
 	}
 	else
@@ -166,17 +173,17 @@ GetEntityByLowIndex(entities* Entities, u32 LowEntityIndex)
 }
 
 	inline entity
-GetEntityByHighIndex(entities* Entities, u32 HighEntityIndex)
+GetEntityByHighIndex(entities* Entities, u32 HighIndex)
 {
 	entity Result = {};
 
-	if(0 < HighEntityIndex && HighEntityIndex <= Entities->HighEntityCount)
+	if(0 < HighIndex && HighIndex <= Entities->HighEntityCount)
 	{
-		Result.High = Entities->HighEntities + HighEntityIndex;
+		Result.High = Entities->HighEntities + HighIndex;
 
-		Assert(Result.High->LowEntityIndex);
-		Result.Low = Entities->LowEntities + Result.High->LowEntityIndex;
-		Result.LowEntityIndex = Result.High->LowEntityIndex;
+		Assert(Result.High->LowIndex);
+		Result.Low = Entities->LowEntities + Result.High->LowIndex;
+		Result.LowIndex = Result.High->LowIndex;
 	}
 	else
 	{
@@ -195,7 +202,7 @@ OffsetAndChangeEntityLocation(memory_arena* Arena, world_map* WorldMap, entity* 
 	if(Entity->Low)
 	{
 		world_map_position NewWorldP = OffsetWorldPos(WorldMap, WorldP, dP);
-		ChangeEntityLocation(Arena, WorldMap, Entity->LowEntityIndex, 
+		ChangeEntityLocation(Arena, WorldMap, Entity->LowIndex, 
 												 &(Entity->Low->WorldP), &NewWorldP);
 		Entity->Low->WorldP = NewWorldP;
 	}
@@ -211,13 +218,13 @@ AddEntity(memory_arena* WorldArena, world_map* WorldMap, entities* Entities,
 	Assert(Entities->LowEntityCount < ArrayCount(Entities->LowEntities));
 	Assert(IsCanonical(WorldMap, WorldPos.Offset_));
 
-	Result.LowEntityIndex = Entities->LowEntityCount;
-	Result.Low = Entities->LowEntities + Result.LowEntityIndex;
+	Result.LowIndex = Entities->LowEntityCount;
+	Result.Low = Entities->LowEntities + Result.LowIndex;
 	*Result.Low = {};
 	Result.Low->Type = Type;
 	Result.Low->WorldP = WorldPos;
 
-	ChangeEntityLocation(WorldArena, WorldMap, Result.LowEntityIndex, 0, &Result.Low->WorldP);
+	ChangeEntityLocation(WorldArena, WorldMap, Result.LowIndex, 0, &Result.Low->WorldP);
 		//TODO(bjorn): Only calling set camera actually adds this entity to the high frequency
 		//set. As it is now we call the setcamera every frame but that might not
 		//always be true. Does add entity also check for the camera location when
@@ -229,12 +236,12 @@ AddEntity(memory_arena* WorldArena, world_map* WorldMap, entities* Entities,
 inline b32
 ValidateEntityPairs(entities* Entities)
 {
-	for(u32 HighEntityIndex = 1;
-			HighEntityIndex <= Entities->HighEntityCount;
-			HighEntityIndex++)
+	for(u32 HighIndex = 1;
+			HighIndex <= Entities->HighEntityCount;
+			HighIndex++)
 	{
-		u32 LowEntityIndex = Entities->HighEntities[HighEntityIndex].LowEntityIndex;
-		if(Entities->LowEntities[LowEntityIndex].HighEntityIndex != HighEntityIndex) { return false; }
+		u32 LowIndex = Entities->HighEntities[HighIndex].LowIndex;
+		if(Entities->LowEntities[LowIndex].HighIndex != HighIndex) { return false; }
 	}
 
 	return true;

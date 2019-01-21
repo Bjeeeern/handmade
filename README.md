@@ -9,3 +9,6 @@ trying to take the game in a more original direction.
 
 I did some detouring along the way to play around with 3D cameras and font file processing. 
 Also ported the platform to Android and OSX up until before implementing the audio but by now the builds have sadly rotted away. 
+
+![](promo_data/3DCamera.gif)
+![](promo_data/FontIsWorkingJapaneseToo.gif)

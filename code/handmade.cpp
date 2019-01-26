@@ -219,7 +219,7 @@ AddGround(game_state* GameState, world_map_position WorldPos)
 }
 
 	internal_function entity
-AddWall(game_state* GameState, world_map_position WorldPos)
+AddWall(game_state* GameState, world_map_position WorldPos, f32 Mass = 0.0f)
 {
 	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
 													 EntityType_Wall, WorldPos);
@@ -228,6 +228,7 @@ AddWall(game_state* GameState, world_map_position WorldPos)
 	Entity.Low->Collides = true;
 
 	Entity.Low->DecelerationFactor = -8.5f;
+	Entity.Low->Mass = Mass;
 
 	return Entity;
 }
@@ -407,8 +408,16 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 		//AddCar(GameState, OffsetWorldPos(GameState->WorldMap, Player.Low->WorldP, {3.0f, -2.0f, 0}));
 	}
 
-	entity A = AddWall(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{2, 4, 0}));
-	entity B = AddWall(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{10, 4, 0}));
+	entity A = AddWall(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{ 2, 4, 0}), 10.0f);
+	entity B = AddWall(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{10, 4, 0}),  5.0f);
+
+	for(u32 i=0;
+			i < 6;
+			i++)
+	{
+		entity E = AddWall(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{2 + 2*i, 2, 0}), 10.0f + i);
+		E.Low->DecelerationFactor = 0;
+	}
 
 	entities* Entities = &GameState->Entities;
 	entity CameraTarget = GetEntityByLowIndex(Entities, GameState->CameraFollowingPlayerIndex);
@@ -421,9 +430,6 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	B.High->dP = {0.2f, 0, 0};
 	A.Low->DecelerationFactor = 0;
 	B.Low->DecelerationFactor = 0;
-
-	A.Low->Mass = 10.0f;
-	B.Low->Mass = 5.0f;
 
 	u32 ScreenX = 0;
 	u32 ScreenY = 0;
@@ -463,7 +469,6 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 			if(TileValue ==  2)
 			{
 				entity Wall = AddWall(GameState, WorldPos);
-				Wall.Low->Mass = 10000.0f;
 			}
 		}
 	}
@@ -688,6 +693,12 @@ GetTimeOfIntersectionWithLineSegment(v2 P, v2 Delta, v2 A, v2 B)
 	}
 
 	return Result;
+}
+
+inline f32 
+GetInverseMass(f32 mass)
+{
+	if(mass == 0.0f) { return 0; } else { return 1.0f / mass; }
 }
 
 struct collision_result
@@ -1203,7 +1214,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 			ddP = Entity.High->ddP.XY;
 			//TODO(casey): ODE here!
-			//ddP += Entity.Low->DecelerationFactor * Entity.High->dP.XY;
+			ddP += Entity.Low->DecelerationFactor * Entity.High->dP.XY;
 			// TODO(bjorn): Add real friction.
 
 			P = Entity.High->P.XY;
@@ -1241,13 +1252,15 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							 Intersect.t < BestTime)
 						{
 							m22 CounterClockWise = { 0, 1,
-																-1, 0};
-
-							HitDetected = true;
-							HitEntity = CollisionEntity;
-
+							      									-1, 0};
 							WallNormal = Normalize(CounterClockWise * (N1 - N0));
-							BestTime = Intersect.t;
+							b32 CollidedFromOutsideInto = Dot(WallNormal, DeltaP) < 0;
+							if(CollidedFromOutsideInto)
+							{
+								HitDetected = true;
+								HitEntity = CollisionEntity;
+								BestTime = Intersect.t;
+							}
 						}
 					}	
 				}
@@ -1262,44 +1275,31 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			//
 			// NOTE(bjorn): Deal with closest collider. 
 			//
-			//NOTE(bjorn): Entity hit something.
 			if(HitDetected)
 			{
-				//b32 Moveable = Lenght(Vehicle->High->dP) > 10.0f;
-
-				b32 CollidedFromOutsideInto = Dot(WallNormal, DeltaP) < 0;
-
 				//TODO(bjorn): This breaks down somewhat when lots of collision edges intersect.
 				// A relatively large epsilon is also need but at the same time quickly becomes noticable.
 				f32 WallEpsilon = 0.02f;
-				if(CollidedFromOutsideInto)
+				P += BestTime * DeltaP + Normalize(-DeltaP) * WallEpsilon;
+				DeltaP *= (1.0f - BestTime);
+
+				f32 n_v10 = Dot(WallNormal, Entity.High->dP - HitEntity.High->dP);
+				//TODO(bjorn): I dont think this check is needed in my case since we
+				//always are supposed to collide from outwards and in.
+				if(n_v10 < 0)
 				{
-					P += BestTime * DeltaP + Normalize(-DeltaP) * WallEpsilon;
-					DeltaP *= (1.0f - BestTime);
+					f32 inv_m0 = GetInverseMass(Entity.Low->Mass);
+					f32 inv_m1 = GetInverseMass(HitEntity.Low->Mass);
 
-					//NOTE(bjorn): Preservation of momentum, frictionless.
-					v3 Mom0 = Entity.High->dP * Entity.Low->Mass;
-					v3 Mom1 = HitEntity.High->dP * HitEntity.Low->Mass;
+					f32 impulse_scalar = -1.3f * n_v10;
+					impulse_scalar /= (inv_m0 + inv_m1);
 
-					Entity.High->dP = Mom1 / Entity.Low->Mass;
-					HitEntity.High->dP = Mom0 / HitEntity.Low->Mass;
+					v2 impulse = WallNormal * impulse_scalar;
 
-					DeltaP = Lenght(DeltaP) * Normalize(Entity.High->dP);
-					//DeltaP             -= Dot(DeltaP,					    WallNormal) * WallNormal;
-					//Entity.High->dP.XY -= Dot(Entity.High->dP.XY, WallNormal) * WallNormal;
-					//ddP                -= Dot(ddP,                WallNormal) * WallNormal;
-					if(false)//Moveable)
-					{
-						v3 Force = Entity.High->dP * 0.1f;
-						HitEntity.High->dP += Force;
-						Entity.High->dP -= Force;
-					}
+					Entity.High->dP    += impulse * inv_m0;
+					HitEntity.High->dP -= impulse * inv_m1;
 				}
-				else
-				{
-					P += BestTime * DeltaP + WallNormal * WallEpsilon;
-					DeltaP *= (1.0f - BestTime);
-				}
+				DeltaP -= WallNormal * Dot(DeltaP, WallNormal);
 			}
 		}
 

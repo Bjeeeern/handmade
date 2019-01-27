@@ -14,7 +14,7 @@ I have followed along until episode 59 on and off and am now currently adding a 
 <img src="promo_data/MinkowskiSum.gif" width="400" /> <img src="promo_data/CarMovement.gif" width="400" />
 
 
-I did some detouring along the way to play around with 3D cameras and font file processing. I ended up with my own format that just calculates all the glyphs for monospaced fonts and dumps them as quadratic Bézier curves. More usable for editors than for user-facing rendering.
+I did some detouring along the way, playing around with 3D cameras and font file processing. I ended up with my own font format that just calculates all the glyphs for monospaced fonts and dumps them as quadratic Bézier curves. More usable for editors but bad for user-facing rendering.
 
 <img src="promo_data/3DCamera.gif" width="400" /> <img src="promo_data/FontIsWorkingJapaneseToo.gif" width="400" />
 

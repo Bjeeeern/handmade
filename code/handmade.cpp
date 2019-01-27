@@ -48,6 +48,9 @@ struct game_state
 	hero_bitmaps HeroBitmaps[4];
 
 	b32 DEBUG_VisualiseMinkowskiSum;
+
+	f32 GroundStaticFriction;
+	f32 GroundDynamicFriction;
 };
 
 	internal_function entity
@@ -62,8 +65,11 @@ AddPlayer(game_state* GameState)
 
 	Entity.Low->Dim = v2{0.5f, 0.3f} * GameState->WorldMap->TileSideInMeters;
 	Entity.Low->Collides = true;
-	Entity.Low->DecelerationFactor = -8.5f;
-	Entity.Low->AccelerationFactor = 85.0f;
+	///Entity.Low->DecelerationFactor = -8.5f;
+
+	Entity.Low->Mass = 40.0f;
+	Entity.Low->StaticFriction = 0.5f;
+	Entity.Low->DynamicFriction = 0.4f;
 
 	entity Test = GetEntityByLowIndex(&GameState->Entities, GameState->CameraFollowingPlayerIndex);
 	if(!Test.Low)
@@ -183,7 +189,6 @@ MountEntityOnCar(memory_arena* WorldArena, world_map* WorldMap, entity* Entity, 
 AddCar(game_state* GameState, world_map_position WorldPos)
 {
 	entity CarFrameEntity = AddCarFrame(GameState, WorldPos);
-	CarFrameEntity.Low->DecelerationFactor = -0.5f;
 
 	entity EngineEntity = AddEngine(GameState, WorldPos);
 	CarFrameEntity.Low->CarFrame.Engine = EngineEntity.LowIndex;
@@ -227,8 +232,9 @@ AddWall(game_state* GameState, world_map_position WorldPos, f32 Mass = 0.0f)
 	Entity.Low->Dim = v2{1, 1} * GameState->WorldMap->TileSideInMeters;
 	Entity.Low->Collides = true;
 
-	Entity.Low->DecelerationFactor = -8.5f;
 	Entity.Low->Mass = Mass;
+	Entity.Low->StaticFriction = 0.5f;
+	Entity.Low->DynamicFriction = 0.4f;
 
 	return Entity;
 }
@@ -323,6 +329,8 @@ SetCamera(world_map* WorldMap, entities* Entities,
 	internal_function void
 InitializeGame(game_memory *Memory, game_state *GameState)
 {
+	GameState->GroundStaticFriction = 1.0f; 
+	GameState->GroundDynamicFriction = 0.8f; 
 	GameState->Backdrop = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
 																		 "data/test/test_background.bmp");
 
@@ -403,8 +411,6 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	{
 		entity Player = AddPlayer(GameState);
 		GameState->PlayerIndexForKeyboard[0] = Player.LowIndex;
-
-		Player.Low->Mass = 40.0f;
 		//AddCar(GameState, OffsetWorldPos(GameState->WorldMap, Player.Low->WorldP, {3.0f, -2.0f, 0}));
 	}
 
@@ -415,8 +421,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 			i < 6;
 			i++)
 	{
-		entity E = AddWall(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{2 + 2*i, 2, 0}), 10.0f + i);
-		E.Low->DecelerationFactor = 0;
+		AddWall(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{2 + 2*i, 2, 0}), 10.0f + i);
 	}
 
 	entities* Entities = &GameState->Entities;
@@ -428,8 +433,6 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 
 	A.High->dP = {1, 0, 0};
 	B.High->dP = {0.2f, 0, 0};
-	A.Low->DecelerationFactor = 0;
-	B.Low->DecelerationFactor = 0;
 
 	u32 ScreenX = 0;
 	u32 ScreenY = 0;
@@ -1040,7 +1043,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				if(ControlledEntity.High)
 				{
-					ControlledEntity.High->ddP = InputDirection * ControlledEntity.Low->AccelerationFactor;
+					ControlledEntity.High->ddP = InputDirection * 85.0f;
 				}
 
 				if(Clicked(Controller, Start))
@@ -1152,7 +1155,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						else
 						{
 							ControlledEntity.High->ddP = 
-								InputDirection * ControlledEntity.Low->AccelerationFactor;
+								InputDirection * 85.0f;
 						}
 					}
 				}
@@ -1176,7 +1179,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			entity RightFrontWheel = GetEntityByLowIndex(Entities, Vehicle->Low->CarFrame.Wheels[3]);
 
 			ddP = Vehicle->High->ddP;
-			ddP += Vehicle->Low->DecelerationFactor * Vehicle->High->dP;
+			//ddP += Vehicle->Low->DecelerationFactor * Vehicle->High->dP;
 
 			v3 PrelDeltaP = (0.5f * ddP * Square(SecondsToUpdate) + 
 											 (Vehicle->High->dP * SecondsToUpdate));
@@ -1214,8 +1217,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 			ddP = Entity.High->ddP.XY;
 			//TODO(casey): ODE here!
-			ddP += Entity.Low->DecelerationFactor * Entity.High->dP.XY;
-			// TODO(bjorn): Add real friction.
+			//ddP += Entity.Low->DecelerationFactor * Entity.High->dP.XY;
 
 			P = Entity.High->P.XY;
 			DeltaP = (0.5f * ddP * Square(SecondsToUpdate) + (Entity.High->dP.XY * SecondsToUpdate));
@@ -1278,28 +1280,48 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			if(HitDetected)
 			{
 				//TODO(bjorn): This breaks down somewhat when lots of collision edges intersect.
-				// A relatively large epsilon is also need but at the same time quickly becomes noticable.
+				// A relatively large epsilon is also needed but at the same time quickly becomes noticable.
 				f32 WallEpsilon = 0.02f;
 				P += BestTime * DeltaP + Normalize(-DeltaP) * WallEpsilon;
 				DeltaP *= (1.0f - BestTime);
-
-				f32 n_v10 = Dot(WallNormal, Entity.High->dP - HitEntity.High->dP);
-				//TODO(bjorn): I dont think this check is needed in my case since we
-				//always are supposed to collide from outwards and in.
-				if(n_v10 < 0)
-				{
-					f32 inv_m0 = GetInverseMass(Entity.Low->Mass);
-					f32 inv_m1 = GetInverseMass(HitEntity.Low->Mass);
-
-					f32 impulse_scalar = -1.3f * n_v10;
-					impulse_scalar /= (inv_m0 + inv_m1);
-
-					v2 impulse = WallNormal * impulse_scalar;
-
-					Entity.High->dP    += impulse * inv_m0;
-					HitEntity.High->dP -= impulse * inv_m1;
-				}
 				DeltaP -= WallNormal * Dot(DeltaP, WallNormal);
+
+				v2 rel_dP = Entity.High->dP.XY - HitEntity.High->dP.XY;
+				f32 rel_dP_n_mag = Dot(WallNormal, rel_dP);
+				//TODO(bjorn): Make the mass only indirectly settable and only store the inverse?
+				f32 inv_m0 = GetInverseMass(Entity.Low->Mass);
+				f32 inv_m1 = GetInverseMass(HitEntity.Low->Mass);
+				f32 inv_m_sum_inv = 1.0f / (inv_m0 + inv_m1);
+
+				//TODO(bjorn): Add restitution variable for bounciness?
+				f32 impulse_scalar = (-1.0f * rel_dP_n_mag) * inv_m_sum_inv;
+
+				v2 impulse = WallNormal * impulse_scalar;
+
+				Entity.High->dP    += impulse * inv_m0;
+				HitEntity.High->dP -= impulse * inv_m1;
+
+				v2 rel_dP_t = rel_dP - WallNormal * rel_dP_n_mag;
+				f32 rel_dP_t_mag = Lenght(rel_dP_t);
+				f32 friction_scalar = -rel_dP_t_mag * inv_m_sum_inv;
+
+				f32 comb_stat_fric_sq = (Square(Entity.Low->StaticFriction) + 
+																 Square(HitEntity.Low->StaticFriction));
+				v2 tangent = Normalize(rel_dP_t);
+				v2 friction;
+				if(Square(friction_scalar) < comb_stat_fric_sq * Square(impulse_scalar))
+				{
+					friction = friction_scalar * tangent;
+				}
+				else
+				{
+					f32 comb_dyn_fric = SquareRoot(Square(Entity.Low->StaticFriction) + 
+																				 Square(HitEntity.Low->StaticFriction));
+					friction = -impulse_scalar * comb_dyn_fric * tangent;
+				}
+
+				Entity.High->dP    += friction * inv_m0;
+				HitEntity.High->dP -= friction * inv_m1;
 			}
 		}
 
@@ -1323,7 +1345,29 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		else
 		{
 			Entity.High->P = P;
-			Entity.High->dP = (ddP * SecondsToUpdate) + Entity.High->dP;
+
+			//NOTE(bjorn): Apply ground friction
+			f32 comb_stat_fric = SquareRoot(Square(Entity.Low->StaticFriction) + 
+															 Square(GameState->GroundStaticFriction));
+
+			f32 NormalForce = 9.82f * Entity.Low->Mass;
+			f32 FrictionForce = Lenght(Entity.High->ddP) * Entity.Low->Mass;
+
+			v2 friction;
+			if(FrictionForce < NormalForce * comb_stat_fric)
+			{
+				friction = -Normalize(Entity.High->dP.XY) * FrictionForce;
+			}
+			else
+			{
+				f32 comb_dyn_fric = SquareRoot(Square(Entity.Low->StaticFriction) + 
+																			 Square(GameState->GroundStaticFriction));
+
+				friction = -Normalize(Entity.High->dP.XY) * NormalForce * comb_dyn_fric;
+			}
+
+			Entity.High->dP += friction * SecondsToUpdate;
+			Entity.High->dP += (ddP * SecondsToUpdate);
 
 			OffsetAndChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, &Entity, 
 																		GameState->CameraP, Entity.High->P);

@@ -56,8 +56,8 @@ struct low_entity
 	b32 Attached;
 
 	f32 Mass;
-	f32 DecelerationFactor;
-	f32 AccelerationFactor;
+	f32 StaticFriction;
+	f32 DynamicFriction;
 
 	union
 	{

@@ -18,7 +18,4 @@ I did some detouring along the way, playing around with 3D cameras and font file
 
 <img src="promo_data/3DCamera.gif" width="400" /> <img src="promo_data/FontIsWorkingJapaneseToo.gif" width="400" />
 
-
-I also tried porting the platform to Android and OSX except for the audio parts, but it has been a while since I used the code so I will probably just have to rewrite it. 
-
 (If you see no gifs turn off your adblock for github!)

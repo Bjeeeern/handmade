@@ -35,6 +35,10 @@ struct high_entity
 		{
 			b32 IsOnStairs;
 			u32 FacingDirection;
+			
+			f32 TimeSinceFistStep;
+			s32 Steps;
+			v2 MovingDirection;
 		} Player;
 		struct
 		{
@@ -72,6 +76,7 @@ struct low_entity
 		struct
 		{
 			u32 RidingVehicle;
+			f32 StepHz;
 		} Player;
 		struct
 		{

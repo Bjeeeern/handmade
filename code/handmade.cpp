@@ -51,6 +51,10 @@ struct game_state
 
 	f32 GroundStaticFriction;
 	f32 GroundDynamicFriction;
+
+	f32 NoteTone;
+	f32 NoteDuration;
+	f32 NoteSecondsPassed;
 };
 
 	internal_function entity
@@ -70,6 +74,8 @@ AddPlayer(game_state* GameState)
 	Entity.Low->Mass = 40.0f;
 	Entity.Low->StaticFriction = 0.5f;
 	Entity.Low->DynamicFriction = 0.4f;
+
+	Entity.Low->Player.StepHz = 8.0f;
 
 	entity Test = GetEntityByLowIndex(&GameState->Entities, GameState->CameraFollowingPlayerIndex);
 	if(!Test.Low)
@@ -329,8 +335,8 @@ SetCamera(world_map* WorldMap, entities* Entities,
 	internal_function void
 InitializeGame(game_memory *Memory, game_state *GameState)
 {
-	GameState->GroundStaticFriction = 1.0f; 
-	GameState->GroundDynamicFriction = 0.8f; 
+	GameState->GroundStaticFriction = 2.1f; 
+	GameState->GroundDynamicFriction = 2.0f; 
 	GameState->Backdrop = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
 																		 "data/test/test_background.bmp");
 
@@ -1071,6 +1077,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		game_keyboard* Keyboard = GetKeyboard(Input, KeyboardIndex);
 		if(Keyboard->IsConnected)
 		{
+			if(Clicked(Keyboard, Q))
+			{
+				GameState->NoteTone = 500.0f;
+				GameState->NoteDuration = 0.05f;
+				GameState->NoteSecondsPassed = 0.0f;
+			}
+
 			if(Clicked(Keyboard, M))
 			{
 				GameState->DEBUG_VisualiseMinkowskiSum = !GameState->DEBUG_VisualiseMinkowskiSum;
@@ -1102,7 +1115,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				if(InputDirection.X && InputDirection.Y)
 				{
-					InputDirection *= invroot2;
+					InputDirection *= inv_root2;
 				}
 
 				if(ControlledEntity.High)
@@ -1154,8 +1167,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						}
 						else
 						{
-							ControlledEntity.High->ddP = 
-								InputDirection * 85.0f;
+							ControlledEntity.High->Player.MovingDirection = InputDirection;
+							if(LenghtSquared(ControlledEntity.High->Player.MovingDirection) == 0)
+							{
+								ControlledEntity.High->Player.Steps = 0;
+								ControlledEntity.High->Player.TimeSinceFistStep = 0.0f;
+							}
 						}
 					}
 				}
@@ -1215,12 +1232,27 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		{
 			//MoveEntity(GameState, Entity, SecondsToUpdate, WorldMap, GameState->CameraP);
 
-			ddP = Entity.High->ddP.XY;
+			//ddP = Entity.High->ddP.XY;
 			//TODO(casey): ODE here!
 			//ddP += Entity.Low->DecelerationFactor * Entity.High->dP.XY;
+			f32 ImpulsePerStep = 6.0f;
+			if(LenghtSquared(Entity.High->Player.MovingDirection) != 0 &&
+				 RoofF32ToS32(Entity.Low->Player.StepHz * Entity.High->Player.TimeSinceFistStep) > 
+				 Entity.High->Player.Steps)
+			{
+				GameState->NoteTone = 300.0f;
+				GameState->NoteDuration = 0.05f;
+				GameState->NoteSecondsPassed = 0.0f;
+
+				Entity.High->dP.XY += Entity.High->Player.MovingDirection * ImpulsePerStep;
+				Entity.High->Player.Steps++;
+			}
+
+			Entity.High->Player.TimeSinceFistStep += SecondsToUpdate;
 
 			P = Entity.High->P.XY;
-			DeltaP = (0.5f * ddP * Square(SecondsToUpdate) + (Entity.High->dP.XY * SecondsToUpdate));
+			DeltaP = (0.5f * Entity.High->ddP * Square(SecondsToUpdate) + 
+								(Entity.High->dP.XY * SecondsToUpdate));
 		}
 
 		//
@@ -1350,24 +1382,24 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			f32 comb_stat_fric = SquareRoot(Square(Entity.Low->StaticFriction) + 
 															 Square(GameState->GroundStaticFriction));
 
-			f32 NormalForce = 9.82f * Entity.Low->Mass;
-			f32 FrictionForce = Lenght(Entity.High->ddP) * Entity.Low->Mass;
+			f32 NormalForce = 9.82f;
+			f32 FrictionForce = Lenght(Entity.High->ddP);
 
-			v2 friction;
-			if(FrictionForce < NormalForce * comb_stat_fric)
+			v2 friction = {};
+			if(false)//FrictionForce < NormalForce * comb_stat_fric)
 			{
-				friction = -Normalize(Entity.High->dP.XY) * FrictionForce;
+				//friction = -Normalize(Entity.High->dP.XY) * FrictionForce;
 			}
 			else
 			{
-				f32 comb_dyn_fric = SquareRoot(Square(Entity.Low->StaticFriction) + 
-																			 Square(GameState->GroundStaticFriction));
+				f32 comb_dyn_fric = SquareRoot(Square(Entity.Low->DynamicFriction) + 
+																			 Square(GameState->GroundDynamicFriction));
 
 				friction = -Normalize(Entity.High->dP.XY) * NormalForce * comb_dyn_fric;
 			}
 
-			Entity.High->dP += friction * SecondsToUpdate;
-			Entity.High->dP += (ddP * SecondsToUpdate);
+			//Entity.High->dP += friction * SecondsToUpdate;
+			Entity.High->dP += (Entity.High->ddP + friction) * SecondsToUpdate;
 
 			OffsetAndChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, &Entity, 
 																		GameState->CameraP, Entity.High->P);
@@ -1553,16 +1585,31 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	internal_function void
 OutputSound(game_sound_output_buffer *SoundBuffer, game_state* GameState)
 {
-	s32 ToneVolume = 1000;
+	s32 ToneVolume = 11000;
 	s16 *SampleOut = SoundBuffer->Samples;
 	for(s32 SampleIndex = 0;
 			SampleIndex < SoundBuffer->SampleCount;
 			++SampleIndex)
 	{
-		s16 SampleValue = 0;
+		f32 Value = 0;
+		if(GameState->NoteSecondsPassed < GameState->NoteDuration)
+		{
+			f32 t = GameState->NoteSecondsPassed * GameState->NoteTone * tau32;
+			t -= FloorF32ToS32(t * inv_tau32) * tau32;
+			Value = Sin(t);
+			f32 TimeToGo = (GameState->NoteDuration - GameState->NoteSecondsPassed);
+			if(TimeToGo < 0.01f)
+			{
+				Value *= TimeToGo / 0.01f;
+			}
+			GameState->NoteSecondsPassed += (1.0f / SoundBuffer->SamplesPerSecond);
+		}
+
+		s16 SampleValue = (s16)(ToneVolume * Value);
 		*SampleOut++ = SampleValue;
 		*SampleOut++ = SampleValue;
 	}
+
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)

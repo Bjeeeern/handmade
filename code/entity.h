@@ -18,13 +18,15 @@ enum entity_type
 	EntityType_Wheel,
 	EntityType_CarFrame,
 	EntityType_Engine,
+	EntityType_Monstar,
+	EntityType_Familiar,
 };
 
 struct high_entity
 {
 	u32 LowIndex;
 
-	v3 D;
+	v3 R;
 	v3 P;
 	v3 dP;
 	v3 ddP;
@@ -122,7 +124,7 @@ MapEntityIntoHigh(entities* Entities, u32 LowIndex, v3 P)
 			*High = {};
 			High->LowIndex = LowIndex;
 			High->P = P;
-			High->D = {0, 1, 0};
+			High->R = {0, 1, 0};
 		}
 		else
 		{

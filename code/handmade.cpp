@@ -687,7 +687,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 #endif
 }
 
-//NOTE(bjorn): Lazy fix. https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection
+//STUDY(bjorn): Lazy fix. https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection
 // I dont even understand the maths behind it.
 struct intersection_result
 {
@@ -1121,6 +1121,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			if(GameState->DEBUG_StepThroughTheCollisionLoop && Clicked(Keyboard, Space))
 			{
 				GameState->DEBUG_CollisionLoopAdvance = true;
+				GameState->DEBUG_CollisionLoopAdvance = true;
 			}
 #endif
 
@@ -1225,6 +1226,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 	//TODO(bjorn): Implement step 2 in J.Blows framerate independence video.
 	// https://www.youtube.com/watch?v=fdAOPHgW7qM
+	//TODO(bjorn): Add some asserts and some limits to velocities related to the
+	//delta time so that tunneling becomes virtually impossible.
 	s32 Steps = 4;
 	f32 dT = SecondsToUpdate / (f32)Steps;
 	for(s32 Step = 0;
@@ -1236,6 +1239,39 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		//
 		for(LoopOverHighEntities)
 		{
+			if(Entity.Low->Mass == 0) { continue; }
+
+			v3 P = Entity.High->P;
+			v3 dP = Entity.High->dP;
+
+			v3 ddP;
+			if(Entity.Low->Type == EntityType_Player)
+			{
+				//TODO(casey): ODE here!
+				ddP = Entity.High->Player.MovingDirection * 85.0f;
+				ddP -= dP * 8.0f;
+			}
+			else
+			{
+				ddP = Entity.High->ddP;
+				dP -= dP * 0.01f;
+				dP = LenghtSquared(dP) < Square(0.1f) ? v3{} : dP;
+			}
+
+			dP += ddP * dT;
+
+			v3 DeltaP = (0.5f * ddP * Square(dT) + (dP.XY * dT));
+
+			P = P + DeltaP;
+			Entity.High->ddP = ddP;
+			Entity.High->dP = dP;
+			Entity.High->P = P;
+
+			Entity.High->CollisionDirtyBit = false;
+
+			OffsetAndChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, &Entity, 
+																		GameState->CameraP, Entity.High->P);
+
 			//TODO(bjorn): This breaks me trying to debug the collision but might not
 			//be what I wanna do anyways.
 			//if(Entity.Low->Attached) { continue; }
@@ -1302,28 +1338,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #endif
 			//MoveEntity(GameState, Entity, SecondsToUpdate, WorldMap, GameState->CameraP);
 
-			v3 P, dP, ddP, DeltaP;
-			//ddP = Entity.High->ddP.XY;
-			//TODO(casey): ODE here!
-			P = Entity.High->P;
-			dP = Entity.High->dP;
-			if(Entity.Low->Type == EntityType_Player)
-			{
-				ddP = Entity.High->Player.MovingDirection * 85.0f;
-				ddP -= dP * 8.0f;
-			}
-			else
-			{
-				ddP = Entity.High->ddP;
-				dP -= dP * 0.01f;
-				dP = LenghtSquared(dP) < Square(0.1f) ? v3{} : dP;
-			}
-
-			dP += ddP * dT;
-
-			DeltaP = (0.5f * ddP * Square(dT) + (dP.XY * dT));
-
-#if HANDMADE_INTERNAL
+#if 0//HANDMADE_INTERNAL
 			if(GameState->DEBUG_StepThroughTheCollisionLoop)
 			{
 				if(Entity.Low->HighIndex == GameState->DEBUG_CollisionLoopEntityIndex) 
@@ -1350,16 +1365,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				}
 			}
 #endif
-
-			P = P + DeltaP;
-			Entity.High->ddP = ddP;
-			Entity.High->dP = dP;
-			Entity.High->P = P;
-
-			Entity.High->CollisionDirtyBit = false;
-
-			OffsetAndChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, &Entity, 
-																		GameState->CameraP, Entity.High->P);
 		}
 
 		//
@@ -1367,14 +1372,43 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		//
 		for(LoopOverHighEntities)
 		{
+#if 0//HANDMADE_INTERNAL
+			if(GameState->DEBUG_StepThroughTheCollisionLoop)
+			{
+				if(Entity.Low->HighIndex == GameState->DEBUG_CollisionLoopEntityIndex) 
+				{
+					GameState->DEBUG_CollisionLoopEstimatedPos = P + DeltaP;
+
+					if(GameState->DEBUG_CollisionLoopAdvance || LenghtSquared(DeltaP) == 0)
+					{ 
+						GameState->DEBUG_CollisionLoopEntityIndex += 1;
+						GameState->DEBUG_CollisionLoopEntityIndex %= Entities->HighEntityCount+1;
+						if(GameState->DEBUG_CollisionLoopEntityIndex == 0)
+						{ GameState->DEBUG_CollisionLoopEntityIndex++; }
+
+						GameState->DEBUG_CollisionLoopAdvance = false;
+					}
+					else
+					{
+						continue;
+					}
+				}
+				else
+				{
+					continue; 
+				}
+			}
+#endif
 			if(!Entity.Low->Mass) { continue; }
 			if(!Entity.Low->Collides) { continue; }
+
+			Entity.High->CollisionDirtyBit = true;
 
 			for(LoopOverHighEntitiesNamed(CollisionEntity))
 			{
 				if(!CollisionEntity.High->CollisionDirtyBit &&
 					 CollisionEntity.Low->Collides && 
-					 Entity.Low->HighIndex != CollisionEntity.Low->HighIndex)
+					 Entity.LowIndex != CollisionEntity.LowIndex)
 				{
 					v2 P = Entity.High->P.XY;
 					v2 OuterP = (CollisionEntity.High->P.XY + 
@@ -1391,6 +1425,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					{
 						v2 N0 = Sum.Nodes[NodeIndex];
 						v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
+						//TODO(bjorn): This function is probably badly implemented _OR_ the
+						//idea is flawed. Try instead the method from "Real-Time Collision
+						//Detection" p.202.
 						intersection_result Intersect = 
 							GetTimeOfIntersectionWithLineSegment(OuterP, P, N0, N1);
 
@@ -1412,8 +1449,41 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					}	
 
 					b32 Inside = Hits == 1; 
+
+
+					if(Inside &&
+						 !(BestDistanceToWall <= (Entity.Low->Dim.X + CollisionEntity.Low->Dim.X)))
+					{
+						for(s32 NodeIndex = 0; 
+								NodeIndex < Sum.NodeCount; 
+								NodeIndex++)
+						{
+							v2 N0 = Sum.Nodes[NodeIndex];
+							v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
+							intersection_result Intersect = 
+								GetTimeOfIntersectionWithLineSegment(OuterP, P, N0, N1);
+
+							if(Intersect.Valid &&
+								 0.0f <= Intersect.t && Intersect.t <= 1.0f)
+							{
+								//Hits += 1;
+							}
+
+							f32 SquareDistanceToWall = SquareDistancePointToLineSegment(N0, N1, P);
+							if(SquareDistanceToWall < BestSquareDistanceToWall)
+							{
+								//BestSquareDistanceToWall = SquareDistanceToWall;
+								//BestDistanceToWall = SquareRoot(SquareDistanceToWall);
+								m22 CounterClockWise = { 0, 1,
+																 -1, 0};
+								//WallNormal = Normalize(CounterClockWise * (N1 - N0));
+							}
+						}	
+					}
+
 					if(Inside && (Entity.Low->Mass + CollisionEntity.Low->Mass)) 
 					{ 
+						Assert(BestDistanceToWall <= (Entity.Low->Dim.X + CollisionEntity.Low->Dim.X));
 						//WallNormal = Normalize(Entity.High->P.XY - CollisionEntity.High->P.XY);
 						v2 EdP =          Entity.High->dP.XY;
 						v2 CdP = CollisionEntity.High->dP.XY;
@@ -1483,7 +1553,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					} 
 				}
 			}
-			Entity.High->CollisionDirtyBit = true;
 		}
 	}
 

@@ -31,6 +31,8 @@ struct high_entity
 	v3 dP;
 	v3 ddP;
 
+	b32 CollisionDirtyBit;
+
 	union
 	{
 		struct

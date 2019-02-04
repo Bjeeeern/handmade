@@ -239,7 +239,7 @@ AddGround(game_state* GameState, world_map_position WorldPos)
 }
 
 	internal_function entity
-AddWall(game_state* GameState, world_map_position WorldPos, f32 Mass = 0.0f)
+AddWall(game_state* GameState, world_map_position WorldPos, f32 Mass = 1000.0f)
 {
 	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
 													 EntityType_Wall, WorldPos);
@@ -1417,7 +1417,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					f32 BestDistanceToWall = 0;
 					f32 BestSquareDistanceToWall = positive_infinity32;
 					v2 WallNormal = {};
-					s32 Hits = 0;
+					b32 Inside = true; 
 					polygon Sum = MinkowskiSum(&CollisionEntity, &Entity);
 					for(s32 NodeIndex = 0; 
 							NodeIndex < Sum.NodeCount; 
@@ -1425,16 +1425,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					{
 						v2 N0 = Sum.Nodes[NodeIndex];
 						v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
-						//TODO(bjorn): This function is probably badly implemented _OR_ the
-						//idea is flawed. Try instead the method from "Real-Time Collision
-						//Detection" p.202.
-						intersection_result Intersect = 
-							GetTimeOfIntersectionWithLineSegment(OuterP, P, N0, N1);
 
-						if(Intersect.Valid &&
-							 0.0f <= Intersect.t && Intersect.t <= 1.0f)
-						{
-							Hits += 1;
+						f32 Det = Determinant(N1-N0, P-N0);
+						if(Inside && (Det <= 0.0f)) 
+						{ 
+							Inside = false; 
 						}
 
 						f32 SquareDistanceToWall = SquareDistancePointToLineSegment(N0, N1, P);
@@ -1448,50 +1443,44 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						}
 					}	
 
-					b32 Inside = Hits == 1; 
-
-
-					if(Inside &&
-						 !(BestDistanceToWall <= (Entity.Low->Dim.X + CollisionEntity.Low->Dim.X)))
-					{
-						for(s32 NodeIndex = 0; 
-								NodeIndex < Sum.NodeCount; 
-								NodeIndex++)
-						{
-							v2 N0 = Sum.Nodes[NodeIndex];
-							v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
-							intersection_result Intersect = 
-								GetTimeOfIntersectionWithLineSegment(OuterP, P, N0, N1);
-
-							if(Intersect.Valid &&
-								 0.0f <= Intersect.t && Intersect.t <= 1.0f)
-							{
-								//Hits += 1;
-							}
-
-							f32 SquareDistanceToWall = SquareDistancePointToLineSegment(N0, N1, P);
-							if(SquareDistanceToWall < BestSquareDistanceToWall)
-							{
-								//BestSquareDistanceToWall = SquareDistanceToWall;
-								//BestDistanceToWall = SquareRoot(SquareDistanceToWall);
-								m22 CounterClockWise = { 0, 1,
-																 -1, 0};
-								//WallNormal = Normalize(CounterClockWise * (N1 - N0));
-							}
-						}	
-					}
-
-					if(Inside && (Entity.Low->Mass + CollisionEntity.Low->Mass)) 
+					if(Inside) 
 					{ 
 						Assert(BestDistanceToWall <= (Entity.Low->Dim.X + CollisionEntity.Low->Dim.X));
-						//WallNormal = Normalize(Entity.High->P.XY - CollisionEntity.High->P.XY);
+
 						v2 EdP =          Entity.High->dP.XY;
 						v2 CdP = CollisionEntity.High->dP.XY;
 
-						f32 inv_m0 = GetInverseMass(         Entity.Low->Mass);
-						f32 inv_m1 = GetInverseMass(CollisionEntity.Low->Mass);
+						f32 m0 =          Entity.Low->Mass;
+						f32 m1 = CollisionEntity.Low->Mass;
+						f32 mSum = m0 + m1;
+						Assert(m0 > 0);
+						Assert(m1 > 0);
 
-						v2 RelMov = EdP - CdP;
+						v2 RdP = EdP - CdP;
+						f32 RdPMag = Lenght(RdP);
+						f32 t = BestDistanceToWall / RdPMag;
+						f32 F = RdPMag * m0;
+
+						f32 Fn = m1 * 9.82f;
+						if(LenghtSquared(CollisionEntity.High->dP) == 0 && 
+							 F <= Fn)
+						{
+								EdP -= WallNormal * Dot(WallNormal, EdP);
+								CdP = {};
+
+								Entity.High->P.XY += BestDistanceToWall * WallNormal;
+						}
+						else
+						{
+								Entity.High->P.XY          += BestDistanceToWall * (m0 / mSum) * WallNormal;
+								CollisionEntity.High->P.XY -= BestDistanceToWall * (m1 / mSum) * WallNormal;
+
+								v2 impulse = WallNormal * -Dot(WallNormal, RdP);
+								EdP += impulse * (m0 / mSum);
+								CdP -= impulse * (m1 / mSum);
+						}
+
+#if 0
 						f32 rel_dP_n_mag = Dot(WallNormal, RelMov);
 						if(rel_dP_n_mag < 0)
 						{
@@ -1504,24 +1493,25 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 							if(CollisionEntity.Low->Mass)
 							{
-								EdP += impulse * inv_m0;
-								CdP -= impulse * inv_m1;
-
 								Entity.High->P.XY += BestDistanceToWall * 0.5f * WallNormal;
 								CollisionEntity.High->P.XY -= BestDistanceToWall * 0.5f * WallNormal;
 							}
 							else
 							{
-								EdP -= WallNormal * Dot(WallNormal, EdP);
 								CdP -= WallNormal * Dot(WallNormal, CdP);
 
 								CdP = {};
 								Entity.High->P.XY += BestDistanceToWall * WallNormal;
 							}
 
-							Entity.High->dP.XY          = EdP;
-							CollisionEntity.High->dP.XY = CdP;
+							EdP += impulse * inv_m0;
+							CdP -= impulse * inv_m1;
+
 						}
+#endif
+
+						Entity.High->dP.XY          = EdP;
+						CollisionEntity.High->dP.XY = CdP;
 
 						//NOTE(bjorn): Friction.
 #if 0

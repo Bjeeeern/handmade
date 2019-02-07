@@ -33,16 +33,17 @@ struct high_entity
 
 	b32 CollisionDirtyBit;
 
+	u32 FacingDirection;
+
 	union
 	{
 		struct
 		{
 			b32 IsOnStairs;
-			u32 FacingDirection;
 			
 			f32 TimeSinceFistStep;
 			s32 Steps;
-			v2 MovingDirection;
+			v3 MovingDirection;
 		} Player;
 		struct
 		{

@@ -44,6 +44,7 @@ struct game_state
 	loaded_bitmap Backdrop;
 	loaded_bitmap Rock;
 	loaded_bitmap Dirt;
+	loaded_bitmap Shadow;
 
 	hero_bitmaps HeroBitmaps[4];
 
@@ -96,6 +97,34 @@ AddPlayer(game_state* GameState)
 }
 
 	internal_function entity
+AddMonstar(game_state* GameState, world_map_position InitP)
+{
+	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
+													 EntityType_Monstar, InitP);
+
+	Entity.Low->Dim = v2{0.5f, 0.3f} * GameState->WorldMap->TileSideInMeters;
+	Entity.Low->Collides = true;
+
+	Entity.Low->Mass = 40.0f;
+
+	return Entity;
+}
+
+	internal_function entity
+AddFamiliar(game_state* GameState, world_map_position InitP)
+{
+	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
+													 EntityType_Familiar, InitP);
+
+	Entity.Low->Dim = v2{0.5f, 0.3f} * GameState->WorldMap->TileSideInMeters;
+	Entity.Low->Collides = false;
+
+	Entity.Low->Mass = 40.0f;
+
+	return Entity;
+}
+
+	internal_function entity
 AddCarFrame(game_state* GameState, world_map_position WorldPos)
 {
 	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
@@ -103,6 +132,8 @@ AddCarFrame(game_state* GameState, world_map_position WorldPos)
 
 	Entity.Low->Dim = v2{4, 6};
 	Entity.Low->Collides = true;
+
+	Entity.Low->Mass = 800.0f;
 
 	return Entity;
 }
@@ -273,10 +304,11 @@ SetCamera(world_map* WorldMap, entities* Entities,
 {
 	Assert(ValidateEntityPairs(Entities));
 
+	NewCameraP.Offset_.Z = 0.0f;
 	*CameraP = NewCameraP;
 
 	//TODO(bjorn): Think more about render distances.
-	v3 HighFrequencyUpdateDim = v3{2.0f, 2.0f, 1.0f/TILES_PER_CHUNK}*WorldMap->ChunkSideInMeters;
+	v3 HighFrequencyUpdateDim = v3{2.0f, 2.0f, 2.0f}*WorldMap->ChunkSideInMeters;
 
 	rectangle3 CameraUpdateBounds = RectCenterDim(v3{0,0,0}, HighFrequencyUpdateDim);
 
@@ -357,6 +389,10 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 																		 "data/test2/ground00.bmp");
 	GameState->Dirt.Alignment = {133, 56};
 
+	GameState->Shadow = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+																		 "data/test/test_hero_shadow.bmp");
+	GameState->Shadow.Alignment = {72, 182};
+
 	hero_bitmaps Hero = {};
 	Hero.Head = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
 													 "data/test/test_hero_front_head.bmp");
@@ -428,6 +464,8 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 		GameState->PlayerIndexForKeyboard[0] = Player.LowIndex;
 		AddCar(GameState, OffsetWorldPos(GameState->WorldMap, Player.Low->WorldP, {3.0f, 7.0f, 0}));
 	}
+	AddMonstar(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{ 2, 5, 0}));
+	AddFamiliar(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{ 4, 5, 0}));
 
 	entity A = AddWall(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{ 2, 4, 0}), 10.0f);
 	entity B = AddWall(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{10, 4, 0}),  5.0f);
@@ -1135,7 +1173,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 			if(ControlledEntity.Low)
 			{
-				v2 InputDirection = {};
+				v3 InputDirection = {};
 
 				if(Held(Keyboard, S))
 				{
@@ -1152,6 +1190,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				if(Held(Keyboard, D))
 				{
 					InputDirection.X += 1;
+				}
+				if(Held(Keyboard, Space))
+				{
+					InputDirection.Z += 1;
 				}
 
 				if(InputDirection.X && InputDirection.Y)
@@ -1192,7 +1234,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 							if(InputDirection.X)
 							{ 
-								TurnWheels(Entities, &CarFrame, InputDirection, SecondsToUpdate); 
+								TurnWheels(Entities, &CarFrame, InputDirection.XY, SecondsToUpdate); 
 							}
 							else
 							{ 
@@ -1249,7 +1291,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			{
 				//TODO(casey): ODE here!
 				ddP = Entity.High->Player.MovingDirection * 85.0f;
-				ddP -= dP * 8.0f;
+				ddP.Z = Entity.High->Player.MovingDirection.Z * 450.0f;
+				if(P.Z > 0)
+				{
+					ddP.Z += -9.82f * 20.0f;
+				}
+				ddP.XY -= dP.XY * 8.0f;
 			}
 			else
 			{
@@ -1260,9 +1307,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 			dP += ddP * dT;
 
-			v3 DeltaP = (0.5f * ddP * Square(dT) + (dP.XY * dT));
+			P += 0.5f * ddP * Square(dT) + dP.XY * dT;
+			if(P.Z < 0.0f)
+			{
+				P.Z = 0.0f;
+				dP.Z = 0.0f;
+			}
 
-			P = P + DeltaP;
 			Entity.High->ddP = ddP;
 			Entity.High->dP = dP;
 			Entity.High->P = P;
@@ -1583,14 +1634,28 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 	for(LoopOverHighEntities)
 	{
+		if(Entity.Low->WorldP.ChunkP.Z != GameState->CameraP.ChunkP.Z) { continue; }
+
 		v2 CollisionMarkerPixelDim = Hadamard(Entity.Low->Dim.XY, {PixelsPerMeter, PixelsPerMeter});
 		m22 GameSpaceToScreenSpace = 
 		{PixelsPerMeter, 0             ,
 			0             ,-PixelsPerMeter};
 
 		v2 EntityCameraPixelDelta = GameSpaceToScreenSpace * Entity.High->P.XY;
-		//TODO(bjorn)Add z axis jump.
 		v2 EntityPixelPos = ScreenCenter + EntityCameraPixelDelta;
+		f32 ZPixelOffset = PixelsPerMeter * -Entity.High->P.Z;
+
+		if(LenghtSquared(Entity.High->dP) != 0.0f)
+		{
+			if(Absolute(Entity.High->dP.X) > Absolute(Entity.High->dP.Y))
+			{
+				Entity.High->FacingDirection = (Entity.High->dP.X > 0) ? 3 : 1;
+			}
+			else
+			{
+				Entity.High->FacingDirection = (Entity.High->dP.Y > 0) ? 2 : 0;
+			}
+		}
 
 		if(Entity.Low->Type == EntityType_Stair)
 		{
@@ -1644,37 +1709,47 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								 (v2)GameState->Dirt.Dim * 1.2f);
 #endif
 		}
+
+		f32 ZAlpha = Clamp(1.0f - (Entity.High->P.Z / 2.0f), 0.0f, 1.0f);
 		if(Entity.Low->Type == EntityType_Player)
 		{
-			if(LenghtSquared(Entity.High->dP) != 0.0f)
-			{
-				if(Absolute(Entity.High->dP.X) > Absolute(Entity.High->dP.Y))
-				{
-					Entity.High->Player.FacingDirection = (Entity.High->dP.X > 0) ? 3 : 1;
-				}
-				else
-				{
-					Entity.High->Player.FacingDirection = (Entity.High->dP.Y > 0) ? 2 : 0;
-				}
-			}
+			v3 Yellow = {1.0f, 1.0f, 0.0f};
+			//DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), Yellow);
 
-			v2 PlayerPixelDim = Hadamard({0.75f, 1.0f}, 
-																	 (v2)v2s{TileSideInPixels, TileSideInPixels});
+			hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity.High->FacingDirection]);
 
-			if(Entity.Low->WorldP.ChunkP.Z == GameState->CameraP.ChunkP.Z)
-			{
-				v3 Yellow = {1.0f, 1.0f, 0.0f};
-				DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), Yellow);
+			DrawBitmap(Buffer, &GameState->Shadow, EntityPixelPos - GameState->Shadow.Alignment, 
+								 (v2)GameState->Shadow.Dim, ZAlpha);
+			DrawBitmap(Buffer, &Hero->Torso, EntityPixelPos + v2{0, ZPixelOffset} - Hero->Torso.Alignment, 
+								 (v2)Hero->Torso.Dim);
+			DrawBitmap(Buffer, &Hero->Cape, EntityPixelPos + v2{0, ZPixelOffset} - Hero->Cape.Alignment, 
+								 (v2)Hero->Cape.Dim);
+			DrawBitmap(Buffer, &Hero->Head, EntityPixelPos + v2{0, ZPixelOffset} - Hero->Head.Alignment, 
+								 (v2)Hero->Head.Dim);
+		}
+		if(Entity.Low->Type == EntityType_Monstar)
+		{
+			v3 Yellow = {1.0f, 1.0f, 0.0f};
+			//DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), Yellow);
 
-				hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity.High->Player.FacingDirection]);
+			hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity.High->FacingDirection]);
 
-				DrawBitmap(Buffer, &Hero->Torso, EntityPixelPos - Hero->Torso.Alignment, 
-									 (v2)Hero->Torso.Dim);
-				DrawBitmap(Buffer, &Hero->Cape, EntityPixelPos - Hero->Cape.Alignment, 
-									 (v2)Hero->Cape.Dim);
-				DrawBitmap(Buffer, &Hero->Head, EntityPixelPos - Hero->Head.Alignment, 
-									 (v2)Hero->Head.Dim);
-			}
+			DrawBitmap(Buffer, &GameState->Shadow, EntityPixelPos - GameState->Shadow.Alignment, 
+								 (v2)GameState->Shadow.Dim, ZAlpha);
+			DrawBitmap(Buffer, &Hero->Torso, EntityPixelPos - Hero->Torso.Alignment, 
+								 (v2)Hero->Torso.Dim);
+		}
+		if(Entity.Low->Type == EntityType_Familiar)
+		{
+			v3 Yellow = {1.0f, 1.0f, 0.0f};
+			//DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), Yellow);
+
+			hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity.High->FacingDirection]);
+
+			DrawBitmap(Buffer, &GameState->Shadow, EntityPixelPos - GameState->Shadow.Alignment, 
+								 (v2)GameState->Shadow.Dim, 0.2f);
+			DrawBitmap(Buffer, &Hero->Head, EntityPixelPos - Hero->Head.Alignment, 
+								 (v2)Hero->Head.Dim);
 		}
 
 #if HANDMADE_INTERNAL
@@ -1713,7 +1788,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				EntityCameraPixelDelta = 
 					GameSpaceToScreenSpace * GameState->DEBUG_CollisionLoopEstimatedPos.XY;
-				//TODO(bjorn)Add z axis jump.
+
 				v2 NextEntityPixelPos = ScreenCenter + EntityCameraPixelDelta;
 				DrawFrame(Buffer, RectCenterDim(NextEntityPixelPos, CollisionMarkerPixelDim), 
 									Entity.High->R.XY, {0.0f, 0.0f, 1.0f});

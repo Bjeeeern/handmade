@@ -85,6 +85,14 @@ AddPlayer(game_state* GameState)
 	Entity.Low->StaticFriction = 0.5f;
 	Entity.Low->DynamicFriction = 0.4f;
 
+	Entity.Low->HitPointMax = 6;
+	for(u32 HitPointIndex = 0;
+			HitPointIndex < Entity.Low->HitPointMax;
+			HitPointIndex++)
+	{
+		Entity.Low->HitPoints[HitPointIndex].FilledAmount = HIT_POINT_SUB_COUNT;
+	}
+
 	Entity.Low->Player.StepHz = 8.0f;
 
 	entity Test = GetEntityByLowIndex(&GameState->Entities, GameState->CameraFollowingPlayerIndex);
@@ -106,6 +114,14 @@ AddMonstar(game_state* GameState, world_map_position InitP)
 	Entity.Low->Collides = true;
 
 	Entity.Low->Mass = 40.0f;
+
+	Entity.Low->HitPointMax = 3;
+	for(u32 HitPointIndex = 0;
+			HitPointIndex < Entity.Low->HitPointMax;
+			HitPointIndex++)
+	{
+		Entity.Low->HitPoints[HitPointIndex].FilledAmount = (u8)(HIT_POINT_SUB_COUNT - HitPointIndex);
+	}
 
 	return Entity;
 }
@@ -1750,12 +1766,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 			DrawBitmap(Buffer, &GameState->Shadow, EntityPixelPos - GameState->Shadow.Alignment, 
 								 (v2)GameState->Shadow.Dim, ZAlpha);
-			DrawBitmap(Buffer, &Hero->Torso, EntityPixelPos + v2{0, ZPixelOffset} - Hero->Torso.Alignment, 
-								 (v2)Hero->Torso.Dim);
-			DrawBitmap(Buffer, &Hero->Cape, EntityPixelPos + v2{0, ZPixelOffset} - Hero->Cape.Alignment, 
-								 (v2)Hero->Cape.Dim);
-			DrawBitmap(Buffer, &Hero->Head, EntityPixelPos + v2{0, ZPixelOffset} - Hero->Head.Alignment, 
-								 (v2)Hero->Head.Dim);
+			DrawBitmap(Buffer, &Hero->Torso, 
+								 EntityPixelPos + v2{0, ZPixelOffset} - Hero->Torso.Alignment, (v2)Hero->Torso.Dim);
+			DrawBitmap(Buffer, &Hero->Cape, 
+								 EntityPixelPos + v2{0, ZPixelOffset} - Hero->Cape.Alignment, (v2)Hero->Cape.Dim);
+			DrawBitmap(Buffer, &Hero->Head, 
+								 EntityPixelPos + v2{0, ZPixelOffset} - Hero->Head.Alignment, (v2)Hero->Head.Dim);
 		}
 		if(Entity.Low->Type == EntityType_Monstar)
 		{
@@ -1780,6 +1796,58 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								 (v2)GameState->Shadow.Dim, 0.2f);
 			DrawBitmap(Buffer, &Hero->Head, EntityPixelPos - Hero->Head.Alignment, 
 								 (v2)Hero->Head.Dim);
+		}
+
+		if(Entity.Low->Type == EntityType_Monstar ||
+			 Entity.Low->Type == EntityType_Player)
+		{
+			for(u32 HitPointIndex = 0;
+					HitPointIndex < Entity.Low->HitPointMax;
+					HitPointIndex++)
+			{
+				v2 HitPointDim = {0.15f, 0.3f};
+				v2 HitPointPos = Entity.High->P.XY;
+				HitPointPos.Y -= 0.3f;
+				HitPointPos.X += ((HitPointIndex - (Entity.Low->HitPointMax-1) * 0.5f) * 
+													HitPointDim.X * 1.5f);
+
+				v2 HitPointPixelPos = ScreenCenter + (GameSpaceToScreenSpace * HitPointPos);
+				v2 HitPointPixelDim = Hadamard(HitPointDim, {PixelsPerMeter, PixelsPerMeter});
+
+				hit_point HP = Entity.Low->HitPoints[HitPointIndex];
+				if(HP.FilledAmount == HIT_POINT_SUB_COUNT)
+				{
+					v3 Green = {0.0f, 1.0f, 0.0f};
+
+					rectangle2 GreenRect = RectCenterDim(HitPointPixelPos, HitPointPixelDim);
+
+					DrawRectangle(Buffer, GreenRect, Green);
+				}
+				else if(HP.FilledAmount < HIT_POINT_SUB_COUNT &&
+								HP.FilledAmount > 0)
+				{
+					v3 Green = {0.0f, 1.0f, 0.0f};
+					v3 Red = {1.0f, 0.0f, 0.0f};
+
+					rectangle2 RedRect = RectCenterDim(HitPointPixelPos, HitPointPixelDim);
+					v2 GreenRectMax = HitPointPixelPos + HitPointPixelDim * 0.5f;
+					v2 GreenRectMin = HitPointPixelPos - HitPointPixelDim * 0.5f;
+					GreenRectMin.Y += ((HitPointPixelDim.Y/HIT_POINT_SUB_COUNT) * 
+														 (HIT_POINT_SUB_COUNT - HP.FilledAmount));
+					rectangle2 GreenRect = RectMinMax(GreenRectMin, GreenRectMax);
+
+					DrawRectangle(Buffer, RedRect, Red);
+					DrawRectangle(Buffer, GreenRect, Green);
+				}
+				else
+				{
+					v3 Red = {1.0f, 0.0f, 0.0f};
+
+					rectangle2 RedRect = RectCenterDim(HitPointPixelPos, HitPointPixelDim);
+
+					DrawRectangle(Buffer, RedRect, Red);
+				}
+			}
 		}
 
 #if HANDMADE_INTERNAL

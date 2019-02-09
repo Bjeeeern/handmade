@@ -56,6 +56,14 @@ struct high_entity
 	};
 };
 
+#define HIT_POINT_SUB_COUNT 4
+struct hit_point
+{
+	//TODO(casey): Bake this down into one variable.
+	u8 Flags;
+	u8 FilledAmount;
+};
+
 struct low_entity
 {
 	entity_type Type;
@@ -70,6 +78,10 @@ struct low_entity
 	f32 Mass;
 	f32 StaticFriction;
 	f32 DynamicFriction;
+
+	//TODO(casey): Should hitpoints themselves be entities?
+	u32 HitPointMax;
+	hit_point HitPoints[16];
 
 	union
 	{

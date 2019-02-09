@@ -31,8 +31,6 @@ struct high_entity
 	v3 dP;
 	v3 ddP;
 
-	b32 CollisionDirtyBit;
-
 	u32 FacingDirection;
 
 	union
@@ -45,6 +43,11 @@ struct high_entity
 			s32 Steps;
 			v3 MovingDirection;
 		} Player;
+		struct
+		{
+			f32 BestDistanceToPlayerSquared;
+			v2 MovingDirection;
+		} Familiar;
 		struct
 		{
 			//TODO(bjorn): Use this to move out the turning code to the cars update loop.
@@ -110,6 +113,12 @@ struct entities
 	high_entity HighEntities[1024];
 	low_entity LowEntities[100000];
 };
+
+inline b32
+EntityXXIsA(entity Entity, entity_type Type)
+{
+	return Entity.Low->Type == Type;
+}
 
 internal_function void
 MapEntityIntoHigh(entities* Entities, u32 LowIndex, v3 P)

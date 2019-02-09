@@ -117,7 +117,7 @@ AddFamiliar(game_state* GameState, world_map_position InitP)
 													 EntityType_Familiar, InitP);
 
 	Entity.Low->Dim = v2{0.5f, 0.3f} * GameState->WorldMap->TileSideInMeters;
-	Entity.Low->Collides = false;
+	Entity.Low->Collides = true;
 
 	Entity.Low->Mass = 40.0f;
 
@@ -1285,40 +1285,55 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 			v3 P = Entity.High->P;
 			v3 dP = Entity.High->dP;
-
-			v3 ddP;
-			if(Entity.Low->Type == EntityType_Player)
+			v3 ddP = Entity.High->ddP;
+			if(EntityXXIsA(Entity, EntityType_Player))
 			{
 				//TODO(casey): ODE here!
 				ddP = Entity.High->Player.MovingDirection * 85.0f;
-				ddP.Z = Entity.High->Player.MovingDirection.Z * 450.0f;
+
+				//ddP.Z = Entity.High->Player.MovingDirection.Z * 450.0f;
+				if(Entity.High->Player.MovingDirection.Z > 0)
+				{
+					dP.Z = 8.0f;
+				}
 				if(P.Z > 0)
 				{
-					ddP.Z += -9.82f * 20.0f;
+					ddP.Z = -9.82f * 10.0f;
 				}
+
 				ddP.XY -= dP.XY * 8.0f;
+
+				if(P.Z < 0.0f)
+				{
+					P.Z = 0.0f;
+					dP.Z = 0.0f;
+				}
+			}
+			else if(EntityXXIsA(Entity, EntityType_Familiar))
+			{
+				ddP = Entity.High->Familiar.MovingDirection * 85.0f * 0.5f;
+				ddP.XY -= dP.XY * 8.0f;
+
+				Entity.High->Familiar.BestDistanceToPlayerSquared = Square(6.0f);
+				Entity.High->Familiar.MovingDirection = {};
+			}
+			else if(EntityXXIsA(Entity, EntityType_Monstar))
+			{
 			}
 			else
 			{
-				ddP = Entity.High->ddP;
 				dP -= dP * 0.01f;
 				dP = LenghtSquared(dP) < Square(0.1f) ? v3{} : dP;
 			}
 
+			P += 0.5f * ddP * Square(dT) + dP * dT;
 			dP += ddP * dT;
-
-			P += 0.5f * ddP * Square(dT) + dP.XY * dT;
-			if(P.Z < 0.0f)
-			{
-				P.Z = 0.0f;
-				dP.Z = 0.0f;
-			}
 
 			Entity.High->ddP = ddP;
 			Entity.High->dP = dP;
 			Entity.High->P = P;
 
-			Entity.High->CollisionDirtyBit = false;
+			//Entity.High->CollisionDirtyBit = false;
 
 			OffsetAndChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, &Entity, 
 																		GameState->CameraP, Entity.High->P);
@@ -1450,17 +1465,32 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				}
 			}
 #endif
-			if(!Entity.Low->Mass) { continue; }
-			if(!Entity.Low->Collides) { continue; }
+			//Entity.High->CollisionDirtyBit = true;
 
-			Entity.High->CollisionDirtyBit = true;
-
-			for(LoopOverHighEntitiesNamed(CollisionEntity))
+			for(LoopOverHighEntitiesNamed(OtherEntity))
 			{
-				if(!CollisionEntity.High->CollisionDirtyBit &&
+				if(Entity.LowIndex == OtherEntity.LowIndex) { continue; }
+
+				entity Target = OtherEntity;
+				if(EntityXXIsA(Entity, EntityType_Familiar) &&
+					 EntityXXIsA(Target, EntityType_Player))
+				{
+					f32 DistanceToPlayerSquared = LenghtSquared(Target.High->P - Entity.High->P);
+					if(DistanceToPlayerSquared < Entity.High->Familiar.BestDistanceToPlayerSquared &&
+						 DistanceToPlayerSquared > Square(1.5f))
+					{
+						Entity.High->Familiar.BestDistanceToPlayerSquared = DistanceToPlayerSquared;
+						Entity.High->Familiar.MovingDirection = Normalize(Target.High->P - Entity.High->P).XY;
+					}
+				}
+
+				entity CollisionEntity = OtherEntity;
+				if(Entity.Low->Mass &&
+					 Entity.Low->Collides && 
 					 CollisionEntity.Low->Collides && 
 					 Entity.LowIndex != CollisionEntity.LowIndex)
 				{
+
 					v2 P = Entity.High->P.XY;
 					v2 OuterP = (CollisionEntity.High->P.XY + 
 											 v2{(Entity.Low->Dim.X + CollisionEntity.Low->Dim.X) * 2.0f, 0.0f});

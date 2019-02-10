@@ -81,7 +81,8 @@ AddPlayer(game_state* GameState)
 	Entity.Low->Collides = true;
 	///Entity.Low->DecelerationFactor = -8.5f;
 
-	Entity.Low->Mass = 40.0f;
+	//TODO(bjorn): Why does weight differences matter so much in the collision system.
+	Entity.Low->Mass = 40.0f / 8.0f;
 	Entity.Low->StaticFriction = 0.5f;
 	Entity.Low->DynamicFriction = 0.4f;
 
@@ -113,7 +114,7 @@ AddMonstar(game_state* GameState, world_map_position InitP)
 	Entity.Low->Dim = v2{0.5f, 0.3f} * GameState->WorldMap->TileSideInMeters;
 	Entity.Low->Collides = true;
 
-	Entity.Low->Mass = 40.0f;
+	Entity.Low->Mass = 40.0f / 8.0f;
 
 	Entity.Low->HitPointMax = 3;
 	for(u32 HitPointIndex = 0;
@@ -135,7 +136,7 @@ AddFamiliar(game_state* GameState, world_map_position InitP)
 	Entity.Low->Dim = v2{0.5f, 0.3f} * GameState->WorldMap->TileSideInMeters;
 	Entity.Low->Collides = true;
 
-	Entity.Low->Mass = 40.0f;
+	Entity.Low->Mass = 40.0f / 8.0f;
 
 	return Entity;
 }
@@ -319,8 +320,6 @@ SetCamera(world_map* WorldMap, entities* Entities,
 					world_map_position* CameraP, world_map_position NewCameraP)
 {
 	Assert(ValidateEntityPairs(Entities));
-
-	NewCameraP.Offset_.Z = 0.0f;
 	*CameraP = NewCameraP;
 
 	//TODO(bjorn): Think more about render distances.
@@ -483,14 +482,15 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	AddMonstar(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{ 2, 5, 0}));
 	AddFamiliar(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{ 4, 5, 0}));
 
-	entity A = AddWall(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{ 2, 4, 0}), 10.0f);
-	entity B = AddWall(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{10, 4, 0}),  5.0f);
+	entity A = AddWall(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{2, 4, 0}), 10.0f);
+	entity B = AddWall(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{5, 4, 0}),  5.0f);
 
+	entity E[6];
 	for(u32 i=0;
 			i < 6;
 			i++)
 	{
-		AddWall(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{2 + 2*i, 2, 0}), 10.0f + i);
+		E[i] = AddWall(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{2 + 2*i, 2, 0}), 10.0f + i);
 	}
 
 	entities* Entities = &GameState->Entities;
@@ -500,8 +500,15 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	A = GetEntityByLowIndex(Entities, A.LowIndex);
 	B = GetEntityByLowIndex(Entities, B.LowIndex);
 
-	//A.High->dP = {1, 0, 0};
-	//B.High->dP = {0.2f, 0, 0};
+	A.High->dP = {1, 0, 0};
+	B.High->dP = {-1, 0, 0};
+	for(u32 i=0;
+			i < 6;
+			i++)
+	{
+		E[i] = GetEntityByLowIndex(Entities, E[i].LowIndex);
+		E[i].High->dP = {2.0f-i, -2.0f+i};
+	}
 
 	u32 ScreenX = 0;
 	u32 ScreenY = 0;
@@ -1286,77 +1293,255 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// https://www.youtube.com/watch?v=fdAOPHgW7qM
 	//TODO(bjorn): Add some asserts and some limits to velocities related to the
 	//delta time so that tunneling becomes virtually impossible.
-	s32 Steps = 4;
+	s32 Steps = 8;
 	f32 dT = SecondsToUpdate / (f32)Steps;
 	for(s32 Step = 0;
 			Step < Steps;
 			Step++)
 	{
-		//
-		// NOTE(bjorn): Move all.
-		//
 		for(LoopOverHighEntities)
 		{
-			if(Entity.Low->Mass == 0) { continue; }
+			//TODO(bjorn): This breaks me trying to debug the collision but might not
+			//be what I wanna do anyways.
+			if(Entity.Low->Attached) { continue; }
 
-			v3 P = Entity.High->P;
-			v3 dP = Entity.High->dP;
-			v3 ddP = Entity.High->ddP;
-			if(EntityXXIsA(Entity, EntityType_Player))
+			//
+			// NOTE(bjorn): Move all.
+			//
 			{
-				//TODO(casey): ODE here!
-				ddP = Entity.High->Player.MovingDirection * 85.0f;
+				v3 P = Entity.High->P;
+				v3 dP = Entity.High->dP;
+				v3 ddP = Entity.High->ddP;
+				v3 Displacement = Entity.High->Displacement;
 
-				//ddP.Z = Entity.High->Player.MovingDirection.Z * 450.0f;
-				if(Entity.High->Player.MovingDirection.Z > 0)
+				if(EntityXXIsA(Entity, EntityType_Player))
 				{
-					dP.Z = 8.0f;
+					//TODO(casey): ODE here!
+					ddP = Entity.High->Player.MovingDirection * 85.0f;
+
+					//ddP.Z = Entity.High->Player.MovingDirection.Z * 450.0f;
+					if(Entity.High->Player.MovingDirection.Z > 0)
+					{
+						dP.Z = 8.0f;
+					}
+					if(P.Z > 0)
+					{
+						ddP.Z = -9.82f * 10.0f;
+					}
+
+					//ddP.XY -= dP.XY * 8.0f;
+					dP -= dP * 0.24f * 30.0f * dT;
 				}
-				if(P.Z > 0)
+				else if(EntityXXIsA(Entity, EntityType_Familiar))
 				{
-					ddP.Z = -9.82f * 10.0f;
+					ddP = Entity.High->Familiar.MovingDirection * 85.0f * 0.5f;
+					//ddP.XY -= dP.XY * 8.0f;
+					dP -= dP * 0.2f * 30.0f * dT;
+
+					Entity.High->Familiar.BestDistanceToPlayerSquared = Square(6.0f);
+					Entity.High->Familiar.MovingDirection = {};
+				}
+				else if(EntityXXIsA(Entity, EntityType_Monstar))
+				{
+				}
+				else
+				{
+					dP -= dP * 0.4f * 30.0f * dT;
+					dP = LenghtSquared(dP) < Square(0.1f) ? v3{} : dP;
 				}
 
-				ddP.XY -= dP.XY * 8.0f;
+#if 0
+				P += Displacement;
 
+				if(LenghtSquared(Displacement))
+				{
+					v3 DisplacementNormal = Normalize(Displacement);
+					f32 VelDisNorDot = Dot(dP, DisplacementNormal);
+					if(VelDisNorDot > 0)
+					{
+						dP -= VelDisNorDot * DisplacementNormal;
+					}
+					f32 AccDisNorDot = Dot(ddP, DisplacementNormal);
+					if(AccDisNorDot > 0)
+					{
+						ddP -= AccDisNorDot * DisplacementNormal;
+					}
+				}
+#endif
+
+				P += 0.5f * ddP * Square(dT) + dP * dT;
+				dP += ddP * dT;
+
+				//TODO(bjorn): Think harder about how to implement the ground.
 				if(P.Z < 0.0f)
 				{
 					P.Z = 0.0f;
 					dP.Z = 0.0f;
 				}
+
+				Entity.High->Displacement = {};
+
+				Entity.High->ddP = ddP;
+				Entity.High->dP = dP;
+				Entity.High->P = P;
+
+				OffsetAndChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, &Entity, 
+																			GameState->CameraP, Entity.High->P);
 			}
-			else if(EntityXXIsA(Entity, EntityType_Familiar))
+
+			//
+			// NOTE(bjorn): Collision check all.
+			//
+			for(LoopOverHighEntitiesNamed(OtherEntity))
 			{
-				ddP = Entity.High->Familiar.MovingDirection * 85.0f * 0.5f;
-				ddP.XY -= dP.XY * 8.0f;
+				if(Entity.LowIndex == OtherEntity.LowIndex) { continue; }
 
-				Entity.High->Familiar.BestDistanceToPlayerSquared = Square(6.0f);
-				Entity.High->Familiar.MovingDirection = {};
+				entity Target = OtherEntity;
+				if(EntityXXIsA(Entity, EntityType_Familiar) &&
+					 EntityXXIsA(Target, EntityType_Player))
+				{
+					f32 DistanceToPlayerSquared = LenghtSquared(Target.High->P - Entity.High->P);
+					if(DistanceToPlayerSquared < Entity.High->Familiar.BestDistanceToPlayerSquared &&
+						 DistanceToPlayerSquared > Square(1.5f))
+					{
+						Entity.High->Familiar.BestDistanceToPlayerSquared = DistanceToPlayerSquared;
+						Entity.High->Familiar.MovingDirection = Normalize(Target.High->P - Entity.High->P).XY;
+					}
+				}
+
+				if(!OtherEntity.High->CollisionDirtyBit)
+				{
+					entity CollisionEntity = OtherEntity;
+					if(Entity.Low->Collides && 
+						 CollisionEntity.Low->Collides && 
+						 Entity.LowIndex != CollisionEntity.LowIndex)
+					{
+						Assert(Entity.Low->Mass);
+
+						v2 P = Entity.High->P.XY;
+						f32 BestSquareDistanceToWall = positive_infinity32;
+						s32 RelevantNodeIndex = -1;
+						b32 Inside = true; 
+						polygon Sum = MinkowskiSum(&CollisionEntity, &Entity);
+						for(s32 NodeIndex = 0; 
+								NodeIndex < Sum.NodeCount; 
+								NodeIndex++)
+						{
+							v2 N0 = Sum.Nodes[NodeIndex];
+							v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
+
+							f32 Det = Determinant(N1-N0, P-N0);
+							if(Inside && (Det <= 0.0f)) 
+							{ 
+								Inside = false; 
+							}
+
+							f32 SquareDistanceToWall = SquareDistancePointToLineSegment(N0, N1, P);
+							if(SquareDistanceToWall < BestSquareDistanceToWall)
+							{
+								BestSquareDistanceToWall = SquareDistanceToWall;
+								RelevantNodeIndex = NodeIndex;
+							}
+						}	
+
+						if(Inside) 
+						{ 
+							//Assert(BestDistanceToWall <= (Entity.Low->Dim.X + CollisionEntity.Low->Dim.X));
+							f32 BestDistanceToWall = SquareRoot(BestSquareDistanceToWall);
+
+							v2 N0 = Sum.Nodes[RelevantNodeIndex];
+							v2 N1 = Sum.Nodes[(RelevantNodeIndex+1) % Sum.NodeCount];
+							m22 CounterClockWise = { 0, 1,
+																-1, 0};
+							v2 n = Normalize(CounterClockWise * (N1 - N0));
+
+							f32 nEdP = Dot(n, Entity.High->dP.XY);
+							f32 nCdP = Dot(n, CollisionEntity.High->dP.XY);
+
+							f32 Em =          Entity.Low->Mass;
+							f32 Cm = CollisionEntity.Low->Mass;
+
+							if(Entity.Low->Type == EntityType_Player ||
+								 Entity.Low->Type == EntityType_Familiar)
+							{
+								//nEdP *= 1.0f/8.0f;
+							}
+							if(CollisionEntity.Low->Type == EntityType_Player ||
+								 CollisionEntity.Low->Type == EntityType_Familiar)
+							{
+								//nCdP *= 1.0f/8.0f;
+							}
+
+							//NOTE(bjorn): Transfer momentum.
+							b32 Interacted = ((nEdP <= 0 && nCdP >= 0) || 
+																(nEdP <= 0 && (nEdP < nCdP)) || 
+																(nCdP >= 0 && (nCdP > nEdP)));
+
+							if(Interacted)
+							{
+								f32 ECnMomDiff = Absolute(nEdP*Em - nCdP*Cm);
+								f32 EImp = (ECnMomDiff / Em);
+								f32 CImp = (ECnMomDiff / Cm);
+
+								f32 PenetrationVelocity = (BestDistanceToWall / dT)* 0.1f;
+								EImp += PenetrationVelocity * (Em / (Em+Cm));
+								CImp += PenetrationVelocity * (Cm / (Em+Cm));
+
+								if(Entity.Low->Type == EntityType_Player ||
+									 Entity.Low->Type == EntityType_Familiar)
+								{
+									//EImp *= 8.0f;
+								}
+								if(CollisionEntity.Low->Type == EntityType_Player ||
+									 CollisionEntity.Low->Type == EntityType_Familiar)
+								{
+									//CImp *= 8.0f;
+								}
+								Entity.High->dP.XY          += n * EImp;
+								CollisionEntity.High->dP.XY -= n * CImp;
+							}
+
+#if 0
+							v2 E2Cmom = CdP * Cm / Em;
+							Entity.High->dP.XY += ;
+							CollisionEntity.High->dP.XY = CdP;
+
+							v2 RdP = EdP - CdP;
+							f32 RdPMag = Lenght(RdP);
+							f32 F = RdPMag * m0;
+
+							f32 Fn = m1 * 9.82f;
+							if(LenghtSquared(CollisionEntity.High->dP) == 0 && 
+								 F <= Fn)
+							{
+								//Entity.High->Displacement.XY += BestDistanceToWall * WallNormal;
+
+								EdP -= WallNormal * Dot(WallNormal, EdP);
+							}
+							else
+							{
+#if 0
+								Entity.High->Displacement.XY += 
+									BestDistanceToWall * (m0 / mSum) * WallNormal;
+								CollisionEntity.High->Displacement.XY -= 
+									BestDistanceToWall * (m1 / mSum) * WallNormal;
+#endif
+
+								v2 impulse = WallNormal * -Dot(WallNormal, RdP);
+								EdP += impulse * (m0 / mSum);
+								CdP -= impulse * (m1 / mSum);
+							}
+
+#endif
+							//TODO(bjorn): Friction. Tangent to the normal.
+						} 
+					}
+				}
 			}
-			else if(EntityXXIsA(Entity, EntityType_Monstar))
-			{
-			}
-			else
-			{
-				dP -= dP * 0.01f;
-				dP = LenghtSquared(dP) < Square(0.1f) ? v3{} : dP;
-			}
+			Entity.High->CollisionDirtyBit = true;
 
-			P += 0.5f * ddP * Square(dT) + dP * dT;
-			dP += ddP * dT;
-
-			Entity.High->ddP = ddP;
-			Entity.High->dP = dP;
-			Entity.High->P = P;
-
-			//Entity.High->CollisionDirtyBit = false;
-
-			OffsetAndChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, &Entity, 
-																		GameState->CameraP, Entity.High->P);
-
-			//TODO(bjorn): This breaks me trying to debug the collision but might not
-			//be what I wanna do anyways.
-			//if(Entity.Low->Attached) { continue; }
+		}
+	}
 
 #if 0
 			if(Entity.Low->Type == EntityType_CarFrame)
@@ -1418,230 +1603,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			}
 			else
 #endif
-			//MoveEntity(GameState, Entity, SecondsToUpdate, WorldMap, GameState->CameraP);
 
-#if 0//HANDMADE_INTERNAL
-			if(GameState->DEBUG_StepThroughTheCollisionLoop)
-			{
-				if(Entity.Low->HighIndex == GameState->DEBUG_CollisionLoopEntityIndex) 
-				{
-					GameState->DEBUG_CollisionLoopEstimatedPos = P + DeltaP;
-
-					if(GameState->DEBUG_CollisionLoopAdvance || LenghtSquared(DeltaP) == 0)
-					{ 
-						GameState->DEBUG_CollisionLoopEntityIndex += 1;
-						GameState->DEBUG_CollisionLoopEntityIndex %= Entities->HighEntityCount+1;
-						if(GameState->DEBUG_CollisionLoopEntityIndex == 0)
-						{ GameState->DEBUG_CollisionLoopEntityIndex++; }
-
-						GameState->DEBUG_CollisionLoopAdvance = false;
-					}
-					else
-					{
-						continue;
-					}
-				}
-				else
-				{
-					continue; 
-				}
-			}
-#endif
-		}
-
-		//
-		// NOTE(bjorn): Collision check all.
-		//
-		for(LoopOverHighEntities)
-		{
-#if 0//HANDMADE_INTERNAL
-			if(GameState->DEBUG_StepThroughTheCollisionLoop)
-			{
-				if(Entity.Low->HighIndex == GameState->DEBUG_CollisionLoopEntityIndex) 
-				{
-					GameState->DEBUG_CollisionLoopEstimatedPos = P + DeltaP;
-
-					if(GameState->DEBUG_CollisionLoopAdvance || LenghtSquared(DeltaP) == 0)
-					{ 
-						GameState->DEBUG_CollisionLoopEntityIndex += 1;
-						GameState->DEBUG_CollisionLoopEntityIndex %= Entities->HighEntityCount+1;
-						if(GameState->DEBUG_CollisionLoopEntityIndex == 0)
-						{ GameState->DEBUG_CollisionLoopEntityIndex++; }
-
-						GameState->DEBUG_CollisionLoopAdvance = false;
-					}
-					else
-					{
-						continue;
-					}
-				}
-				else
-				{
-					continue; 
-				}
-			}
-#endif
-			//Entity.High->CollisionDirtyBit = true;
-
-			for(LoopOverHighEntitiesNamed(OtherEntity))
-			{
-				if(Entity.LowIndex == OtherEntity.LowIndex) { continue; }
-
-				entity Target = OtherEntity;
-				if(EntityXXIsA(Entity, EntityType_Familiar) &&
-					 EntityXXIsA(Target, EntityType_Player))
-				{
-					f32 DistanceToPlayerSquared = LenghtSquared(Target.High->P - Entity.High->P);
-					if(DistanceToPlayerSquared < Entity.High->Familiar.BestDistanceToPlayerSquared &&
-						 DistanceToPlayerSquared > Square(1.5f))
-					{
-						Entity.High->Familiar.BestDistanceToPlayerSquared = DistanceToPlayerSquared;
-						Entity.High->Familiar.MovingDirection = Normalize(Target.High->P - Entity.High->P).XY;
-					}
-				}
-
-				entity CollisionEntity = OtherEntity;
-				if(Entity.Low->Mass &&
-					 Entity.Low->Collides && 
-					 CollisionEntity.Low->Collides && 
-					 Entity.LowIndex != CollisionEntity.LowIndex)
-				{
-
-					v2 P = Entity.High->P.XY;
-					v2 OuterP = (CollisionEntity.High->P.XY + 
-											 v2{(Entity.Low->Dim.X + CollisionEntity.Low->Dim.X) * 2.0f, 0.0f});
-
-					f32 BestDistanceToWall = 0;
-					f32 BestSquareDistanceToWall = positive_infinity32;
-					v2 WallNormal = {};
-					b32 Inside = true; 
-					polygon Sum = MinkowskiSum(&CollisionEntity, &Entity);
-					for(s32 NodeIndex = 0; 
-							NodeIndex < Sum.NodeCount; 
-							NodeIndex++)
-					{
-						v2 N0 = Sum.Nodes[NodeIndex];
-						v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
-
-						f32 Det = Determinant(N1-N0, P-N0);
-						if(Inside && (Det <= 0.0f)) 
-						{ 
-							Inside = false; 
-						}
-
-						f32 SquareDistanceToWall = SquareDistancePointToLineSegment(N0, N1, P);
-						if(SquareDistanceToWall < BestSquareDistanceToWall)
-						{
-							BestSquareDistanceToWall = SquareDistanceToWall;
-							BestDistanceToWall = SquareRoot(SquareDistanceToWall);
-							m22 CounterClockWise = { 0, 1,
-																-1, 0};
-							WallNormal = Normalize(CounterClockWise * (N1 - N0));
-						}
-					}	
-
-					if(Inside) 
-					{ 
-						Assert(BestDistanceToWall <= (Entity.Low->Dim.X + CollisionEntity.Low->Dim.X));
-
-						v2 EdP =          Entity.High->dP.XY;
-						v2 CdP = CollisionEntity.High->dP.XY;
-
-						f32 m0 =          Entity.Low->Mass;
-						f32 m1 = CollisionEntity.Low->Mass;
-						f32 mSum = m0 + m1;
-						Assert(m0 > 0);
-						Assert(m1 > 0);
-
-						v2 RdP = EdP - CdP;
-						f32 RdPMag = Lenght(RdP);
-						f32 t = BestDistanceToWall / RdPMag;
-						f32 F = RdPMag * m0;
-
-						f32 Fn = m1 * 9.82f;
-						if(LenghtSquared(CollisionEntity.High->dP) == 0 && 
-							 F <= Fn)
-						{
-								EdP -= WallNormal * Dot(WallNormal, EdP);
-								CdP = {};
-
-								Entity.High->P.XY += BestDistanceToWall * WallNormal;
-						}
-						else
-						{
-								Entity.High->P.XY          += BestDistanceToWall * (m0 / mSum) * WallNormal;
-								CollisionEntity.High->P.XY -= BestDistanceToWall * (m1 / mSum) * WallNormal;
-
-								v2 impulse = WallNormal * -Dot(WallNormal, RdP);
-								EdP += impulse * (m0 / mSum);
-								CdP -= impulse * (m1 / mSum);
-						}
-
-#if 0
-						f32 rel_dP_n_mag = Dot(WallNormal, RelMov);
-						if(rel_dP_n_mag < 0)
-						{
-							//TODO(bjorn): Make the mass only indirectly settable and only store the inverse?
-							f32 inv_m_sum_inv = 1.0f / (inv_m0 + inv_m1);
-
-							//TODO(bjorn): Add restitution variable for bounciness?
-							f32 impulse_scalar = (-1.0f * rel_dP_n_mag) * inv_m_sum_inv;
-							v2 impulse = WallNormal * impulse_scalar;
-
-							if(CollisionEntity.Low->Mass)
-							{
-								Entity.High->P.XY += BestDistanceToWall * 0.5f * WallNormal;
-								CollisionEntity.High->P.XY -= BestDistanceToWall * 0.5f * WallNormal;
-							}
-							else
-							{
-								CdP -= WallNormal * Dot(WallNormal, CdP);
-
-								CdP = {};
-								Entity.High->P.XY += BestDistanceToWall * WallNormal;
-							}
-
-							EdP += impulse * inv_m0;
-							CdP -= impulse * inv_m1;
-
-						}
-#endif
-
-						Entity.High->dP.XY          = EdP;
-						CollisionEntity.High->dP.XY = CdP;
-
-						//NOTE(bjorn): Friction.
-#if 0
-						v2 rel_dP_t = rel_dP - WallNormal * rel_dP_n_mag;
-						f32 rel_dP_t_mag = Lenght(rel_dP_t);
-						f32 friction_scalar = -rel_dP_t_mag * inv_m_sum_inv;
-
-						f32 comb_stat_fric_sq = (Square(Entity.Low->StaticFriction) + 
-																		 Square(HitEntity.Low->StaticFriction));
-						v2 tangent = Normalize(rel_dP_t);
-						v2 friction;
-						if(Square(friction_scalar) < comb_stat_fric_sq * Square(impulse_scalar))
-						{
-							friction = friction_scalar * tangent;
-						}
-						else
-						{
-							f32 comb_dyn_fric = SquareRoot(Square(Entity.Low->StaticFriction) + 
-																						 Square(HitEntity.Low->StaticFriction));
-							friction = -impulse_scalar * comb_dyn_fric * tangent;
-						}
-
-						if(inv_m1 != 0)
-						{
-							dP               += friction * inv_m0;
-						}
-						HitEntity.High->dP -= friction * inv_m1;
-#endif
-					} 
-				}
-			}
-		}
-	}
 
 	//
 	// NOTE(bjorn): Update camera
@@ -1657,7 +1619,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 																										GameState->RoomHeightInTiles);
 		SetCamera(GameState, NewCameraP);
 #else
-		SetCamera(WorldMap, Entities, &GameState->CameraP, CameraTarget.Low->WorldP);
+		world_map_position NewCameraP = CameraTarget.Low->WorldP;
+		NewCameraP.Offset_.Z = 0;
+		SetCamera(WorldMap, Entities, &GameState->CameraP, NewCameraP);
 #endif
 	}
 
@@ -1680,6 +1644,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 	for(LoopOverHighEntities)
 	{
+		Entity.High->CollisionDirtyBit = false;
 		if(Entity.Low->WorldP.ChunkP.Z != GameState->CameraP.ChunkP.Z) { continue; }
 
 		v2 CollisionMarkerPixelDim = Hadamard(Entity.Low->Dim.XY, {PixelsPerMeter, PixelsPerMeter});

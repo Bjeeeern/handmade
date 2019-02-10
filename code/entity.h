@@ -31,6 +31,9 @@ struct high_entity
 	v3 dP;
 	v3 ddP;
 
+	v3 Displacement;
+	b32 CollisionDirtyBit;
+
 	u32 FacingDirection;
 
 	union

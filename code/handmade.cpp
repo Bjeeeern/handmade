@@ -1379,6 +1379,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					dP.Z = 0.0f;
 				}
 
+				P += Entity.High->Displacement;
 				Entity.High->Displacement = {};
 
 				Entity.High->ddP = ddP;
@@ -1446,8 +1447,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 						if(Inside) 
 						{ 
-							//Assert(BestDistanceToWall <= (Entity.Low->Dim.X + CollisionEntity.Low->Dim.X));
 							f32 BestDistanceToWall = SquareRoot(BestSquareDistanceToWall);
+							Assert(BestDistanceToWall <= (Entity.Low->Dim.X + CollisionEntity.Low->Dim.X) * 0.5f);
 
 							v2 N0 = Sum.Nodes[RelevantNodeIndex];
 							v2 N1 = Sum.Nodes[(RelevantNodeIndex+1) % Sum.NodeCount];
@@ -1461,42 +1462,20 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							f32 Em =          Entity.Low->Mass;
 							f32 Cm = CollisionEntity.Low->Mass;
 
-							if(Entity.Low->Type == EntityType_Player ||
-								 Entity.Low->Type == EntityType_Familiar)
-							{
-								//nEdP *= 1.0f/8.0f;
-							}
-							if(CollisionEntity.Low->Type == EntityType_Player ||
-								 CollisionEntity.Low->Type == EntityType_Familiar)
-							{
-								//nCdP *= 1.0f/8.0f;
-							}
-
-							//NOTE(bjorn): Transfer momentum.
 							b32 Interacted = ((nEdP <= 0 && nCdP >= 0) || 
 																(nEdP <= 0 && (nEdP < nCdP)) || 
 																(nCdP >= 0 && (nCdP > nEdP)));
 
+							//TODO(bjorn): Cuttof for momentum transfers.
 							if(Interacted)
 							{
 								f32 ECnMomDiff = Absolute(nEdP*Em - nCdP*Cm);
 								f32 EImp = (ECnMomDiff / Em);
 								f32 CImp = (ECnMomDiff / Cm);
 
-								f32 PenetrationVelocity = (BestDistanceToWall / dT)* 0.1f;
-								EImp += PenetrationVelocity * (Em / (Em+Cm));
-								CImp += PenetrationVelocity * (Cm / (Em+Cm));
+								Entity.High->Displacement.XY          += n * (BestDistanceToWall * (Em / (Em+Cm)));
+								CollisionEntity.High->Displacement.XY -= n * (BestDistanceToWall * (Cm / (Em+Cm)));
 
-								if(Entity.Low->Type == EntityType_Player ||
-									 Entity.Low->Type == EntityType_Familiar)
-								{
-									//EImp *= 8.0f;
-								}
-								if(CollisionEntity.Low->Type == EntityType_Player ||
-									 CollisionEntity.Low->Type == EntityType_Familiar)
-								{
-									//CImp *= 8.0f;
-								}
 								Entity.High->dP.XY          += n * EImp;
 								CollisionEntity.High->dP.XY -= n * CImp;
 							}

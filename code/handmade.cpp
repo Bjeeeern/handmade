@@ -1344,30 +1344,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				else if(EntityXXIsA(Entity, EntityType_Monstar))
 				{
 				}
+				//TODO(bjorn): Re-add the car.
 				else
 				{
 					dP -= dP * 0.4f * 30.0f * dT;
 					dP = LenghtSquared(dP) < Square(0.1f) ? v3{} : dP;
 				}
-
-#if 0
-				P += Displacement;
-
-				if(LenghtSquared(Displacement))
-				{
-					v3 DisplacementNormal = Normalize(Displacement);
-					f32 VelDisNorDot = Dot(dP, DisplacementNormal);
-					if(VelDisNorDot > 0)
-					{
-						dP -= VelDisNorDot * DisplacementNormal;
-					}
-					f32 AccDisNorDot = Dot(ddP, DisplacementNormal);
-					if(AccDisNorDot > 0)
-					{
-						ddP -= AccDisNorDot * DisplacementNormal;
-					}
-				}
-#endif
 
 				P += 0.5f * ddP * Square(dT) + dP * dT;
 				dP += ddP * dT;
@@ -1379,8 +1361,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					dP.Z = 0.0f;
 				}
 
-				P += Entity.High->Displacement;
-				Entity.High->Displacement = {};
+				//P += Entity.High->Displacement;
+				//Entity.High->Displacement = {};
 
 				Entity.High->ddP = ddP;
 				Entity.High->dP = dP;
@@ -1403,7 +1385,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				{
 					f32 DistanceToPlayerSquared = LenghtSquared(Target.High->P - Entity.High->P);
 					if(DistanceToPlayerSquared < Entity.High->Familiar.BestDistanceToPlayerSquared &&
-						 DistanceToPlayerSquared > Square(1.5f))
+						 DistanceToPlayerSquared > Square(2.0f))
 					{
 						Entity.High->Familiar.BestDistanceToPlayerSquared = DistanceToPlayerSquared;
 						Entity.High->Familiar.MovingDirection = Normalize(Target.High->P - Entity.High->P).XY;
@@ -1466,52 +1448,44 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 																(nEdP <= 0 && (nEdP < nCdP)) || 
 																(nCdP >= 0 && (nCdP > nEdP)));
 
-							//TODO(bjorn): Cuttof for momentum transfers.
 							if(Interacted)
 							{
 								f32 ECnMomDiff = Absolute(nEdP*Em - nCdP*Cm);
-								f32 EImp = (ECnMomDiff / Em);
-								f32 CImp = (ECnMomDiff / Cm);
 
-								Entity.High->Displacement.XY          += n * (BestDistanceToWall * (Em / (Em+Cm)));
-								CollisionEntity.High->Displacement.XY -= n * (BestDistanceToWall * (Cm / (Em+Cm)));
+								//TODO(bjorn): Incorpoate the per entity groundfriction into how much of the impact velocity gets through.
+								f32 EImp = ECnMomDiff / Em;
+								f32 CImp = ECnMomDiff / Cm;
+
+								f32 EDis = (BestDistanceToWall * (Em / (Em+Cm)));
+								f32 CDis = (BestDistanceToWall * (Cm / (Em+Cm)));
+								
+								//TODO(bjorn): Move the amount of momentum needed out to the entity struct.
+								if(Em > Cm)
+								{
+									if(ECnMomDiff < 1.0f*(Em))
+									{
+										EImp = 0;
+										EDis = 0;
+										CDis = BestDistanceToWall;
+									}
+								}
+								else
+								{
+									if(ECnMomDiff < 1.0f*(Cm))
+									{
+										CImp = 0;
+										EDis = BestDistanceToWall;
+										CDis = 0;
+									}
+								}
+
+								Entity.High->P.XY          += n * EDis;
+								CollisionEntity.High->P.XY -= n * CDis;
 
 								Entity.High->dP.XY          += n * EImp;
 								CollisionEntity.High->dP.XY -= n * CImp;
 							}
 
-#if 0
-							v2 E2Cmom = CdP * Cm / Em;
-							Entity.High->dP.XY += ;
-							CollisionEntity.High->dP.XY = CdP;
-
-							v2 RdP = EdP - CdP;
-							f32 RdPMag = Lenght(RdP);
-							f32 F = RdPMag * m0;
-
-							f32 Fn = m1 * 9.82f;
-							if(LenghtSquared(CollisionEntity.High->dP) == 0 && 
-								 F <= Fn)
-							{
-								//Entity.High->Displacement.XY += BestDistanceToWall * WallNormal;
-
-								EdP -= WallNormal * Dot(WallNormal, EdP);
-							}
-							else
-							{
-#if 0
-								Entity.High->Displacement.XY += 
-									BestDistanceToWall * (m0 / mSum) * WallNormal;
-								CollisionEntity.High->Displacement.XY -= 
-									BestDistanceToWall * (m1 / mSum) * WallNormal;
-#endif
-
-								v2 impulse = WallNormal * -Dot(WallNormal, RdP);
-								EdP += impulse * (m0 / mSum);
-								CdP -= impulse * (m1 / mSum);
-							}
-
-#endif
 							//TODO(bjorn): Friction. Tangent to the normal.
 						} 
 					}
@@ -1523,17 +1497,17 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	}
 
 #if 0
-			if(Entity.Low->Type == EntityType_CarFrame)
-			{
-				entity* Vehicle = &Entity;
-				entity LeftFrontWheel = GetEntityByLowIndex(Entities, Vehicle->Low->CarFrame.Wheels[2]);
-				entity RightFrontWheel = GetEntityByLowIndex(Entities, Vehicle->Low->CarFrame.Wheels[3]);
+	if(Entity.Low->Type == EntityType_CarFrame)
+	{
+		entity* Vehicle = &Entity;
+		entity LeftFrontWheel = GetEntityByLowIndex(Entities, Vehicle->Low->CarFrame.Wheels[2]);
+		entity RightFrontWheel = GetEntityByLowIndex(Entities, Vehicle->Low->CarFrame.Wheels[3]);
 
-				ddP = Vehicle->High->ddP;
-				dP = Vehicle->High->dP;
-				//ddP += Vehicle->Low->DecelerationFactor * Vehicle->High->dP;
+		ddP = Vehicle->High->ddP;
+		dP = Vehicle->High->dP;
+		//ddP += Vehicle->Low->DecelerationFactor * Vehicle->High->dP;
 
-				v3 PrelDeltaP = (0.5f * ddP * Square(SecondsToUpdate) + 
+		v3 PrelDeltaP = (0.5f * ddP * Square(SecondsToUpdate) + 
 												 (Vehicle->High->dP * SecondsToUpdate));
 				dP += (ddP * SecondsToUpdate);
 

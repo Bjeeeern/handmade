@@ -67,6 +67,35 @@ struct game_state
 	f32 NoteSecondsPassed;
 };
 
+internal_function void
+AddHitPoints(entity* Entity, u32 HitPointMax)
+{
+	Assert(HitPointMax <= ArrayCount(Entity->Low->HitPoints));
+	Entity->Low->HitPointMax = HitPointMax;
+	for(u32 HitPointIndex = 0;
+			HitPointIndex < Entity->Low->HitPointMax;
+			HitPointIndex++)
+	{
+		Entity->Low->HitPoints[HitPointIndex].FilledAmount = HIT_POINT_SUB_COUNT;
+	}
+}
+
+	internal_function entity
+AddSword(game_state* GameState)
+{
+	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, 
+														&GameState->Entities, EntityType_Sword);
+
+	Entity.Low->Dim = v2{0.2f, 0.6f} * GameState->WorldMap->TileSideInMeters;
+	Entity.Low->Collides = false;
+
+	Entity.Low->Mass = 8.0f;
+	Entity.Low->GroundFriction = 2.0f;
+
+
+	return Entity;
+}
+
 	internal_function entity
 AddPlayer(game_state* GameState)
 {
@@ -83,16 +112,9 @@ AddPlayer(game_state* GameState)
 
 	//TODO(bjorn): Why does weight differences matter so much in the collision system.
 	Entity.Low->Mass = 40.0f / 8.0f;
-	Entity.Low->StaticFriction = 0.5f;
-	Entity.Low->DynamicFriction = 0.4f;
+	Entity.Low->GroundFriction = 0.24f * 30.0f;
 
-	Entity.Low->HitPointMax = 6;
-	for(u32 HitPointIndex = 0;
-			HitPointIndex < Entity.Low->HitPointMax;
-			HitPointIndex++)
-	{
-		Entity.Low->HitPoints[HitPointIndex].FilledAmount = HIT_POINT_SUB_COUNT;
-	}
+	AddHitPoints(&Entity, 6);
 
 	Entity.Low->Player.StepHz = 8.0f;
 
@@ -115,8 +137,10 @@ AddMonstar(game_state* GameState, world_map_position InitP)
 	Entity.Low->Collides = true;
 
 	Entity.Low->Mass = 40.0f / 8.0f;
+	Entity.Low->GroundFriction = 0.24f * 30.0f;
 
-	Entity.Low->HitPointMax = 3;
+	AddHitPoints(&Entity, 3);
+
 	for(u32 HitPointIndex = 0;
 			HitPointIndex < Entity.Low->HitPointMax;
 			HitPointIndex++)
@@ -137,6 +161,7 @@ AddFamiliar(game_state* GameState, world_map_position InitP)
 	Entity.Low->Collides = true;
 
 	Entity.Low->Mass = 40.0f / 8.0f;
+	Entity.Low->GroundFriction = 0.2f * 30.0f;
 
 	return Entity;
 }
@@ -296,8 +321,7 @@ AddWall(game_state* GameState, world_map_position WorldPos, f32 Mass = 1000.0f)
 	Entity.Low->Collides = true;
 
 	Entity.Low->Mass = Mass;
-	Entity.Low->StaticFriction = 0.5f;
-	Entity.Low->DynamicFriction = 0.4f;
+	Entity.Low->GroundFriction = 0.4f * 30.0f;
 
 	return Entity;
 }
@@ -1319,7 +1343,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					//TODO(casey): ODE here!
 					ddP = Entity.High->Player.MovingDirection * 85.0f;
 
-					//ddP.Z = Entity.High->Player.MovingDirection.Z * 450.0f;
 					if(Entity.High->Player.MovingDirection.Z > 0)
 					{
 						dP.Z = 8.0f;
@@ -1329,14 +1352,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						ddP.Z = -9.82f * 10.0f;
 					}
 
-					//ddP.XY -= dP.XY * 8.0f;
-					dP -= dP * 0.24f * 30.0f * dT;
 				}
 				else if(EntityXXIsA(Entity, EntityType_Familiar))
 				{
 					ddP = Entity.High->Familiar.MovingDirection * 85.0f * 0.5f;
-					//ddP.XY -= dP.XY * 8.0f;
-					dP -= dP * 0.2f * 30.0f * dT;
 
 					Entity.High->Familiar.BestDistanceToPlayerSquared = Square(6.0f);
 					Entity.High->Familiar.MovingDirection = {};
@@ -1347,10 +1366,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				//TODO(bjorn): Re-add the car.
 				else
 				{
-					dP -= dP * 0.4f * 30.0f * dT;
-					dP = LenghtSquared(dP) < Square(0.1f) ? v3{} : dP;
+					//dP = LenghtSquared(dP) < Square(0.1f) ? v3{} : dP;
 				}
 
+				dP -= Entity.Low->GroundFriction * dP * dT;
 				P += 0.5f * ddP * Square(dT) + dP * dT;
 				dP += ddP * dT;
 
@@ -1450,9 +1469,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 							if(Interacted)
 							{
+								//TODO IMPORTANT (bjorn): Do rotation with unit circle vector
+								//offset approximations and the closest opposing line-segments of the
+								//objects colliding.
 								f32 ECnMomDiff = Absolute(nEdP*Em - nCdP*Cm);
 
-								//TODO(bjorn): Incorpoate the per entity groundfriction into how much of the impact velocity gets through.
+								//TODO(bjorn): This didn't work. What is the real problem I am
+								//trying to solve? Never show an unresolved collision?
+								//12/2/2019
+								//TODO(bjorn): Incorporate the per entity groundfriction into
+								//how much of the impact velocity gets through.
 								f32 EImp = ECnMomDiff / Em;
 								f32 CImp = ECnMomDiff / Cm;
 

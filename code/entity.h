@@ -20,6 +20,7 @@ enum entity_type
 	EntityType_Engine,
 	EntityType_Monstar,
 	EntityType_Familiar,
+	EntityType_Sword,
 };
 
 struct high_entity
@@ -27,6 +28,8 @@ struct high_entity
 	u32 LowIndex;
 
 	v3 R;
+	v3 dR;
+	v3 ddR;
 	v3 P;
 	v3 dP;
 	v3 ddP;
@@ -79,8 +82,7 @@ struct low_entity
 	b32 Attached;
 
 	f32 Mass;
-	f32 StaticFriction;
-	f32 DynamicFriction;
+	f32 GroundFriction;
 
 	//TODO(casey): Should hitpoints themselves be entities?
 	u32 HitPointMax;
@@ -259,15 +261,17 @@ AddEntity(memory_arena* WorldArena, world_map* WorldMap, entities* Entities,
 	Result.Low->WorldP = WorldPos;
 
 	ChangeEntityLocation(WorldArena, WorldMap, Result.LowIndex, 0, &Result.Low->WorldP);
-		//TODO(bjorn): Only calling set camera actually adds this entity to the high frequency
-		//set. As it is now we call the setcamera every frame but that might not
-		//always be true. Does add entity also check for the camera location when
-		//adding stuff.
 
 	return Result;
 }
+	internal_function entity
+AddEntity(memory_arena* WorldArena, world_map* WorldMap, 
+					entities* Entities, entity_type Type)
+{
+	AddEntity(WorldArena, WorldMap, Entities, Type, WorldMapNullPos());
+}
 
-inline b32
+	inline b32
 ValidateEntityPairs(entities* Entities)
 {
 	for(u32 HighIndex = 1;

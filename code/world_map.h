@@ -31,11 +31,26 @@ struct world_map
 	entity_block* FreeBlock;
 };
 
+#define INVALID_CHUNK_POS max_s32
 struct world_map_position
 {
 	v3s ChunkP;
 	v3 Offset_;
 };
+
+inline world_map_position
+WorldMapNullPos()
+{
+	world_map_position Result = {};
+	Result.ChunkP.X = INVALID_CHUNK_POS;
+	return Result;
+}
+
+inline b32
+IsValid(world_map_position Pos)
+{
+	return Pos.ChunkP.X != INVALID_CHUNK_POS;
+}
 
   internal_function world_chunk *
 GetWorldChunk(world_map *WorldMap, v3s PotentialChunkP, memory_arena* Arena = 0)

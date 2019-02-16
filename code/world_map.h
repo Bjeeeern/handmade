@@ -230,7 +230,7 @@ UpdateEntityChunkLocation(memory_arena* Arena, world_map* WorldMap, u32 LowEntit
 	Assert(!OldP || IsValid(*OldP));
 	Assert(!NewP || IsValid(*NewP));
 
-	if(OldP && AreInSameChunk(WorldMap, OldP, NewP))
+	if(OldP && NewP && AreInSameChunk(WorldMap, OldP, NewP))
 	{
 		return; //NOTE(Bjorn): Entity not needed to be moved.
 	}

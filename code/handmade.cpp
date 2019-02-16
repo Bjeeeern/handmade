@@ -91,7 +91,7 @@ AddSword(game_state* GameState)
 	Entity.Low->Mass = 8.0f;
 
 	Entity.Low->GroundFriction = 0.0f;
-	Entity.Low->Collides = true;
+	Entity.Low->Collides = false;
 
 	return Entity;
 }
@@ -340,18 +340,22 @@ AddStair(game_state* GameState, world_map_position WorldPos, f32 dZ)
 
 internal_function void
 SetCamera(world_map* WorldMap, entities* Entities, 
-					world_map_position* CameraP, world_map_position NewCameraP)
+					world_map_position* CameraP, world_map_position* NewCameraP)
 {
 	Assert(ValidateEntityPairs(Entities));
-	*CameraP = NewCameraP;
+
+	if(NewCameraP)
+	{
+		*CameraP = *NewCameraP;
+	}
 
 	//TODO(bjorn): Think more about render distances.
 	v3 HighFrequencyUpdateDim = v3{2.0f, 2.0f, 2.0f}*WorldMap->ChunkSideInMeters;
 
 	rectangle3 CameraUpdateBounds = RectCenterDim(v3{0,0,0}, HighFrequencyUpdateDim);
 
-	world_map_position MinWorldP = OffsetWorldPos(WorldMap, NewCameraP, CameraUpdateBounds.Min);
-	world_map_position MaxWorldP = OffsetWorldPos(WorldMap, NewCameraP, CameraUpdateBounds.Max);
+	world_map_position MinWorldP = OffsetWorldPos(WorldMap, *CameraP, CameraUpdateBounds.Min);
+	world_map_position MaxWorldP = OffsetWorldPos(WorldMap, *CameraP, CameraUpdateBounds.Max);
 
 	rectangle3s CameraUpdateAbsBounds = RectMinMax(MinWorldP.ChunkP, MaxWorldP.ChunkP);
 
@@ -381,7 +385,7 @@ SetCamera(world_map* WorldMap, entities* Entities,
 							entity Entity = GetEntityByLowIndex(Entities, Block->EntityIndexes[Index]);
 							Assert(Entity.Low);
 
-							v3 RelCamP = GetWorldMapPosDifference(WorldMap, Entity.Low->WorldP, NewCameraP);
+							v3 RelCamP = GetWorldMapPosDifference(WorldMap, Entity.Low->WorldP, *CameraP);
 
 							if(Entity.High)
 							{
@@ -389,9 +393,8 @@ SetCamera(world_map* WorldMap, entities* Entities,
 
 								if(!IsInRectangle(CameraUpdateBounds, Entity.High->P))
 								{
-									world_map_position WorldP = 
-										OffsetWorldPos(WorldMap, NewCameraP, Entity.High->P);
-									MapEntityIntoLow(Entities, Entity.LowIndex, WorldP);
+									world_map_position WorldP = OffsetWorldPos(WorldMap, *CameraP, Entity.High->P);
+									MapEntityOutFromHigh(Entities, Entity.LowIndex, WorldP);
 								}
 							}
 							else
@@ -501,11 +504,11 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	GameState->RoomOrigin = (v3s)RoundV2ToV2S((v2)v2u{TilesPerWidth, TilesPerHeight} / 2.0f);
 
 	GameState->CameraP = GetChunkPosFromAbsTile(WorldMap, GameState->RoomOrigin);
-	{
-		entity Player = AddPlayer(GameState);
-		GameState->PlayerIndexForKeyboard[0] = Player.LowIndex;
-		AddCar(GameState, OffsetWorldPos(GameState->WorldMap, Player.Low->WorldP, {3.0f, 7.0f, 0}));
-	}
+
+	entity Player = AddPlayer(GameState);
+	GameState->PlayerIndexForKeyboard[0] = Player.LowIndex;
+	AddCar(GameState, OffsetWorldPos(GameState->WorldMap, Player.Low->WorldP, {3.0f, 7.0f, 0}));
+
 	AddMonstar(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{ 2, 5, 0}));
 	AddFamiliar(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{ 4, 5, 0}));
 
@@ -521,8 +524,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	}
 
 	entities* Entities = &GameState->Entities;
-	entity CameraTarget = GetEntityByLowIndex(Entities, GameState->CameraFollowingPlayerIndex);
-	SetCamera(WorldMap, Entities, &GameState->CameraP, CameraTarget.Low->WorldP);
+	SetCamera(WorldMap, Entities, &GameState->CameraP, &Player.Low->WorldP);
 
 	A = GetEntityByLowIndex(Entities, A.LowIndex);
 	B = GetEntityByLowIndex(Entities, B.LowIndex);
@@ -1179,8 +1181,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			{
 				if(Clicked(Controller, Start))
 				{
-					GameState->PlayerIndexForController[ControllerIndex] = 
-						AddPlayer(GameState).LowIndex;
+					GameState->PlayerIndexForController[ControllerIndex] = AddPlayer(GameState).LowIndex;
 				}
 			}
 		}
@@ -1314,6 +1315,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 																												 &Sword,
 																												 ControlledEntity.Low->WorldP, 
 																												 InputDirection * Sword.Low->Dim.Y);
+
+									SetCamera(WorldMap, Entities, &GameState->CameraP, 0);
+
+									Sword = GetEntityByLowIndex(Entities, ControlledEntity.Low->Sword);
+									if(Sword.High)
+									{
+										Sword.High->dP = Sword.Low->R * 6.0f;
+									}
 								}
 							}
 						}
@@ -1412,6 +1421,111 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			{
 				if(Entity.LowIndex == OtherEntity.LowIndex) { continue; }
 
+				b32 Inside = false; 
+				if(!OtherEntity.High->CollisionDirtyBit)
+				{
+					entity CollisionEntity = OtherEntity;
+
+					v2 P = Entity.High->P.XY;
+					f32 BestSquareDistanceToWall = positive_infinity32;
+					s32 RelevantNodeIndex = -1;
+					polygon Sum = MinkowskiSum(&CollisionEntity, &Entity);
+
+					Inside = true;
+					for(s32 NodeIndex = 0; 
+							NodeIndex < Sum.NodeCount; 
+							NodeIndex++)
+					{
+						v2 N0 = Sum.Nodes[NodeIndex];
+						v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
+
+						f32 Det = Determinant(N1-N0, P-N0);
+						if(Inside && (Det <= 0.0f)) 
+						{ 
+							Inside = false; 
+						}
+
+						f32 SquareDistanceToWall = SquareDistancePointToLineSegment(N0, N1, P);
+						if(SquareDistanceToWall < BestSquareDistanceToWall)
+						{
+							BestSquareDistanceToWall = SquareDistanceToWall;
+							RelevantNodeIndex = NodeIndex;
+						}
+					}	
+
+					if(Inside &&
+						 Entity.Low->Collides && 
+						 CollisionEntity.Low->Collides)
+					{
+						Assert(Entity.Low->Mass);
+						f32 BestDistanceToWall = SquareRoot(BestSquareDistanceToWall);
+						Assert(BestDistanceToWall <= (Entity.Low->Dim.X + CollisionEntity.Low->Dim.X) * 0.5f);
+
+						v2 N0 = Sum.Nodes[RelevantNodeIndex];
+						v2 N1 = Sum.Nodes[(RelevantNodeIndex+1) % Sum.NodeCount];
+						m22 CounterClockWise = { 0, 1,
+															 -1, 0};
+						v2 n = Normalize(CounterClockWise * (N1 - N0));
+
+						f32 nEdP = Dot(n, Entity.High->dP.XY);
+						f32 nCdP = Dot(n, CollisionEntity.High->dP.XY);
+
+						f32 Em =          Entity.Low->Mass;
+						f32 Cm = CollisionEntity.Low->Mass;
+
+						b32 Interacted = ((nEdP <= 0 && nCdP >= 0) || 
+															(nEdP <= 0 && (nEdP < nCdP)) || 
+															(nCdP >= 0 && (nCdP > nEdP)));
+
+						if(Interacted)
+						{
+							//TODO IMPORTANT (bjorn): Do rotation with unit circle vector
+							//offset approximations and the closest opposing line-segments of the
+							//objects colliding.
+							f32 ECnMomDiff = Absolute(nEdP*Em - nCdP*Cm);
+
+							//TODO(bjorn): This didn't work. What is the real problem I am
+							//trying to solve? Never show an unresolved collision?
+							//12/2/2019
+							//TODO(bjorn): Incorporate the per entity groundfriction into
+							//how much of the impact velocity gets through.
+							f32 EImp = ECnMomDiff / Em;
+							f32 CImp = ECnMomDiff / Cm;
+
+							f32 EDis = (BestDistanceToWall * (Em / (Em+Cm)));
+							f32 CDis = (BestDistanceToWall * (Cm / (Em+Cm)));
+
+							//TODO(bjorn): Move the amount of momentum needed out to the entity struct.
+							if(Em > Cm)
+							{
+								if(ECnMomDiff < 1.0f*(Em))
+								{
+									EImp = 0;
+									EDis = 0;
+									CDis = BestDistanceToWall;
+								}
+							}
+							else
+							{
+								if(ECnMomDiff < 1.0f*(Cm))
+								{
+									CImp = 0;
+									EDis = BestDistanceToWall;
+									CDis = 0;
+								}
+							}
+
+							Entity.High->P.XY          += n * EDis;
+							CollisionEntity.High->P.XY -= n * CDis;
+
+							Entity.High->dP.XY          += n * EImp;
+							CollisionEntity.High->dP.XY -= n * CImp;
+						}
+
+						//TODO(bjorn): Friction. Tangent to the normal.
+					} 
+				}
+
 				entity Target = OtherEntity;
 				if(EntityXXIsA(Entity, EntityType_Familiar) &&
 					 EntityXXIsA(Target, EntityType_Player))
@@ -1425,114 +1539,30 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					}
 				}
 
-				if(!OtherEntity.High->CollisionDirtyBit)
+				if(Inside)
 				{
-					entity CollisionEntity = OtherEntity;
-					if(Entity.Low->Collides && 
-						 CollisionEntity.Low->Collides && 
-						 Entity.LowIndex != CollisionEntity.LowIndex)
+					//TODO(bjorn): Typing out these cases feels kinda wonky.
+					b32 SwordAndPlayer = (Entity.Low->Type == EntityType_Sword &&
+																Target.Low->Type != EntityType_Player);
+					b32 PlayerAndSword = (Target.Low->Type == EntityType_Sword &&
+																Entity.Low->Type != EntityType_Player);
+					//TODO(bjorn): Is it safe to let high entities just disappear in the middle of a loop?
+					//TODO(bjorn): Also, the fact that this needs to be done is
+					//non-obvious. As is the fact that calling SetCamera doesn't work as
+					//well.
+					if(SwordAndPlayer)
 					{
-						Assert(Entity.Low->Mass);
-
-						v2 P = Entity.High->P.XY;
-						f32 BestSquareDistanceToWall = positive_infinity32;
-						s32 RelevantNodeIndex = -1;
-						b32 Inside = true; 
-						polygon Sum = MinkowskiSum(&CollisionEntity, &Entity);
-						for(s32 NodeIndex = 0; 
-								NodeIndex < Sum.NodeCount; 
-								NodeIndex++)
-						{
-							v2 N0 = Sum.Nodes[NodeIndex];
-							v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
-
-							f32 Det = Determinant(N1-N0, P-N0);
-							if(Inside && (Det <= 0.0f)) 
-							{ 
-								Inside = false; 
-							}
-
-							f32 SquareDistanceToWall = SquareDistancePointToLineSegment(N0, N1, P);
-							if(SquareDistanceToWall < BestSquareDistanceToWall)
-							{
-								BestSquareDistanceToWall = SquareDistanceToWall;
-								RelevantNodeIndex = NodeIndex;
-							}
-						}	
-
-						if(Inside) 
-						{ 
-							f32 BestDistanceToWall = SquareRoot(BestSquareDistanceToWall);
-							Assert(BestDistanceToWall <= (Entity.Low->Dim.X + CollisionEntity.Low->Dim.X) * 0.5f);
-
-							v2 N0 = Sum.Nodes[RelevantNodeIndex];
-							v2 N1 = Sum.Nodes[(RelevantNodeIndex+1) % Sum.NodeCount];
-							m22 CounterClockWise = { 0, 1,
-																-1, 0};
-							v2 n = Normalize(CounterClockWise * (N1 - N0));
-
-							f32 nEdP = Dot(n, Entity.High->dP.XY);
-							f32 nCdP = Dot(n, CollisionEntity.High->dP.XY);
-
-							f32 Em =          Entity.Low->Mass;
-							f32 Cm = CollisionEntity.Low->Mass;
-
-							b32 Interacted = ((nEdP <= 0 && nCdP >= 0) || 
-																(nEdP <= 0 && (nEdP < nCdP)) || 
-																(nCdP >= 0 && (nCdP > nEdP)));
-
-							if(Interacted)
-							{
-								//TODO IMPORTANT (bjorn): Do rotation with unit circle vector
-								//offset approximations and the closest opposing line-segments of the
-								//objects colliding.
-								f32 ECnMomDiff = Absolute(nEdP*Em - nCdP*Cm);
-
-								//TODO(bjorn): This didn't work. What is the real problem I am
-								//trying to solve? Never show an unresolved collision?
-								//12/2/2019
-								//TODO(bjorn): Incorporate the per entity groundfriction into
-								//how much of the impact velocity gets through.
-								f32 EImp = ECnMomDiff / Em;
-								f32 CImp = ECnMomDiff / Cm;
-
-								f32 EDis = (BestDistanceToWall * (Em / (Em+Cm)));
-								f32 CDis = (BestDistanceToWall * (Cm / (Em+Cm)));
-								
-								//TODO(bjorn): Move the amount of momentum needed out to the entity struct.
-								if(Em > Cm)
-								{
-									if(ECnMomDiff < 1.0f*(Em))
-									{
-										EImp = 0;
-										EDis = 0;
-										CDis = BestDistanceToWall;
-									}
-								}
-								else
-								{
-									if(ECnMomDiff < 1.0f*(Cm))
-									{
-										CImp = 0;
-										EDis = BestDistanceToWall;
-										CDis = 0;
-									}
-								}
-
-								Entity.High->P.XY          += n * EDis;
-								CollisionEntity.High->P.XY -= n * CDis;
-
-								Entity.High->dP.XY          += n * EImp;
-								CollisionEntity.High->dP.XY -= n * CImp;
-							}
-
-							//TODO(bjorn): Friction. Tangent to the normal.
-						} 
+						ChangeEntityWorldLocation(WorldArena, WorldMap, &Entity, 0);
+						MapEntityOutFromHigh(Entities, Entity.LowIndex, Entity.Low->WorldP);
+					}
+					else if(PlayerAndSword)
+					{
+						ChangeEntityWorldLocation(WorldArena, WorldMap, &Target, 0);
+						MapEntityOutFromHigh(Entities, Target.LowIndex, Target.Low->WorldP);
 					}
 				}
 			}
 			Entity.High->CollisionDirtyBit = true;
-
 		}
 	}
 
@@ -1548,16 +1578,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		//ddP += Vehicle->Low->DecelerationFactor * Vehicle->High->dP;
 
 		v3 PrelDeltaP = (0.5f * ddP * Square(SecondsToUpdate) + 
-												 (Vehicle->High->dP * SecondsToUpdate));
-				dP += (ddP * SecondsToUpdate);
+										 (Vehicle->High->dP * SecondsToUpdate));
+		dP += (ddP * SecondsToUpdate);
 
-				v3 OldFrontP = Vehicle->High->P + Vehicle->High->R * Vehicle->Low->Dim.Y * 0.5f;
-				v3 NewFrontP;
-				f32 DeltaPSign;
-				if(LeftFrontWheel.High)
-				{
-					DeltaPSign = Sign(Dot(PrelDeltaP, LeftFrontWheel.High->R));
-					NewFrontP = OldFrontP + LeftFrontWheel.High->R * Lenght(PrelDeltaP) * DeltaPSign;
+		v3 OldFrontP = Vehicle->High->P + Vehicle->High->R * Vehicle->Low->Dim.Y * 0.5f;
+		v3 NewFrontP;
+		f32 DeltaPSign;
+		if(LeftFrontWheel.High)
+		{
+			DeltaPSign = Sign(Dot(PrelDeltaP, LeftFrontWheel.High->R));
+			NewFrontP = OldFrontP + LeftFrontWheel.High->R * Lenght(PrelDeltaP) * DeltaPSign;
 				}
 				else if(RightFrontWheel.High)
 				{
@@ -1614,7 +1644,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #else
 		world_map_position NewCameraP = CameraTarget.Low->WorldP;
 		NewCameraP.Offset_.Z = 0;
-		SetCamera(WorldMap, Entities, &GameState->CameraP, NewCameraP);
+		SetCamera(WorldMap, Entities, &GameState->CameraP, &NewCameraP);
 #endif
 	}
 

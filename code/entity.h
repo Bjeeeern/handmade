@@ -141,7 +141,7 @@ MapEntityIntoHigh(entities* Entities, u32 LowIndex, v3 P)
 }
 
 	internal_function void
-MapEntityIntoLow(entities* Entities, u32 LowIndex, world_map_position WorldP)
+MapEntityOutFromHigh(entities* Entities, u32 LowIndex, world_map_position WorldP)
 {
 	low_entity* Low = Entities->LowEntities + LowIndex;
 	u32 HighIndex = Low->HighIndex;

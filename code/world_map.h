@@ -224,9 +224,12 @@ AreInSameChunk(world_map* WorldMap, world_map_position* A, world_map_position* B
 //TODO(bjorn): Should hashmap chunks that contains no blocks in the hashmap be
 //recycled like blocks are?
 inline void
-ChangeEntityLocation(memory_arena* Arena, world_map* WorldMap, u32 LowEntityIndex,
-										 world_map_position* OldP, world_map_position* NewP)
+UpdateEntityChunkLocation(memory_arena* Arena, world_map* WorldMap, u32 LowEntityIndex,
+													world_map_position* OldP, world_map_position* NewP)
 {
+	Assert(!OldP || IsValid(*OldP));
+	Assert(!NewP || IsValid(*NewP));
+
 	if(OldP && AreInSameChunk(WorldMap, OldP, NewP))
 	{
 		return; //NOTE(Bjorn): Entity not needed to be moved.
@@ -279,29 +282,32 @@ IndexInOldChunkFound:;
 		}
 	}
 
-	world_chunk* NewChunk = GetWorldChunk(WorldMap, NewP->ChunkP, Arena);
-	Assert(NewChunk);
-
-	entity_block* Block = NewChunk->Block;
-	Assert(Block);
-
-	if(Block->EntityIndexCount >= ArrayCount(Block->EntityIndexes))
+	if(NewP)
 	{
-		if(WorldMap->FreeBlock)
+		world_chunk* NewChunk = GetWorldChunk(WorldMap, NewP->ChunkP, Arena);
+		Assert(NewChunk);
+
+		entity_block* Block = NewChunk->Block;
+		Assert(Block);
+
+		if(Block->EntityIndexCount >= ArrayCount(Block->EntityIndexes))
 		{
-			NewChunk->Block = WorldMap->FreeBlock;
-			WorldMap->FreeBlock = WorldMap->FreeBlock->Next;
-			NewChunk->Block->Next = Block;
-			Block = NewChunk->Block;
+			if(WorldMap->FreeBlock)
+			{
+				NewChunk->Block = WorldMap->FreeBlock;
+				WorldMap->FreeBlock = WorldMap->FreeBlock->Next;
+				NewChunk->Block->Next = Block;
+				Block = NewChunk->Block;
+			}
+			else
+			{
+				NewChunk->Block = PushStruct(Arena, entity_block);
+				NewChunk->Block->Next = Block;
+				Block = NewChunk->Block;
+			}
 		}
-		else
-		{
-			NewChunk->Block = PushStruct(Arena, entity_block);
-			NewChunk->Block->Next = Block;
-			Block = NewChunk->Block;
-		}
+		Block->EntityIndexes[Block->EntityIndexCount++] = LowEntityIndex;
 	}
-	Block->EntityIndexes[Block->EntityIndexCount++] = LowEntityIndex;
 }
 
 #define WORLD_MAP_H

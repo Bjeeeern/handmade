@@ -45,6 +45,7 @@ struct game_state
 	loaded_bitmap Rock;
 	loaded_bitmap Dirt;
 	loaded_bitmap Shadow;
+	loaded_bitmap Sword;
 
 	hero_bitmaps HeroBitmaps[4];
 
@@ -86,12 +87,11 @@ AddSword(game_state* GameState)
 	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, 
 														&GameState->Entities, EntityType_Sword);
 
-	Entity.Low->Dim = v2{0.2f, 0.6f} * GameState->WorldMap->TileSideInMeters;
-	Entity.Low->Collides = false;
-
+	Entity.Low->Dim = v2{0.4f, 1.5f} * GameState->WorldMap->TileSideInMeters;
 	Entity.Low->Mass = 8.0f;
-	Entity.Low->GroundFriction = 2.0f;
 
+	Entity.Low->GroundFriction = 0.0f;
+	Entity.Low->Collides = true;
 
 	return Entity;
 }
@@ -104,19 +104,18 @@ AddPlayer(game_state* GameState)
 																													 v3s{-2, 1, 0}).Offset_);
 
 	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
-													 EntityType_Player, InitP);
+													 EntityType_Player, &InitP);
 
 	Entity.Low->Dim = v2{0.5f, 0.3f} * GameState->WorldMap->TileSideInMeters;
 	Entity.Low->Collides = true;
-	///Entity.Low->DecelerationFactor = -8.5f;
 
 	//TODO(bjorn): Why does weight differences matter so much in the collision system.
 	Entity.Low->Mass = 40.0f / 8.0f;
 	Entity.Low->GroundFriction = 0.24f * 30.0f;
 
 	AddHitPoints(&Entity, 6);
-
-	Entity.Low->Player.StepHz = 8.0f;
+	entity Sword = AddSword(GameState);
+	Entity.Low->Sword = Sword.LowIndex;
 
 	entity Test = GetEntityByLowIndex(&GameState->Entities, GameState->CameraFollowingPlayerIndex);
 	if(!Test.Low)
@@ -131,7 +130,7 @@ AddPlayer(game_state* GameState)
 AddMonstar(game_state* GameState, world_map_position InitP)
 {
 	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
-													 EntityType_Monstar, InitP);
+													 EntityType_Monstar, &InitP);
 
 	Entity.Low->Dim = v2{0.5f, 0.3f} * GameState->WorldMap->TileSideInMeters;
 	Entity.Low->Collides = true;
@@ -155,7 +154,7 @@ AddMonstar(game_state* GameState, world_map_position InitP)
 AddFamiliar(game_state* GameState, world_map_position InitP)
 {
 	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
-													 EntityType_Familiar, InitP);
+													 EntityType_Familiar, &InitP);
 
 	Entity.Low->Dim = v2{0.5f, 0.3f} * GameState->WorldMap->TileSideInMeters;
 	Entity.Low->Collides = true;
@@ -170,7 +169,7 @@ AddFamiliar(game_state* GameState, world_map_position InitP)
 AddCarFrame(game_state* GameState, world_map_position WorldPos)
 {
 	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
-														EntityType_CarFrame, WorldPos);
+														EntityType_CarFrame, &WorldPos);
 
 	Entity.Low->Dim = v2{4, 6};
 	Entity.Low->Collides = true;
@@ -184,7 +183,7 @@ AddCarFrame(game_state* GameState, world_map_position WorldPos)
 AddEngine(game_state* GameState, world_map_position WorldPos)
 {
 	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
-													 	EntityType_Engine, WorldPos);
+													 	EntityType_Engine, &WorldPos);
 
 	Entity.Low->Dim = v2{3, 2};
 
@@ -195,7 +194,7 @@ AddEngine(game_state* GameState, world_map_position WorldPos)
 AddWheel(game_state* GameState, world_map_position WorldPos)
 {
 	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
-													 	EntityType_Wheel, WorldPos);
+													 	EntityType_Wheel, &WorldPos);
 
 	Entity.Low->Dim = v2{0.6f, 1.5f};
 
@@ -211,11 +210,11 @@ MoveCarPartsToStartingPosition(memory_arena* WorldArena, world_map* WorldMap, en
 	Assert(CarFrameEntity.Low);
 	if(CarFrameEntity.Low)
 	{
-		entity EngineEntity = GetEntityByLowIndex(Entities, CarFrameEntity.Low->CarFrame.Engine);
+		entity EngineEntity = GetEntityByLowIndex(Entities, CarFrameEntity.Low->Engine);
 		if(EngineEntity.Low)
 		{
-			OffsetAndChangeEntityLocation(WorldArena, WorldMap, &EngineEntity, 
-																		CarFrameEntity.Low->WorldP, v3{0, 1.5f, 0});
+			ChangeEntityWorldLocationRelativeOther(WorldArena, WorldMap, &EngineEntity, 
+																						 CarFrameEntity.Low->WorldP, v3{0, 1.5f, 0});
 		}
 
 		for(s32 WheelIndex = 0;
@@ -223,7 +222,7 @@ MoveCarPartsToStartingPosition(memory_arena* WorldArena, world_map* WorldMap, en
 				WheelIndex++)
 		{
 			entity WheelEntity = 
-				GetEntityByLowIndex(Entities, CarFrameEntity.Low->CarFrame.Wheels[WheelIndex]);
+				GetEntityByLowIndex(Entities, CarFrameEntity.Low->Wheels[WheelIndex]);
 			if(WheelEntity.Low)
 			{
 				f32 dX = ((WheelIndex % 2) - 0.5f) * 2.0f;
@@ -233,8 +232,8 @@ MoveCarPartsToStartingPosition(memory_arena* WorldArena, world_map* WorldMap, en
 				v2 O = (Hadamard(D, CarFrameEntity.Low->Dim.XY * 0.5f) - 
 								Hadamard(D, WheelEntity.Low->Dim.XY * 0.5f));
 
-				OffsetAndChangeEntityLocation(WorldArena, WorldMap, &WheelEntity, 
-																			CarFrameEntity.Low->WorldP, (v3)O);
+				ChangeEntityWorldLocationRelativeOther(WorldArena, WorldMap, &WheelEntity, 
+																							 CarFrameEntity.Low->WorldP, (v3)O);
 			}
 		}
 	}
@@ -245,8 +244,8 @@ DismountEntityFromCar(memory_arena* WorldArena, world_map* WorldMap, entity* Ent
 {
 	Assert(Car->Low->Type == EntityType_CarFrame);
 
-	Car->Low->CarFrame.DriverSeat = 0;
-	Entity->Low->Player.RidingVehicle = 0;
+	Car->Low->DriverSeat = 0;
+	Entity->Low->RidingVehicle = 0;
 	Entity->Low->Attached = false;
 
 	v3 Offset = {4.0f, 0, 0};
@@ -254,15 +253,15 @@ DismountEntityFromCar(memory_arena* WorldArena, world_map* WorldMap, entity* Ent
 	{
 		Entity->High->P = Car->High->P + Offset;
 	}
-	OffsetAndChangeEntityLocation(WorldArena, WorldMap, Entity, Car->Low->WorldP, Offset);
+	ChangeEntityWorldLocationRelativeOther(WorldArena, WorldMap, Entity, Car->Low->WorldP, Offset);
 }
 internal_function void
 MountEntityOnCar(memory_arena* WorldArena, world_map* WorldMap, entity* Entity, entity* Car)
 {
 	Assert(Car->Low->Type == EntityType_CarFrame);
 
-	Car->Low->CarFrame.DriverSeat = Entity->LowIndex;
-	Entity->Low->Player.RidingVehicle = Car->LowIndex;
+	Car->Low->DriverSeat = Entity->LowIndex;
+	Entity->Low->RidingVehicle = Car->LowIndex;
 	Entity->Low->Attached = true;
 
 	//TODO(bjorn) What happens if you mount a car outside of the high entity zone.
@@ -270,7 +269,7 @@ MountEntityOnCar(memory_arena* WorldArena, world_map* WorldMap, entity* Entity, 
 	{
 		Entity->High->P = Car->High->P;
 	}
-	OffsetAndChangeEntityLocation(WorldArena, WorldMap, Entity, Car->Low->WorldP, {});
+	ChangeEntityWorldLocationRelativeOther(WorldArena, WorldMap, Entity, Car->Low->WorldP, {});
 }
 
 	internal_function entity
@@ -279,8 +278,8 @@ AddCar(game_state* GameState, world_map_position WorldPos)
 	entity CarFrameEntity = AddCarFrame(GameState, WorldPos);
 
 	entity EngineEntity = AddEngine(GameState, WorldPos);
-	CarFrameEntity.Low->CarFrame.Engine = EngineEntity.LowIndex;
-	EngineEntity.Low->Engine.Vehicle = CarFrameEntity.LowIndex;
+	CarFrameEntity.Low->Engine = EngineEntity.LowIndex;
+	EngineEntity.Low->Vehicle = CarFrameEntity.LowIndex;
 	EngineEntity.Low->Attached = true;
 
 	for(s32 WheelIndex = 0;
@@ -288,8 +287,8 @@ AddCar(game_state* GameState, world_map_position WorldPos)
 			WheelIndex++)
 	{
     entity WheelEntity = AddWheel(GameState, WorldPos);
-		CarFrameEntity.Low->CarFrame.Wheels[WheelIndex] = WheelEntity.LowIndex;
-		WheelEntity.Low->Wheel.Vehicle = CarFrameEntity.LowIndex;
+		CarFrameEntity.Low->Wheels[WheelIndex] = WheelEntity.LowIndex;
+		WheelEntity.Low->Vehicle = CarFrameEntity.LowIndex;
 		WheelEntity.Low->Attached = true;
 	}
 
@@ -303,7 +302,7 @@ AddCar(game_state* GameState, world_map_position WorldPos)
 AddGround(game_state* GameState, world_map_position WorldPos)
 {
 	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
-													 EntityType_Ground, WorldPos);
+													 EntityType_Ground, &WorldPos);
 
 	Entity.Low->Dim = v2{1, 1} * GameState->WorldMap->TileSideInMeters;
 	Entity.Low->Collides = false;
@@ -315,7 +314,7 @@ AddGround(game_state* GameState, world_map_position WorldPos)
 AddWall(game_state* GameState, world_map_position WorldPos, f32 Mass = 1000.0f)
 {
 	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
-													 EntityType_Wall, WorldPos);
+													 EntityType_Wall, &WorldPos);
 
 	Entity.Low->Dim = v2{1, 1} * GameState->WorldMap->TileSideInMeters;
 	Entity.Low->Collides = true;
@@ -330,11 +329,11 @@ AddWall(game_state* GameState, world_map_position WorldPos, f32 Mass = 1000.0f)
 AddStair(game_state* GameState, world_map_position WorldPos, f32 dZ)
 {
 	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
-													 	EntityType_Stair, WorldPos);
+													 	EntityType_Stair, &WorldPos);
 
 	Entity.Low->Dim = v3{1, 1, 1} * GameState->WorldMap->TileSideInMeters;
 	Entity.Low->Collides = true;
-	Entity.Low->Stair.dZ = dZ;
+	Entity.Low->dZ = dZ;
 
 	return Entity;
 }
@@ -431,6 +430,10 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	GameState->Shadow = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
 																		 "data/test/test_hero_shadow.bmp");
 	GameState->Shadow.Alignment = {72, 182};
+
+	GameState->Sword = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+																		 "data/test2/ground01.bmp");
+	GameState->Sword.Alignment = {256/2, 116/2};
 
 	hero_bitmaps Hero = {};
 	Hero.Head = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
@@ -824,10 +827,10 @@ MinkowskiSum(entity* Target, entity* Movable)
 	Result.NodeCount = 8;
 
 	v2 MovableP = Movable->High->P.XY;
-	v2 MovableD = Movable->High->R.XY;
+	v2 MovableD = Movable->Low->R.XY;
 
 	v2 TargetP  = Target->High->P.XY;
-	v2 TargetD  = Target->High->R.XY;
+	v2 TargetD  = Target->Low->R.XY;
 
 	v2 CornerVectors[8] = {};
 	v2 OrderOfCorners[4] = {{-1, 1}, {1, 1}, {1, -1}, {-1, -1}};
@@ -934,15 +937,15 @@ GetCenterOfRoom(world_map* WorldMap, v3s AbsTileC, world_map_position A,
 	internal_function void
 AlignWheelsForward(entities* Entities, entity* CarFrameEntity, f32 SecondsToUpdate)
 {
-	entity LeftFrontWheel = GetEntityByLowIndex(Entities, CarFrameEntity->Low->CarFrame.Wheels[2]);
-	entity RightFrontWheel = GetEntityByLowIndex(Entities, CarFrameEntity->Low->CarFrame.Wheels[3]);
+	entity LeftFrontWheel = GetEntityByLowIndex(Entities, CarFrameEntity->Low->Wheels[2]);
+	entity RightFrontWheel = GetEntityByLowIndex(Entities, CarFrameEntity->Low->Wheels[3]);
 
 	Assert(LeftFrontWheel.High);
 	Assert(RightFrontWheel.High);
 
 	f32 TurnRate = Lenght(CarFrameEntity->High->dP) * 0.05f;
-	v3 CarDir = CarFrameEntity->High->R;
-	v3 WheelDir = LeftFrontWheel.High->R;
+	v3 CarDir = CarFrameEntity->Low->R;
+	v3 WheelDir = LeftFrontWheel.Low->R;
 
 	f32 S = Distance(CarDir, WheelDir);
 	f32 M = SecondsToUpdate * TurnRate;
@@ -957,8 +960,8 @@ AlignWheelsForward(entities* Entities, entity* CarFrameEntity, f32 SecondsToUpda
 		NewDir = WheelDir + Normalize(CarDir - WheelDir) * M;
 	}
 
-	LeftFrontWheel.High->R = NewDir;
-	RightFrontWheel.High->R = NewDir;
+	LeftFrontWheel.Low->R = NewDir;
+	RightFrontWheel.Low->R = NewDir;
 }
 
 	internal_function void
@@ -976,16 +979,16 @@ TurnWheels(entities* Entities, entity* CarFrameEntity, v2 InputDirection, f32 Se
 		m22 Rot90CW = { 0,-1,
 									1, 0};
 
-		entity LeftFrontWheel = GetEntityByLowIndex(Entities, CarFrameEntity->Low->CarFrame.Wheels[2]);
-		entity RightFrontWheel = GetEntityByLowIndex(Entities, CarFrameEntity->Low->CarFrame.Wheels[3]);
+		entity LeftFrontWheel = GetEntityByLowIndex(Entities, CarFrameEntity->Low->Wheels[2]);
+		entity RightFrontWheel = GetEntityByLowIndex(Entities, CarFrameEntity->Low->Wheels[3]);
 
 		Assert(LeftFrontWheel.High);
 		Assert(RightFrontWheel.High);
 
-		v2 CarD = CarFrameEntity->High->R.XY;
+		v2 CarD = CarFrameEntity->Low->R.XY;
 		v2 TD = Rot90CW * CarD;
 
-		v2 NewD = Normalize(LeftFrontWheel.High->R.XY + 
+		v2 NewD = Normalize(LeftFrontWheel.Low->R.XY + 
 												TD * -InputDirection.X * TurnRate * SecondsToUpdate);
 
 		f32 MaxDeg = pi32 * (0.25f - Lenght(CarFrameEntity->High->dP) * 0.01f);
@@ -1012,8 +1015,8 @@ TurnWheels(entities* Entities, entity* CarFrameEntity, v2 InputDirection, f32 Se
 		Assert(LenghtSquared(NewD) <= 1.001f);
 		Assert(LenghtSquared(NewD) >= 0.999f);
 
-		LeftFrontWheel.High->R = NewD;
-		RightFrontWheel.High->R = NewD;
+		LeftFrontWheel.Low->R = NewD;
+		RightFrontWheel.Low->R = NewD;
 	}
 }
 
@@ -1049,58 +1052,61 @@ GetGlobalPosFromRelativeCoordinates(v2 Origo, v2 Y, v2 A)
 UpdateCarPos(memory_arena* WorldArena, world_map* WorldMap, entities* Entities, 
 						 entity* CarFrame, world_map_position* CameraP, v2 NewP, v2 NewR)
 {
-	v2 OldR = CarFrame->High->R.XY;
+	v2 OldR = CarFrame->Low->R.XY;
 	v2 OldP = CarFrame->High->P.XY;
 
-	CarFrame->High->R = NewR;
+	CarFrame->Low->R = NewR;
 	CarFrame->High->P = NewP;
 
-	OffsetAndChangeEntityLocation(WorldArena, WorldMap, CarFrame, *CameraP, (v2)NewP);
+	ChangeEntityWorldLocationRelativeOther(WorldArena, WorldMap, CarFrame, *CameraP, (v2)NewP);
 
-	entity EngineEntity = GetEntityByLowIndex(Entities, CarFrame->Low->CarFrame.Engine);
+	entity EngineEntity = GetEntityByLowIndex(Entities, CarFrame->Low->Engine);
 	if(EngineEntity.High)
 	{
 		v2 RelPos = GetCoordinatesRelativeTransform(OldP, OldR, EngineEntity.High->P.XY);
 		v2 RelDir = GetCoordinatesRelativeTransform(OldP, OldR, EngineEntity.High->P.XY + 
-																								EngineEntity.High->R.XY);
+																								EngineEntity.Low->R.XY);
 		v2 NewPos = GetGlobalPosFromRelativeCoordinates(NewP, NewR, RelPos);
 		v2 NewRot = GetGlobalPosFromRelativeCoordinates(NewP, NewR, RelDir) - NewPos;
 
 		EngineEntity.High->P = NewPos;
-		EngineEntity.High->R = Normalize(NewRot);
-		OffsetAndChangeEntityLocation(WorldArena, WorldMap, &EngineEntity, *CameraP, (v3)NewPos);
+		EngineEntity.Low->R = Normalize(NewRot);
+		ChangeEntityWorldLocationRelativeOther(WorldArena, WorldMap, &EngineEntity, 
+																					 *CameraP, (v3)NewPos);
 	}
 
-	entity DriverEntity = GetEntityByLowIndex(Entities, CarFrame->Low->CarFrame.DriverSeat);
+	entity DriverEntity = GetEntityByLowIndex(Entities, CarFrame->Low->DriverSeat);
 	if(DriverEntity.High)
 	{
 		v2 RelPos = GetCoordinatesRelativeTransform(OldP, OldR, DriverEntity.High->P.XY);
 		v2 RelRot = GetCoordinatesRelativeTransform(OldP, OldR, DriverEntity.High->P.XY + 
-																								DriverEntity.High->R.XY);
+																								DriverEntity.Low->R.XY);
 		v2 NewPos = GetGlobalPosFromRelativeCoordinates(NewP, NewR, RelPos);
 		v2 NewRot = GetGlobalPosFromRelativeCoordinates(NewP, NewR, RelRot) - NewPos;
 
 		DriverEntity.High->P = NewPos;
-		DriverEntity.High->R = Normalize(NewRot);
-		OffsetAndChangeEntityLocation(WorldArena, WorldMap, &DriverEntity, *CameraP, (v3)NewPos);
+		DriverEntity.Low->R = Normalize(NewRot);
+		ChangeEntityWorldLocationRelativeOther(WorldArena, WorldMap, &DriverEntity, 
+																					 *CameraP, (v3)NewPos);
 	}
 
 	for(s32 WheelIndex = 0;
 			WheelIndex < 4;
 			WheelIndex++)
 	{
-		entity WheelEntity = GetEntityByLowIndex(Entities, CarFrame->Low->CarFrame.Wheels[WheelIndex]);
+		entity WheelEntity = GetEntityByLowIndex(Entities, CarFrame->Low->Wheels[WheelIndex]);
 		if(WheelEntity.High)
 		{
 			v2 RelPos = GetCoordinatesRelativeTransform(OldP, OldR, WheelEntity.High->P.XY);
 			v2 RelRot = GetCoordinatesRelativeTransform(OldP, OldR, WheelEntity.High->P.XY + 
-																									WheelEntity.High->R.XY);
+																									WheelEntity.Low->R.XY);
 			v2 NewPos = GetGlobalPosFromRelativeCoordinates(NewP, NewR, RelPos);
 			v2 NewRot = GetGlobalPosFromRelativeCoordinates(NewP, NewR, RelRot) - NewPos;
 
 			WheelEntity.High->P = NewPos;
-			WheelEntity.High->R = Normalize(NewRot);
-			OffsetAndChangeEntityLocation(WorldArena, WorldMap, &WheelEntity, *CameraP, (v3)NewPos);
+			WheelEntity.Low->R = Normalize(NewRot);
+			ChangeEntityWorldLocationRelativeOther(WorldArena, WorldMap, &WheelEntity, 
+																						 *CameraP, (v3)NewPos);
 		}
 	}
 }
@@ -1254,10 +1260,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					{
 						if(Clicked(Keyboard, E))
 						{
-							if(ControlledEntity.Low->Player.RidingVehicle)
+							if(ControlledEntity.Low->RidingVehicle)
 							{
 								entity Vehicle = GetEntityByLowIndex(Entities, 
-																										 ControlledEntity.Low->Player.RidingVehicle);
+																										 ControlledEntity.Low->RidingVehicle);
 								DismountEntityFromCar(WorldArena, WorldMap, &ControlledEntity, &Vehicle);
 							}
 							else
@@ -1273,10 +1279,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								}
 							}
 						}
-						if(ControlledEntity.Low->Player.RidingVehicle)
+						if(ControlledEntity.Low->RidingVehicle)
 						{
 							entity CarFrame = 
-								GetEntityByLowIndex(Entities, ControlledEntity.Low->Player.RidingVehicle);
+								GetEntityByLowIndex(Entities, ControlledEntity.Low->RidingVehicle);
 							Assert(CarFrame.Low->Type == EntityType_CarFrame);
 
 							if(InputDirection.X)
@@ -1288,19 +1294,27 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								AlignWheelsForward(Entities, &CarFrame, SecondsToUpdate); 
 							}
 
-							if(Clicked(Keyboard, One))   { CarFrame.High->ddP = CarFrame.High->R * -3.0f; }
-							if(Clicked(Keyboard, Two))   { CarFrame.High->ddP = CarFrame.High->R *  0.0f; }
-							if(Clicked(Keyboard, Three)) { CarFrame.High->ddP = CarFrame.High->R *  3.0f; }
-							if(Clicked(Keyboard, Four))  { CarFrame.High->ddP = CarFrame.High->R *  6.0f; }
-							if(Clicked(Keyboard, Five))  { CarFrame.High->ddP = CarFrame.High->R *  9.0f; }
+							if(Clicked(Keyboard, One))   { CarFrame.High->ddP = CarFrame.Low->R * -3.0f; }
+							if(Clicked(Keyboard, Two))   { CarFrame.High->ddP = CarFrame.Low->R *  0.0f; }
+							if(Clicked(Keyboard, Three)) { CarFrame.High->ddP = CarFrame.Low->R *  3.0f; }
+							if(Clicked(Keyboard, Four))  { CarFrame.High->ddP = CarFrame.Low->R *  6.0f; }
+							if(Clicked(Keyboard, Five))  { CarFrame.High->ddP = CarFrame.Low->R *  9.0f; }
 						}
 						else
 						{
-							ControlledEntity.High->Player.MovingDirection = InputDirection;
-							if(LenghtSquared(ControlledEntity.High->Player.MovingDirection) == 0)
+							ControlledEntity.High->MovingDirection = InputDirection;
+							if(Clicked(Keyboard, N))
 							{
-								ControlledEntity.High->Player.Steps = 0;
-								ControlledEntity.High->Player.TimeSinceFistStep = 0.0f;
+								entity Sword = GetEntityByLowIndex(Entities, ControlledEntity.Low->Sword);
+								if(Sword.Low && !IsValid(Sword.Low->WorldP))
+								{
+									Sword.Low->R = InputDirection;
+									ChangeEntityWorldLocationRelativeOther(&GameState->WorldArena, 
+																												 GameState->WorldMap, 
+																												 &Sword,
+																												 ControlledEntity.Low->WorldP, 
+																												 InputDirection * Sword.Low->Dim.Y);
+								}
 							}
 						}
 					}
@@ -1341,9 +1355,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				if(EntityXXIsA(Entity, EntityType_Player))
 				{
 					//TODO(casey): ODE here!
-					ddP = Entity.High->Player.MovingDirection * 85.0f;
+					ddP = Entity.High->MovingDirection * 85.0f;
 
-					if(Entity.High->Player.MovingDirection.Z > 0)
+					if(Entity.High->MovingDirection.Z > 0)
 					{
 						dP.Z = 8.0f;
 					}
@@ -1355,10 +1369,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				}
 				else if(EntityXXIsA(Entity, EntityType_Familiar))
 				{
-					ddP = Entity.High->Familiar.MovingDirection * 85.0f * 0.5f;
+					ddP = Entity.High->MovingDirection * 85.0f * 0.5f;
 
-					Entity.High->Familiar.BestDistanceToPlayerSquared = Square(6.0f);
-					Entity.High->Familiar.MovingDirection = {};
+					Entity.High->BestDistanceToPlayerSquared = Square(6.0f);
+					Entity.High->MovingDirection = {};
 				}
 				else if(EntityXXIsA(Entity, EntityType_Monstar))
 				{
@@ -1369,7 +1383,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					//dP = LenghtSquared(dP) < Square(0.1f) ? v3{} : dP;
 				}
 
-				dP -= Entity.Low->GroundFriction * dP * dT;
+				dP.XY -= Entity.Low->GroundFriction * dP.XY * dT;
 				P += 0.5f * ddP * Square(dT) + dP * dT;
 				dP += ddP * dT;
 
@@ -1387,8 +1401,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				Entity.High->dP = dP;
 				Entity.High->P = P;
 
-				OffsetAndChangeEntityLocation(&GameState->WorldArena, GameState->WorldMap, &Entity, 
-																			GameState->CameraP, Entity.High->P);
+				ChangeEntityWorldLocationRelativeOther(&GameState->WorldArena, GameState->WorldMap,
+																							 &Entity, GameState->CameraP, Entity.High->P);
 			}
 
 			//
@@ -1403,11 +1417,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					 EntityXXIsA(Target, EntityType_Player))
 				{
 					f32 DistanceToPlayerSquared = LenghtSquared(Target.High->P - Entity.High->P);
-					if(DistanceToPlayerSquared < Entity.High->Familiar.BestDistanceToPlayerSquared &&
+					if(DistanceToPlayerSquared < Entity.High->BestDistanceToPlayerSquared &&
 						 DistanceToPlayerSquared > Square(2.0f))
 					{
-						Entity.High->Familiar.BestDistanceToPlayerSquared = DistanceToPlayerSquared;
-						Entity.High->Familiar.MovingDirection = Normalize(Target.High->P - Entity.High->P).XY;
+						Entity.High->BestDistanceToPlayerSquared = DistanceToPlayerSquared;
+						Entity.High->MovingDirection = Normalize(Target.High->P - Entity.High->P).XY;
 					}
 				}
 
@@ -1526,8 +1540,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	if(Entity.Low->Type == EntityType_CarFrame)
 	{
 		entity* Vehicle = &Entity;
-		entity LeftFrontWheel = GetEntityByLowIndex(Entities, Vehicle->Low->CarFrame.Wheels[2]);
-		entity RightFrontWheel = GetEntityByLowIndex(Entities, Vehicle->Low->CarFrame.Wheels[3]);
+		entity LeftFrontWheel = GetEntityByLowIndex(Entities, Vehicle->Low->Wheels[2]);
+		entity RightFrontWheel = GetEntityByLowIndex(Entities, Vehicle->Low->Wheels[3]);
 
 		ddP = Vehicle->High->ddP;
 		dP = Vehicle->High->dP;
@@ -1650,12 +1664,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		if(Entity.Low->Type == EntityType_Stair)
 		{
 			v3 StairColor = {};
-			if(Entity.Low->Stair.dZ == 1)
+			if(Entity.Low->dZ == 1)
 			{
 				v3 LightGreen = {0.5f, 1, 0.5f};
 				StairColor = LightGreen;
 			}
-			if(Entity.Low->Stair.dZ == -1)
+			if(Entity.Low->dZ == -1)
 			{
 				v3 LightRed = {1, 0.5f, 0.5f};
 				StairColor = LightRed;
@@ -1691,9 +1705,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			if(Entity.Low->Type == EntityType_Wheel) { Color = {0.2f, 0.2f, 0.2f}; }
 
 			DrawFrame(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), 
-								Entity.High->R.XY, Color);
+								Entity.Low->R.XY, Color);
 			DrawLine(Buffer, EntityPixelPos, EntityPixelPos + 
-							 Hadamard(Entity.High->R.XY, v2{1, -1}) * 40.0f, {1, 0, 0});
+							 Hadamard(Entity.Low->R.XY, v2{1, -1}) * 40.0f, {1, 0, 0});
 #if 0
 			DrawBitmap(Buffer, &GameState->Dirt, EntityPixelPos - GameState->Dirt.Alignment, 
 								 (v2)GameState->Dirt.Dim * 1.2f);
@@ -1740,6 +1754,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								 (v2)GameState->Shadow.Dim, 0.2f);
 			DrawBitmap(Buffer, &Hero->Head, EntityPixelPos - Hero->Head.Alignment, 
 								 (v2)Hero->Head.Dim);
+		}
+		if(Entity.Low->Type == EntityType_Sword)
+		{
+			DrawBitmap(Buffer, &GameState->Sword, EntityPixelPos - GameState->Sword.Alignment, 
+								 (v2)GameState->Sword.Dim, 1.0f);
 		}
 
 		if(Entity.Low->Type == EntityType_Monstar ||
@@ -1799,7 +1818,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		{
 			u32 ControlledEntityIndex = GameState->PlayerIndexForKeyboard[0];
 			entity Player = GetEntityByLowIndex(Entities, ControlledEntityIndex);
-			entity Vehicle = GetEntityByLowIndex(Entities, Player.Low->Player.RidingVehicle);
+			entity Vehicle = GetEntityByLowIndex(Entities, Player.Low->RidingVehicle);
 
 			if(Entity.Low->Collides)
 			{
@@ -1826,14 +1845,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			if(Entity.Low->HighIndex == GameState->DEBUG_CollisionLoopEntityIndex) 
 			{
 				DrawFrame(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), 
-									Entity.High->R.XY, {1.0f, 0.0f, 0.0f});
+									Entity.Low->R.XY, {1.0f, 0.0f, 0.0f});
 
 				EntityCameraPixelDelta = 
 					GameSpaceToScreenSpace * GameState->DEBUG_CollisionLoopEstimatedPos.XY;
 
 				v2 NextEntityPixelPos = ScreenCenter + EntityCameraPixelDelta;
 				DrawFrame(Buffer, RectCenterDim(NextEntityPixelPos, CollisionMarkerPixelDim), 
-									Entity.High->R.XY, {0.0f, 0.0f, 1.0f});
+									Entity.Low->R.XY, {0.0f, 0.0f, 1.0f});
 			}
 		}
 #endif

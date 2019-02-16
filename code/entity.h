@@ -27,7 +27,6 @@ struct high_entity
 {
 	u32 LowIndex;
 
-	v3 R;
 	v3 dR;
 	v3 ddR;
 	v3 P;
@@ -39,27 +38,15 @@ struct high_entity
 
 	u32 FacingDirection;
 
-	union
-	{
-		struct
-		{
-			b32 IsOnStairs;
-			
-			f32 TimeSinceFistStep;
-			s32 Steps;
-			v3 MovingDirection;
-		} Player;
-		struct
-		{
-			f32 BestDistanceToPlayerSquared;
-			v2 MovingDirection;
-		} Familiar;
-		struct
-		{
-			//TODO(bjorn): Use this to move out the turning code to the cars update loop.
-			b32 AutoPilot;
-		} CarFrame;
-	};
+	//NOTE(bjorn): Player
+	v3 MovingDirection;
+
+	//NOTE(bjorn): Familiar
+	f32 BestDistanceToPlayerSquared;
+
+	//NOTE(bjorn): CarFrame
+	//TODO(bjorn): Use this to move out the turning code to the cars update loop.
+	b32 AutoPilot;
 };
 
 #define HIT_POINT_SUB_COUNT 4
@@ -75,6 +62,7 @@ struct low_entity
 	entity_type Type;
 	u32 HighIndex;
 
+	v3 R;
 	world_map_position WorldP;
 	v3 Dim;
 
@@ -88,32 +76,23 @@ struct low_entity
 	u32 HitPointMax;
 	hit_point HitPoints[16];
 
-	union
-	{
-		struct
-		{
-			f32 dZ;
-		} Stair;
-		struct
-		{
-			u32 Vehicle;
-		} Wheel;
-		struct
-		{
-			u32 RidingVehicle;
-			f32 StepHz;
-		} Player;
-		struct
-		{
-			u32 Wheels[4];
-			u32 DriverSeat;
-			u32 Engine;
-		} CarFrame;
-		struct
-		{
-			u32 Vehicle;
-		} Engine;
-	};
+	//NOTE(bjorn): Stair
+	f32 dZ;
+
+	//NOTE(bjorn): Car-parts
+	u32 Vehicle;
+
+	//NOTE(bjorn): Player
+	u32 RidingVehicle;
+	u32 Sword;
+
+	//NOTE(bjorn): CarFrame
+	u32 Wheels[4];
+	u32 DriverSeat;
+	u32 Engine;
+
+	//NOTE(bjorn): Sword
+	f32 DistanceRemaining;
 };
 
 struct entity
@@ -153,7 +132,6 @@ MapEntityIntoHigh(entities* Entities, u32 LowIndex, v3 P)
 			*High = {};
 			High->LowIndex = LowIndex;
 			High->P = P;
-			High->R = {0, 1, 0};
 		}
 		else
 		{
@@ -232,43 +210,67 @@ GetEntityByHighIndex(entities* Entities, u32 HighIndex)
 }
 
 inline void
-OffsetAndChangeEntityLocation(memory_arena* Arena, world_map* WorldMap, entity* Entity, 
-															world_map_position WorldP, v3 dP)
+ChangeEntityWorldLocation(memory_arena* Arena, world_map* WorldMap, entity* Entity,
+													world_map_position* NewP)
 {
-	if(Entity->Low)
+	Assert(Entity); 
+
+	world_map_position* OldP = 0;
+	if(IsValid(Entity->Low->WorldP))
 	{
-		world_map_position NewWorldP = OffsetWorldPos(WorldMap, WorldP, dP);
-		ChangeEntityLocation(Arena, WorldMap, Entity->LowIndex, 
-												 &(Entity->Low->WorldP), &NewWorldP);
-		Entity->Low->WorldP = NewWorldP;
+		OldP = &(Entity->Low->WorldP); 
 	}
+
+	if(NewP) 
+	{ 
+		Assert(IsValid(*NewP)); 
+	}
+
+	UpdateEntityChunkLocation(Arena, WorldMap, Entity->LowIndex, OldP, NewP);
+
+	if(NewP)
+	{
+		Entity->Low->WorldP = *NewP;
+	}
+	else
+	{
+		Entity->Low->WorldP = WorldMapNullPos();
+	}
+}
+
+inline void
+ChangeEntityWorldLocationRelativeOther(memory_arena* Arena, world_map* WorldMap, entity* Entity, 
+															world_map_position WorldP, v3 offset)
+{
+		world_map_position NewWorldP = OffsetWorldPos(WorldMap, WorldP, offset);
+		ChangeEntityWorldLocation(Arena, WorldMap, Entity, &NewWorldP);
 }
 
 	internal_function entity
 AddEntity(memory_arena* WorldArena, world_map* WorldMap, entities* Entities, 
-					entity_type Type, world_map_position WorldPos)
+					entity_type Type, world_map_position* WorldP = 0)
 {
 	entity Result = {};
 
 	Entities->LowEntityCount++;
 	Assert(Entities->LowEntityCount < ArrayCount(Entities->LowEntities));
-	Assert(IsCanonical(WorldMap, WorldPos.Offset_));
 
 	Result.LowIndex = Entities->LowEntityCount;
 	Result.Low = Entities->LowEntities + Result.LowIndex;
 	*Result.Low = {};
 	Result.Low->Type = Type;
-	Result.Low->WorldP = WorldPos;
+	Result.Low->R = {0, 1, 0};
+	Result.Low->WorldP = WorldMapNullPos();
 
-	ChangeEntityLocation(WorldArena, WorldMap, Result.LowIndex, 0, &Result.Low->WorldP);
+	if(WorldP)
+	{
+		Assert(IsValid(*WorldP));
+		Assert(IsCanonical(WorldMap, WorldP->Offset_));
+	}
+
+	ChangeEntityWorldLocation(WorldArena, WorldMap, &Result, WorldP);
 
 	return Result;
-}
-	internal_function entity
-AddEntity(memory_arena* WorldArena, world_map* WorldMap, 
-					entities* Entities, entity_type Type)
-{
-	AddEntity(WorldArena, WorldMap, Entities, Type, WorldMapNullPos());
 }
 
 	inline b32

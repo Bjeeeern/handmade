@@ -69,6 +69,85 @@ struct game_state
 };
 
 internal_function void
+MoveEntity(memory_arena* WorldArena, world_map* WorldMap, world_map_position* CameraP, 
+					 entity* Entity, f32 dT)
+{
+	v3 P = Entity->High->P;
+	v3 dP = Entity->High->dP;
+	v3 ddP = Entity->High->ddP;
+
+	//TODO(bjorn): Re-add the car.
+	if(Entity->Low->MoveSpec.EnforceVerticalGravity)
+	{
+		if(Entity->High->MovingDirection.Z > 0 &&
+			 P.Z == 0)
+		{
+			dP.Z = 18.0f * 0.5f;
+		}
+		if(P.Z > 0)
+		{
+			//TODO(bjorn): Why do i need the gravity to be so heavy? Because of upscaling?
+			ddP.Z = -9.82f * 10.0f;
+		}
+	}
+	if(Entity->Low->MoveSpec.EnforceHorizontalMovement)
+	{
+		//TODO(casey): ODE here!
+		ddP = Entity->High->MovingDirection * Entity->Low->MoveSpec.Speed;
+	}
+
+	dP.XY -= Entity->Low->MoveSpec.Drag * dP.XY * dT;
+
+	P += 0.5f * ddP * Square(dT) + dP * dT;
+	dP += ddP * dT;
+
+	//TODO(bjorn): Think harder about how to implement the ground.
+	if(P.Z < 0.0f)
+	{
+		P.Z = 0.0f;
+		dP.Z = 0.0f;
+	}
+
+	Entity->High->ddP = ddP;
+	Entity->High->dP = dP;
+	Entity->High->P = P;
+
+	ChangeEntityWorldLocationRelativeOther(WorldArena, WorldMap, Entity, 
+																				 *CameraP, Entity->High->P);
+}
+
+	internal_function void
+UpdateFamiliarPairwise(entity* Familiar, entity* Target)
+{
+	if(Target->Low->Type == EntityType_Player)
+	{
+		f32 DistanceToPlayerSquared = LenghtSquared(Target->High->P - Familiar->High->P);
+		if(DistanceToPlayerSquared < Familiar->High->BestDistanceToPlayerSquared &&
+			 DistanceToPlayerSquared > Square(2.0f))
+		{
+			Familiar->High->BestDistanceToPlayerSquared = DistanceToPlayerSquared;
+			Familiar->High->MovingDirection = Normalize(Target->High->P - Familiar->High->P).XY;
+		}
+	}
+}
+
+	internal_function void
+UpdateSwordPairwise(entity* Sword, entity* Target, b32 Intersect,
+										memory_arena* WorldArena, world_map* WorldMap, entities* Entities)
+{
+	if(Intersect &&
+		 Target->Low->Type != EntityType_Player)
+	{
+		//TODO(bjorn): Is it safe to let high entities just disappear in the middle of a loop?
+		//TODO(bjorn): Also, the fact that this needs to be done is
+		//non-obvious. As is the fact that calling SetCamera doesn't work as
+		//well.
+		ChangeEntityWorldLocation(WorldArena, WorldMap, Sword, 0);
+		MapEntityOutFromHigh(Entities, Sword->LowIndex, Sword->Low->WorldP);
+	}
+}
+
+	internal_function void
 AddHitPoints(entity* Entity, u32 HitPointMax)
 {
 	Assert(HitPointMax <= ArrayCount(Entity->Low->HitPoints));
@@ -90,7 +169,7 @@ AddSword(game_state* GameState)
 	Entity.Low->Dim = v2{0.4f, 1.5f} * GameState->WorldMap->TileSideInMeters;
 	Entity.Low->Mass = 8.0f;
 
-	Entity.Low->GroundFriction = 0.0f;
+	Entity.Low->MoveSpec.Drag = 0.0f;
 	Entity.Low->Collides = false;
 
 	return Entity;
@@ -111,7 +190,11 @@ AddPlayer(game_state* GameState)
 
 	//TODO(bjorn): Why does weight differences matter so much in the collision system.
 	Entity.Low->Mass = 40.0f / 8.0f;
-	Entity.Low->GroundFriction = 0.24f * 30.0f;
+
+	Entity.Low->MoveSpec.EnforceVerticalGravity = true;
+	Entity.Low->MoveSpec.EnforceHorizontalMovement = true;
+	Entity.Low->MoveSpec.Speed = 85.f;
+	Entity.Low->MoveSpec.Drag = 0.24f * 30.0f;
 
 	AddHitPoints(&Entity, 6);
 	entity Sword = AddSword(GameState);
@@ -136,7 +219,10 @@ AddMonstar(game_state* GameState, world_map_position InitP)
 	Entity.Low->Collides = true;
 
 	Entity.Low->Mass = 40.0f / 8.0f;
-	Entity.Low->GroundFriction = 0.24f * 30.0f;
+
+	Entity.Low->MoveSpec.EnforceHorizontalMovement = true;
+	Entity.Low->MoveSpec.Speed = 85.f * 0.75;
+	Entity.Low->MoveSpec.Drag = 0.24f * 30.0f;
 
 	AddHitPoints(&Entity, 3);
 
@@ -160,7 +246,10 @@ AddFamiliar(game_state* GameState, world_map_position InitP)
 	Entity.Low->Collides = true;
 
 	Entity.Low->Mass = 40.0f / 8.0f;
-	Entity.Low->GroundFriction = 0.2f * 30.0f;
+
+	Entity.Low->MoveSpec.EnforceHorizontalMovement = true;
+	Entity.Low->MoveSpec.Speed = 85.f * 0.5f;
+	Entity.Low->MoveSpec.Drag = 0.2f * 30.0f;
 
 	return Entity;
 }
@@ -320,7 +409,7 @@ AddWall(game_state* GameState, world_map_position WorldPos, f32 Mass = 1000.0f)
 	Entity.Low->Collides = true;
 
 	Entity.Low->Mass = Mass;
-	Entity.Low->GroundFriction = 0.4f * 30.0f;
+	Entity.Low->MoveSpec = DefaultMoveSpec();
 
 	return Entity;
 }
@@ -1321,7 +1410,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 									Sword = GetEntityByLowIndex(Entities, ControlledEntity.Low->Sword);
 									if(Sword.High)
 									{
-										Sword.High->dP = Sword.Low->R * 6.0f;
+										Sword.High->dP = Sword.Low->R * 8.0f;
+										Sword.Low->DistanceRemaining = 3.0f;
 									}
 								}
 							}
@@ -1348,70 +1438,37 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	{
 		for(LoopOverHighEntities)
 		{
-			//TODO(bjorn): This breaks me trying to debug the collision but might not
-			//be what I wanna do anyways.
-			if(Entity.Low->Attached) { continue; }
-
 			//
-			// NOTE(bjorn): Move all.
+			// NOTE(bjorn): Move all entities.
 			//
 			{
-				v3 P = Entity.High->P;
-				v3 dP = Entity.High->dP;
-				v3 ddP = Entity.High->ddP;
-				v3 Displacement = Entity.High->Displacement;
+				v3 OldP = {};
 
-				if(EntityXXIsA(Entity, EntityType_Player))
+				if(Entity.Low->Type == EntityType_Sword)
 				{
-					//TODO(casey): ODE here!
-					ddP = Entity.High->MovingDirection * 85.0f;
-
-					if(Entity.High->MovingDirection.Z > 0)
-					{
-						dP.Z = 8.0f;
-					}
-					if(P.Z > 0)
-					{
-						ddP.Z = -9.82f * 10.0f;
-					}
-
+					OldP = Entity.High->P;
 				}
-				else if(EntityXXIsA(Entity, EntityType_Familiar))
-				{
-					ddP = Entity.High->MovingDirection * 85.0f * 0.5f;
 
+				MoveEntity(WorldArena, WorldMap, &GameState->CameraP, &Entity, dT);
+
+				if(Entity.Low->Type == EntityType_Sword)
+				{
+					v3 NewP = Entity.High->P;
+					
+					Entity.Low->DistanceRemaining -= Lenght(NewP - OldP);
+					if(Entity.Low->DistanceRemaining <= 0)
+					{
+						entity* Sword = &Entity;
+						ChangeEntityWorldLocation(WorldArena, WorldMap, Sword, 0);
+						MapEntityOutFromHigh(Entities, Sword->LowIndex, Sword->Low->WorldP);
+					}
+				}
+
+				if(Entity.Low->Type == EntityType_Familiar)
+				{
 					Entity.High->BestDistanceToPlayerSquared = Square(6.0f);
 					Entity.High->MovingDirection = {};
 				}
-				else if(EntityXXIsA(Entity, EntityType_Monstar))
-				{
-				}
-				//TODO(bjorn): Re-add the car.
-				else
-				{
-					//dP = LenghtSquared(dP) < Square(0.1f) ? v3{} : dP;
-				}
-
-				dP.XY -= Entity.Low->GroundFriction * dP.XY * dT;
-				P += 0.5f * ddP * Square(dT) + dP * dT;
-				dP += ddP * dT;
-
-				//TODO(bjorn): Think harder about how to implement the ground.
-				if(P.Z < 0.0f)
-				{
-					P.Z = 0.0f;
-					dP.Z = 0.0f;
-				}
-
-				//P += Entity.High->Displacement;
-				//Entity.High->Displacement = {};
-
-				Entity.High->ddP = ddP;
-				Entity.High->dP = dP;
-				Entity.High->P = P;
-
-				ChangeEntityWorldLocationRelativeOther(&GameState->WorldArena, GameState->WorldMap,
-																							 &Entity, GameState->CameraP, Entity.High->P);
 			}
 
 			//
@@ -1520,46 +1577,31 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 							Entity.High->dP.XY          += n * EImp;
 							CollisionEntity.High->dP.XY -= n * CImp;
+
+							vertices ENors = GetEntityVertices(Entity);
+							vertices CNors = GetEntityVertices(CollisionEntity);
+							
+							//TODO(bjorn): Figure out the most opposing normals. And then
+							//figure out angle away from equilibirium. Use penetration depth to go from 
+							//momentum to angular momentum.
 						}
 
 						//TODO(bjorn): Friction. Tangent to the normal.
 					} 
 				}
 
-				entity Target = OtherEntity;
-				if(EntityXXIsA(Entity, EntityType_Familiar) &&
-					 EntityXXIsA(Target, EntityType_Player))
+				entity* Familiar = GetEntityOfType(EntityType_Familiar, &Entity, &OtherEntity);
+				if(Familiar)
 				{
-					f32 DistanceToPlayerSquared = LenghtSquared(Target.High->P - Entity.High->P);
-					if(DistanceToPlayerSquared < Entity.High->BestDistanceToPlayerSquared &&
-						 DistanceToPlayerSquared > Square(2.0f))
-					{
-						Entity.High->BestDistanceToPlayerSquared = DistanceToPlayerSquared;
-						Entity.High->MovingDirection = Normalize(Target.High->P - Entity.High->P).XY;
-					}
+					entity* Target = GetRemainingEntity(Familiar, &Entity, &OtherEntity);
+					UpdateFamiliarPairwise(Familiar, Target);
 				}
 
-				if(Inside)
+				entity* Sword = GetEntityOfType(EntityType_Sword, &Entity, &OtherEntity);
+				if(Sword)
 				{
-					//TODO(bjorn): Typing out these cases feels kinda wonky.
-					b32 SwordAndPlayer = (Entity.Low->Type == EntityType_Sword &&
-																Target.Low->Type != EntityType_Player);
-					b32 PlayerAndSword = (Target.Low->Type == EntityType_Sword &&
-																Entity.Low->Type != EntityType_Player);
-					//TODO(bjorn): Is it safe to let high entities just disappear in the middle of a loop?
-					//TODO(bjorn): Also, the fact that this needs to be done is
-					//non-obvious. As is the fact that calling SetCamera doesn't work as
-					//well.
-					if(SwordAndPlayer)
-					{
-						ChangeEntityWorldLocation(WorldArena, WorldMap, &Entity, 0);
-						MapEntityOutFromHigh(Entities, Entity.LowIndex, Entity.Low->WorldP);
-					}
-					else if(PlayerAndSword)
-					{
-						ChangeEntityWorldLocation(WorldArena, WorldMap, &Target, 0);
-						MapEntityOutFromHigh(Entities, Target.LowIndex, Target.Low->WorldP);
-					}
+					entity* Target = GetRemainingEntity(Sword, &Entity, &OtherEntity);
+					UpdateSwordPairwise(Sword, Target, Inside, WorldArena, WorldMap, Entities);
 				}
 			}
 			Entity.High->CollisionDirtyBit = true;

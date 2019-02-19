@@ -9,6 +9,25 @@
 	name = GetEntityByHighIndex(Entities, name##.Low->HighIndex+1)
 #define LoopOverHighEntities LoopOverHighEntitiesNamed(Entity)
 
+struct move_spec
+{
+	b32 EnforceHorizontalMovement;
+	b32 EnforceVerticalGravity;
+	f32 Speed;
+	f32 Drag;
+};
+
+internal_function move_spec
+DefaultMoveSpec()
+{
+	move_spec Result = {};
+
+	Result.EnforceHorizontalMovement = true;
+	Result.Drag = 0.4f * 30.0f;
+
+	return Result;
+}
+
 enum entity_type
 {
 	EntityType_Player,
@@ -27,13 +46,13 @@ struct high_entity
 {
 	u32 LowIndex;
 
-	v3 dR;
-	v3 ddR;
+	f32 dR;
+	f32 ddR;
 	v3 P;
 	v3 dP;
 	v3 ddP;
 
-	v3 Displacement;
+	//v3 Displacement;
 	b32 CollisionDirtyBit;
 
 	u32 FacingDirection;
@@ -70,6 +89,7 @@ struct low_entity
 	b32 Attached;
 
 	f32 Mass;
+	move_spec MoveSpec;
 	f32 GroundFriction;
 
 	//TODO(casey): Should hitpoints themselves be entities?
@@ -110,11 +130,64 @@ struct entities
 	low_entity LowEntities[100000];
 };
 
-inline b32
-EntityXXIsA(entity Entity, entity_type Type)
+struct entity_pair
 {
-	return Entity.Low->Type == Type;
+	entity Obj;
+	entity Sub;
+};
+
+struct vertices
+{
+	u32 VertCount;
+	v3 Verts[16];
+};
+
+internal_function vertices
+GetEntityVertices(entity Entity)
+{
+	vertices Result = {};
+	Result.VertCount = 4;
+
+	v2 OrderOfCorners[4] = {{-0.5f,  0.5f}, 
+													{ 0.5f,  0.5f}, 
+													{ 0.5f, -0.5f}, 
+													{-0.5f, -0.5f}};
+	m22 ClockWise = { 0,-1,
+									  1, 0};
+	m22 Transform = M22(Hadamard(ClockWise * Entity.Low->R.XY, Entity.Low->Dim.XY), 
+											Hadamard(            Entity.Low->R.XY, Entity.Low->Dim.XY));
+	for(u32 VertexIndex = 0; 
+			VertexIndex < Result.VertCount; 
+			VertexIndex++)
+	{
+		Result.Verts[VertexIndex] = Transform * OrderOfCorners[VertexIndex] + Entity.High->P;
+	}
+
+	return Result;
 }
+
+inline entity*
+GetEntityOfType(entity_type Type, entity* A, entity* B)
+{
+	entity* Result = 0;
+	if(A->Low->Type == Type)
+	{
+		Result = A;
+	}
+	if(B->Low->Type == Type)
+	{
+		Result = B;
+	}
+	return Result;
+}
+
+inline entity*
+GetRemainingEntity(entity* E, entity* A, entity* B)
+{
+	Assert(E == A || E == B);
+	return E==A ? B:A;
+}
+
 
 internal_function void
 MapEntityIntoHigh(entities* Entities, u32 LowIndex, v3 P)

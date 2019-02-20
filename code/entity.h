@@ -138,7 +138,7 @@ struct entity_pair
 
 struct vertices
 {
-	u32 VertCount;
+	u32 Count;
 	v3 Verts[16];
 };
 
@@ -146,7 +146,7 @@ internal_function vertices
 GetEntityVertices(entity Entity)
 {
 	vertices Result = {};
-	Result.VertCount = 4;
+	Result.Count = 4;
 
 	v2 OrderOfCorners[4] = {{-0.5f,  0.5f}, 
 													{ 0.5f,  0.5f}, 
@@ -157,7 +157,7 @@ GetEntityVertices(entity Entity)
 	m22 Transform = M22(Hadamard(ClockWise * Entity.Low->R.XY, Entity.Low->Dim.XY), 
 											Hadamard(            Entity.Low->R.XY, Entity.Low->Dim.XY));
 	for(u32 VertexIndex = 0; 
-			VertexIndex < Result.VertCount; 
+			VertexIndex < Result.Count; 
 			VertexIndex++)
 	{
 		Result.Verts[VertexIndex] = Transform * OrderOfCorners[VertexIndex] + Entity.High->P;

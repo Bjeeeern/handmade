@@ -51,6 +51,7 @@ struct game_state
 
 #if HANDMADE_INTERNAL
 	b32 DEBUG_VisualiseMinkowskiSum;
+	b32 DEBUG_VisualiseCollisionBox;
 
 	b32 DEBUG_StepThroughTheCollisionLoop;
 	b32 DEBUG_CollisionLoopAdvance;
@@ -76,6 +77,10 @@ MoveEntity(memory_arena* WorldArena, world_map* WorldMap, world_map_position* Ca
 	v3 dP = Entity->High->dP;
 	v3 ddP = Entity->High->ddP;
 
+	v3 R = Entity->Low->R;
+	f32 dR = Entity->High->dR;
+	f32 ddR = Entity->High->ddR;
+
 	//TODO(bjorn): Re-add the car.
 	if(Entity->Low->MoveSpec.EnforceVerticalGravity)
 	{
@@ -97,9 +102,12 @@ MoveEntity(memory_arena* WorldArena, world_map* WorldMap, world_map_position* Ca
 	}
 
 	dP.XY -= Entity->Low->MoveSpec.Drag * dP.XY * dT;
-
 	P += 0.5f * ddP * Square(dT) + dP * dT;
 	dP += ddP * dT;
+
+	dR -= Entity->Low->MoveSpec.Drag * dR * dT;
+	R.XY *= CWM22(0.5f * ddR * Square(dT) + dR * dT);
+	dR += ddR * dT;
 
 	//TODO(bjorn): Think harder about how to implement the ground.
 	if(P.Z < 0.0f)
@@ -111,6 +119,10 @@ MoveEntity(memory_arena* WorldArena, world_map* WorldMap, world_map_position* Ca
 	Entity->High->ddP = ddP;
 	Entity->High->dP = dP;
 	Entity->High->P = P;
+
+	Entity->High->ddR = ddR;
+	Entity->High->dR = dR;
+	Entity->Low->R = R;
 
 	ChangeEntityWorldLocationRelativeOther(WorldArena, WorldMap, Entity, 
 																				 *CameraP, Entity->High->P);
@@ -986,10 +998,10 @@ DEBUGMinkowskiSum(game_offscreen_buffer* Buffer,
 {
 	polygon Sum = MinkowskiSum(A, B);
 
-	for(int i = 0; i < Sum.NodeCount; i++)
+	for(int NodeIndex = 0; NodeIndex < Sum.NodeCount; NodeIndex++)
 	{
-		v2 N0 = Sum.Nodes[i];
-		v2 N1 = Sum.Nodes[(i+1) % Sum.NodeCount];
+		v2 N0 = Sum.Nodes[NodeIndex];
+		v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
 		m22 CounterClockWise = { 0, 1,
 													 -1, 0};
 
@@ -1311,6 +1323,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				GameState->DEBUG_VisualiseMinkowskiSum = !GameState->DEBUG_VisualiseMinkowskiSum;
 			}
 
+			if(Clicked(Keyboard, C))
+			{
+				GameState->DEBUG_VisualiseCollisionBox = !GameState->DEBUG_VisualiseCollisionBox;
+			}
+
 			u32 ControlledEntityIndex = GameState->PlayerIndexForKeyboard[KeyboardIndex];
 			entity ControlledEntity = GetEntityByLowIndex(Entities, ControlledEntityIndex);
 
@@ -1396,7 +1413,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							if(Clicked(Keyboard, N))
 							{
 								entity Sword = GetEntityByLowIndex(Entities, ControlledEntity.Low->Sword);
-								if(Sword.Low && !IsValid(Sword.Low->WorldP))
+								if(Sword.Low && !IsValid(Sword.Low->WorldP) && LenghtSquared(InputDirection))
 								{
 									Sword.Low->R = InputDirection;
 									ChangeEntityWorldLocationRelativeOther(&GameState->WorldArena, 
@@ -1886,6 +1903,20 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		}
 
 #if HANDMADE_INTERNAL
+		if(GameState->DEBUG_VisualiseCollisionBox)
+		{
+			vertices Verts = GetEntityVertices(Entity);
+			for(u32 VertIndex = 0; VertIndex < Verts.Count; VertIndex++)
+			{
+				v3 V0 = Verts.Verts[VertIndex];
+				v3 V1 = Verts.Verts[(VertIndex+1) % Verts.Count];
+				DrawLine(Buffer, 
+								 ScreenCenter + GameSpaceToScreenSpace * V0.XY, 
+								 ScreenCenter + GameSpaceToScreenSpace * V1.XY, 
+								 {0, 0, 1});
+			}
+		}
+
 		if(GameState->DEBUG_VisualiseMinkowskiSum)
 		{
 			u32 ControlledEntityIndex = GameState->PlayerIndexForKeyboard[0];

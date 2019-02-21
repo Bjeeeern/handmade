@@ -1,7 +1,6 @@
 build
 data
 libs
-code/platform
 debug/.vs
 
 **.input

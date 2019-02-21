@@ -1,3 +1,6 @@
 [submodule "code/platform"]
 	path = code/platform
 	url = https://github.com/Bjeeeern/platform
+[submodule "data"]
+	path = data
+	url = https://github.com/Bjeeeern/data_backup

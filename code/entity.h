@@ -13,14 +13,18 @@ struct move_spec
 {
 	b32 EnforceHorizontalMovement;
 	b32 EnforceVerticalGravity;
+	b32 AllowRotation;
 	f32 Speed;
 	f32 Drag;
+	f32 AngularDrag;
 };
 
 internal_function move_spec
 DefaultMoveSpec()
 {
 	move_spec Result = {};
+
+	Result.AllowRotation = true;
 
 	Result.EnforceHorizontalMovement = true;
 	Result.Drag = 0.4f * 30.0f;
@@ -152,15 +156,17 @@ GetEntityVertices(entity Entity)
 													{ 0.5f,  0.5f}, 
 													{ 0.5f, -0.5f}, 
 													{-0.5f, -0.5f}};
-	m22 ClockWise = { 0,-1,
-									  1, 0};
-	m22 Transform = M22(Hadamard(ClockWise * Entity.Low->R.XY, Entity.Low->Dim.XY), 
-											Hadamard(            Entity.Low->R.XY, Entity.Low->Dim.XY));
+	
+	m22 ClockWise = CWM22(pi32*0.5f);
+	m22 Transform = M22(ClockWise * Entity.Low->R.XY, 
+											            Entity.Low->R.XY);
 	for(u32 VertexIndex = 0; 
 			VertexIndex < Result.Count; 
 			VertexIndex++)
 	{
-		Result.Verts[VertexIndex] = Transform * OrderOfCorners[VertexIndex] + Entity.High->P;
+		Result.Verts[VertexIndex] = (Transform * 
+																 Hadamard(OrderOfCorners[VertexIndex], Entity.Low->Dim.XY) + 
+																 Entity.High->P);
 	}
 
 	return Result;

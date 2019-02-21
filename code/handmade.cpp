@@ -107,6 +107,7 @@ MoveEntity(memory_arena* WorldArena, world_map* WorldMap, world_map_position* Ca
 
 	dR -= Entity->Low->MoveSpec.Drag * dR * dT;
 	R.XY *= CWM22(0.5f * ddR * Square(dT) + dR * dT);
+	R = Normalize(R);
 	dR += ddR * dT;
 
 	//TODO(bjorn): Think harder about how to implement the ground.
@@ -120,9 +121,12 @@ MoveEntity(memory_arena* WorldArena, world_map* WorldMap, world_map_position* Ca
 	Entity->High->dP = dP;
 	Entity->High->P = P;
 
-	Entity->High->ddR = ddR;
-	Entity->High->dR = dR;
-	Entity->Low->R = R;
+	if(Entity->Low->MoveSpec.AllowRotation)
+	{
+		Entity->High->ddR = ddR;
+		Entity->High->dR = dR;
+		Entity->Low->R = R;
+	}
 
 	ChangeEntityWorldLocationRelativeOther(WorldArena, WorldMap, Entity, 
 																				 *CameraP, Entity->High->P);
@@ -275,6 +279,8 @@ AddCarFrame(game_state* GameState, world_map_position WorldPos)
 	Entity.Low->Dim = v2{4, 6};
 	Entity.Low->Collides = true;
 
+	Entity.Low->MoveSpec = DefaultMoveSpec();
+
 	Entity.Low->Mass = 800.0f;
 
 	return Entity;
@@ -287,6 +293,7 @@ AddEngine(game_state* GameState, world_map_position WorldPos)
 													 	EntityType_Engine, &WorldPos);
 
 	Entity.Low->Dim = v2{3, 2};
+	Entity.Low->MoveSpec = DefaultMoveSpec();
 
 	return Entity;
 }
@@ -298,6 +305,7 @@ AddWheel(game_state* GameState, world_map_position WorldPos)
 													 	EntityType_Wheel, &WorldPos);
 
 	Entity.Low->Dim = v2{0.6f, 1.5f};
+	Entity.Low->MoveSpec = DefaultMoveSpec();
 
 	return Entity;
 }
@@ -1533,7 +1541,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					{
 						Assert(Entity.Low->Mass);
 						f32 BestDistanceToWall = SquareRoot(BestSquareDistanceToWall);
-						Assert(BestDistanceToWall <= (Entity.Low->Dim.X + CollisionEntity.Low->Dim.X) * 0.5f);
+						Assert(BestDistanceToWall <= 
+									 (Lenght(Entity.Low->Dim) + Lenght(CollisionEntity.Low->Dim)) * 0.5f);
 
 						v2 N0 = Sum.Nodes[RelevantNodeIndex];
 						v2 N1 = Sum.Nodes[(RelevantNodeIndex+1) % Sum.NodeCount];

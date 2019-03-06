@@ -105,7 +105,7 @@ MoveEntity(memory_arena* WorldArena, world_map* WorldMap, world_map_position* Ca
 	P += 0.5f * ddP * Square(dT) + dP * dT;
 	dP += ddP * dT;
 
-	dR -= Entity->Low->MoveSpec.Drag * dR * dT;
+	//dR -= Entity->Low->MoveSpec.Drag * dR * dT;
 	R.XY *= CWM22(0.5f * ddR * Square(dT) + dR * dT);
 	R = Normalize(R);
 	dR += ddR * dT;
@@ -1510,202 +1510,221 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			for(LoopOverHighEntitiesNamed(OtherEntity))
 			{
 				if(Entity.LowIndex == OtherEntity.LowIndex) { continue; }
+				if(OtherEntity.High->CollisionDirtyBit) { continue; }
+
+				entity CollisionEntity = OtherEntity;
 
 				b32 Inside = false; 
 				f32 BestSquareDistanceToWall = positive_infinity32;
-				s32 RelevantNodeIndex = -1;
-				if(!OtherEntity.High->CollisionDirtyBit)
+				v2 P = {};
+				v2 N0 = {};
+				v2 N1 = {};
+
+				//vertices* FinalVerts = 0;
+				vertices EVerts = GetEntityVertices(Entity);
+				vertices CVerts = GetEntityVertices(CollisionEntity);
+
+				for(u32 EVertIndex = 0; 
+						EVertIndex < EVerts.Count; 
+						EVertIndex++)
 				{
-					entity CollisionEntity = OtherEntity;
+					v2 LocalP = EVerts.Verts[EVertIndex].XY;
 
-					vertices* FinalVerts = 0;
-					vertices EVerts = GetEntityVertices(Entity);
-					vertices CVerts = GetEntityVertices(CollisionEntity);
+					b32 InsideThisPolygon = true;
+					f32 BestLocalSquareDistanceToWall = BestSquareDistanceToWall;
+					v2 LocalN0 = {};
+					v2 LocalN1 = {};
 
-					for(s32 EVertIndex = 0; 
-							EVertIndex < EVerts.Count; 
-							EVertIndex++)
-					{
-						v2 P = EVerts.Verts[EVertIndex];
-
-						b32 InsideThisPolygon = true;
-						f32 BestLocalSquareDistanceToWall = BestSquareDistanceToWall;
-						u32 RelevantLocalVertIndex = 0;
-
-						for(s32 CVertIndex = 0; 
-								CVertIndex < CVerts.Count; 
-								CVertIndex++)
-						{
-							v2 N0 = CVerts.Verts[CVertIndex];
-							v2 N1 = CVerts.Verts[(CVertIndex+1) % CVerts.Count];
-
-							f32 Det = Determinant(N1-N0, P-N0);
-							if(Det <= 0.0f) 
-							{ 
-								InsideThisPolygon = false; 
-								break;
-							}
-
-							f32 SquareDistanceToWall = SquareDistancePointToLineSegment(N0, N1, P);
-							if(SquareDistanceToWall < BestLocalSquareDistanceToWall)
-							{
-								BestLocalSquareDistanceToWall = SquareDistanceToWall;
-								RelevantLocalVertIndex = CVertIndex;
-							}
-						}
-
-						if(InsideThisPolygon)
-						{
-							Inside = true;
-							FinalVerts = &CVerts;
-							BestSquareDistanceToWall = BestLocalSquareDistanceToWall;
-							RelevantVertIndex = RelevantLocalVertIndex;
-						}
-					}
-
-					for(s32 CVertIndex = 0; 
+					for(u32 CVertIndex = 0; 
 							CVertIndex < CVerts.Count; 
 							CVertIndex++)
 					{
-						v2 P = CVerts.Verts[CVertIndex];
+						v2 LocalLocalN1 = CVerts.Verts[CVertIndex].XY;
+						v2 LocalLocalN0 = CVerts.Verts[(CVertIndex+1) % CVerts.Count].XY;
 
-						b32 InsideThisPolygon = true;
-						f32 BestLocalSquareDistanceToWall = BestSquareDistanceToWall;
-						u32 RelevantLocalVertIndex = 0;
-
-						for(s32 EVertIndex = 0; 
-								EVertIndex < EVerts.Count; 
-								EVertIndex++)
-						{
-							v2 N0 = EVerts.Verts[EVertIndex];
-							v2 N1 = EVerts.Verts[(EVertIndex+1) % EVerts.Count];
-
-							f32 Det = Determinant(N1-N0, P-N0);
-							if(Det <= 0.0f) 
-							{ 
-								InsideThisPolygon = false; 
-								break;
-							}
-
-							f32 SquareDistanceToWall = SquareDistancePointToLineSegment(N0, N1, P);
-							if(SquareDistanceToWall < BestLocalSquareDistanceToWall)
-							{
-								BestLocalSquareDistanceToWall = SquareDistanceToWall;
-								RelevantLocalVertIndex = EVertIndex;
-							}
+						f32 Det = Determinant(LocalLocalN1-LocalLocalN0, LocalP-LocalLocalN0);
+						if(Det <= 0.0f) 
+						{ 
+							InsideThisPolygon = false; 
+							break;
 						}
 
-						if(InsideThisPolygon)
+						f32 SquareDistanceToWall = 
+							SquareDistancePointToLineSegment(LocalLocalN0, LocalLocalN1, LocalP);
+						if(SquareDistanceToWall < BestLocalSquareDistanceToWall)
 						{
-							Inside = true;
-							FinalVerts = &CVerts;
-							BestSquareDistanceToWall = BestLocalSquareDistanceToWall;
-							RelevantVertIndex = RelevantLocalVertIndex;
+							BestLocalSquareDistanceToWall = SquareDistanceToWall;
+							LocalN0 = LocalLocalN0;
+							LocalN1 = LocalLocalN1;
 						}
 					}
 
+					if(InsideThisPolygon)
+					{
+						Inside = true;
+					}
+					if(BestLocalSquareDistanceToWall < BestSquareDistanceToWall)
+					{
+						BestSquareDistanceToWall = BestLocalSquareDistanceToWall;
+						N0 = LocalN0;
+						N1 = LocalN1;
+						P = LocalP;
+					}
+				}
+
+				for(u32 CVertIndex = 0; 
+						CVertIndex < CVerts.Count; 
+						CVertIndex++)
+				{
+					v2 LocalP = CVerts.Verts[CVertIndex].XY;
+
+					b32 InsideThisPolygon = true;
+					f32 BestLocalSquareDistanceToWall = BestSquareDistanceToWall;
+					v2 LocalN0 = {};
+					v2 LocalN1 = {};
+
+					for(u32 EVertIndex = 0; 
+							EVertIndex < EVerts.Count; 
+							EVertIndex++)
+					{
+						v2 LocalLocalN1 = EVerts.Verts[EVertIndex].XY;
+						v2 LocalLocalN0 = EVerts.Verts[(EVertIndex+1) % EVerts.Count].XY;
+
+						f32 Det = Determinant(LocalLocalN1-LocalLocalN0, LocalP-LocalLocalN0);
+						if(Det <= 0.0f) 
+						{ 
+							InsideThisPolygon = false; 
+							break;
+						}
+
+						f32 SquareDistanceToWall = 
+							SquareDistancePointToLineSegment(LocalLocalN0, LocalLocalN1, LocalP);
+						if(SquareDistanceToWall < BestLocalSquareDistanceToWall)
+						{
+							BestLocalSquareDistanceToWall = SquareDistanceToWall;
+							LocalN0 = LocalLocalN0;
+							LocalN1 = LocalLocalN1;
+						}
+					}
+
+					if(InsideThisPolygon)
+					{
+						Inside = true;
+					}
+					if(BestLocalSquareDistanceToWall < BestSquareDistanceToWall)
+					{
+						BestSquareDistanceToWall = BestLocalSquareDistanceToWall;
+						N0 = LocalN0;
+						N1 = LocalN1;
+						P = LocalP;
+					}
+				}
+
+				if(Inside &&
+					 Entity.Low->Collides && 
+					 CollisionEntity.Low->Collides)
+				{
 					f32 BestDistanceToWall;
 					{
 						BestDistanceToWall	= SquareRoot(BestSquareDistanceToWall);
 						Assert(BestDistanceToWall <= 
 									 (Lenght(Entity.Low->Dim) + Lenght(CollisionEntity.Low->Dim)) * 0.5f);
 					}
-
-					v2 n;
+					v2 n, t;
 					{
-						v2 N0 = Sum.Nodes[RelevantNodeIndex];
-						v2 N1 = Sum.Nodes[(RelevantNodeIndex+1) % Sum.NodeCount];
 						m22 CounterClockWise = { 0, 1,
 															 -1, 0};
-						n = Normalize(CounterClockWise * (N1 - N0));
+
+						n = Normalize(                   (N1 - N0));
+						t = Normalize(CounterClockWise * (N1 - N0));
 					}
 
+					Assert(Entity.Low->Mass);
+					Assert(CollisionEntity.Low->Mass);
 
-					if(Inside &&
-						 Entity.Low->Collides && 
-						 CollisionEntity.Low->Collides)
+					f32 nEdP = Dot(n, Entity.High->dP.XY);
+					f32 nCdP = Dot(n, CollisionEntity.High->dP.XY);
+					f32 tEdP = Dot(t, Entity.High->dP.XY);
+					f32 tCdP = Dot(t, CollisionEntity.High->dP.XY);
+
+					f32 Em =          Entity.Low->Mass;
+					f32 Cm = CollisionEntity.Low->Mass;
+
+					b32 Interacted = ((nEdP <= 0 && nCdP >= 0) || 
+														(nEdP <= 0 && (nEdP < nCdP)) || 
+														(nCdP >= 0 && (nCdP > nEdP)));
+
+					if(Interacted)
 					{
-						Assert(Entity.Low->Mass);
-						Assert(CollisionEntity.Low->Mass);
+						//TODO IMPORTANT (bjorn): Do rotation with unit circle vector
+						//offset approximations and the closest opposing line-segments of the
+						//objects colliding.
+						f32 ECnMomDiff = Absolute(nEdP*Em - nCdP*Cm);
 
-						f32 nEdP = Dot(n, Entity.High->dP.XY);
-						f32 nCdP = Dot(n, CollisionEntity.High->dP.XY);
+						//TODO(bjorn): This didn't work. What is the real problem I am
+						//trying to solve? Never show an unresolved collision?
+						//12/2/2019
+						//TODO(bjorn): Incorporate the per entity groundfriction into
+						//how much of the impact velocity gets through.
+						f32 EImp = ECnMomDiff / Em;
+						f32 CImp = ECnMomDiff / Cm;
 
-						f32 Em =          Entity.Low->Mass;
-						f32 Cm = CollisionEntity.Low->Mass;
+						f32 EDis = (BestDistanceToWall * (Em / (Em+Cm)));
+						f32 CDis = (BestDistanceToWall * (Cm / (Em+Cm)));
 
-						b32 Interacted = ((nEdP <= 0 && nCdP >= 0) || 
-															(nEdP <= 0 && (nEdP < nCdP)) || 
-															(nCdP >= 0 && (nCdP > nEdP)));
+						f32 ECtMomDiff = Absolute(tEdP*Em - tCdP*Cm);
+						f32 ETan = ECtMomDiff / Em;
+						f32 CTan = ECtMomDiff / Cm;
 
-						if(Interacted)
+						//TODO(bjorn): Move the amount of momentum needed out to the entity struct.
+						if(Em > Cm)
 						{
-							//TODO IMPORTANT (bjorn): Do rotation with unit circle vector
-							//offset approximations and the closest opposing line-segments of the
-							//objects colliding.
-							f32 ECnMomDiff = Absolute(nEdP*Em - nCdP*Cm);
-
-							//TODO(bjorn): This didn't work. What is the real problem I am
-							//trying to solve? Never show an unresolved collision?
-							//12/2/2019
-							//TODO(bjorn): Incorporate the per entity groundfriction into
-							//how much of the impact velocity gets through.
-							f32 EImp = ECnMomDiff / Em;
-							f32 CImp = ECnMomDiff / Cm;
-
-							f32 EDis = (BestDistanceToWall * (Em / (Em+Cm)));
-							f32 CDis = (BestDistanceToWall * (Cm / (Em+Cm)));
-
-							//TODO(bjorn): Move the amount of momentum needed out to the entity struct.
-							if(Em > Cm)
+							if(ECnMomDiff < 1.0f*(Em))
 							{
-								if(ECnMomDiff < 1.0f*(Em))
-								{
-									EImp = 0;
-									EDis = 0;
-									CDis = BestDistanceToWall;
-								}
+								EImp = 0;
+								ETan = 0;
+								EDis = 0;
+								CDis = BestDistanceToWall;
 							}
-							else
-							{
-								if(ECnMomDiff < 1.0f*(Cm))
-								{
-									CImp = 0;
-									EDis = BestDistanceToWall;
-									CDis = 0;
-								}
-							}
-
-							Entity.High->P.XY          += n * EDis;
-							CollisionEntity.High->P.XY -= n * CDis;
-
-							Entity.High->dP.XY          += n * EImp;
-							CollisionEntity.High->dP.XY -= n * CImp;
-
-							//TODO(bjorn): Friction. Tangent to the normal.
-
-							//TODO(bjorn): Figure out the most opposing normals. And then
-							//figure out angle away from equilibirium. Use penetration depth to go from 
-							//momentum to angular momentum.
 						}
-					} 
-				}
+						else
+						{
+							if(ECnMomDiff < 1.0f*(Cm))
+							{
+								CImp = 0;
+								CTan = 0;
+								EDis = BestDistanceToWall;
+								CDis = 0;
+							}
+						}
 
-				entity* Familiar = GetEntityOfType(EntityType_Familiar, &Entity, &OtherEntity);
-				if(Familiar)
-				{
-					entity* Target = GetRemainingEntity(Familiar, &Entity, &OtherEntity);
-					UpdateFamiliarPairwise(Familiar, Target);
-				}
+						Entity.High->P.XY          += n * EDis;
+						CollisionEntity.High->P.XY -= n * CDis;
 
-				entity* Sword = GetEntityOfType(EntityType_Sword, &Entity, &OtherEntity);
-				if(Sword)
+						Entity.High->dP.XY          += n * EImp;
+						CollisionEntity.High->dP.XY -= n * CImp;
+
+						//TODO(bjorn): Friction. Tangent to the normal.
+						Entity.High->dR          += ETan / Lenght(P -				  Entity.High->P);
+						CollisionEntity.High->dR -= CTan / Lenght(P - CollisionEntity.High->P);
+					}
+				} 
+
+				if(Step == 0)
 				{
-					entity* Target = GetRemainingEntity(Sword, &Entity, &OtherEntity);
-					//TODO(bjorn): Dirty bit + inside doesn't make a lot of sense.
-					//Sometimes inside wont get calculated. Should I move the inside
-					//check outside the dirtybitting?
-					UpdateSwordPairwise(Sword, Target, Inside, WorldArena, WorldMap, Entities);
+					entity* Familiar = GetEntityOfType(EntityType_Familiar, &Entity, &OtherEntity);
+					if(Familiar)
+					{
+						entity* Target = GetRemainingEntity(Familiar, &Entity, &OtherEntity);
+						UpdateFamiliarPairwise(Familiar, Target);
+					}
+
+					entity* Sword = GetEntityOfType(EntityType_Sword, &Entity, &OtherEntity);
+					if(Sword)
+					{
+						entity* Target = GetRemainingEntity(Sword, &Entity, &OtherEntity);
+						UpdateSwordPairwise(Sword, Target, Inside, WorldArena, WorldMap, Entities);
+					}
 				}
 			}
 			Entity.High->CollisionDirtyBit = true;

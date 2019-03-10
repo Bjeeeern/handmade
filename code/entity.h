@@ -157,9 +157,8 @@ GetEntityVertices(entity Entity)
 													{ 0.5f, -0.5f}, 
 													{-0.5f, -0.5f}};
 	
-	m22 ClockWise = CWM22(pi32*0.5f);
-	m22 Transform = M22(ClockWise * Entity.Low->R.XY, 
-											            Entity.Low->R.XY);
+	m22 Transform = M22(CCW90M22() * Entity.Low->R.XY, 
+											Entity.Low->R.XY);
 	for(u32 VertexIndex = 0; 
 			VertexIndex < Result.Count; 
 			VertexIndex++)

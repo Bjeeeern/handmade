@@ -624,6 +624,8 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	entity A = AddWall(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{2, 4, 0}), 10.0f);
 	entity B = AddWall(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{5, 4, 0}),  5.0f);
 
+	GameState->DEBUG_EntityBoundToMouse = A.LowIndex;
+
 	entity E[6];
 	for(u32 i=0;
 			i < 6;
@@ -911,7 +913,38 @@ GetTimeOfIntersectionWithLineSegment(v2 S, v2 E, v2 A, v2 B)
 	return Result;
 }
 
-inline f32 
+struct closest_point_to_line_result
+{
+	f32 t;
+	v2 P;
+};
+internal_function closest_point_to_line_result 
+GetClosestPointOnLineSegment(v2 A, v2 B, v2 P)
+{
+	closest_point_to_line_result Result = {};
+	v2 AP = P - A;
+	v2 AB = B - A;
+
+	f32 t = Dot(AP, AB) / LenghtSquared(AB);
+
+	Result.t = t;
+	if (t <= 0)
+	{
+		Result.P = A;
+	}
+	else if (t >= 1)
+	{
+		Result.P = B;
+	}
+	else
+	{
+		Result.P = A + AB * t;
+	}
+
+	return Result;
+}
+
+	inline f32 
 GetInverseMass(f32 mass)
 {
 	if(mass == 0.0f) { return 0; } else { return 1.0f / mass; }
@@ -929,79 +962,65 @@ struct polygon
 {
 	s32 NodeCount;
 	v2 Nodes[8];
-	u32 OriginalVertIndex[8];
-	b32 BelongToA[8];
+	v2 OriginalLineSeg[8][2];
 };
 	internal_function polygon 
 MinkowskiSum(entity* Target, entity* Movable)
 {
 	polygon Result = {};
-
 	Result.NodeCount = 8;
 
 	v2 MovableP = Movable->High->P.XY;
-	v2 MovableD = Movable->Low->R.XY;
-
 	v2 TargetP  = Target->High->P.XY;
-	v2 TargetD  = Target->Low->R.XY;
 
-	v2 CornerVectors[8] = {};
-	v2 OrderOfCorners[4] = {{-1, 1}, {1, 1}, {1, -1}, {-1, -1}};
-	m22 ClockWise = { 0,-1,
-									 1, 0};
-	for(int CornerIndex = 0; 
-			CornerIndex < 4; 
-			CornerIndex++)
+	vertices TVerts = GetEntityVertices(Target);
+	vertices MVerts = GetEntityVertices(Movable);
+
+	//TODO(bjorn): This sum is _NOT_ made for general polygons atm!
+	s32 MovableStartIndex;
 	{
-		v2 CornerOffset = Hadamard(OrderOfCorners[CornerIndex%4], Target->Low->Dim.XY) * 0.5f;
-		CornerVectors[CornerIndex] = ClockWise * TargetD * CornerOffset.X + TargetD * CornerOffset.Y;
-	}
-	for(int CornerIndex = 4; 
-			CornerIndex < 8; 
-			CornerIndex++)
-	{
-		v2 CornerOffset = Hadamard(OrderOfCorners[CornerIndex%4], Movable->Low->Dim.XY) * 0.5f;
-		CornerVectors[CornerIndex] = ClockWise * MovableD * CornerOffset.X + MovableD * CornerOffset.Y;
+		v2 MovableR = Movable->Low->R.XY;
+		v2 TargetR  = Target->Low->R.XY;
+		if(Dot(TargetR, MovableR) > 0)
+		{
+			MovableStartIndex = (Cross((v3)TargetR, (v3)MovableR).Z > 0) ? 1 : 0;
+		}
+		else
+		{
+			MovableStartIndex = (Cross((v3)TargetR, (v3)MovableR).Z > 0) ? 2 : 3;
+		}
 	}
 
-	s32 CornerStartIndex;
-	if(Dot(TargetD, MovableD) > 0)
-	{
-		CornerStartIndex = (Cross((v3)TargetD, (v3)MovableD).Z > 0) ? 4 : 5;
-	}
-	else
-	{
-		CornerStartIndex = (Cross((v3)TargetD, (v3)MovableD).Z > 0) ? 7 : 6;
-	}
-
-	v2 EdgeStart = TargetP + CornerVectors[0] + CornerVectors[CornerStartIndex];
+	v2 MovingCorner = TVerts.Verts[0] + (MVerts.Verts[MovableStartIndex] - MovableP);
 	for(int CornerIndex = 0; 
 			CornerIndex < 4; 
 			CornerIndex++)
 	{
 		{
-			s32 NodeIndex = 0                + CornerIndex;
-			v2 NodeDiff = (CornerVectors[(NodeIndex+1)%4 + 0] - 
-										 CornerVectors[(NodeIndex+0)%4 + 0]);
+			v2 V0 = TVerts.Verts[(CornerIndex+0)%4];
+			v2 V1 = TVerts.Verts[(CornerIndex+1)%4];
+			v2 NodeDiff = (V1 - V0);
 
 			s32 ResultIndex = CornerIndex*2+0;
-			Result.BelongToA[ResultIndex] = true;
-			Result.OriginalVertIndex[ResultIndex] = (NodeIndex+0)%4;
-			Result.Nodes[ResultIndex] = EdgeStart;
 
-			EdgeStart += NodeDiff;
+			Result.OriginalLineSeg[ResultIndex][0] = V0;
+			Result.OriginalLineSeg[ResultIndex][1] = V1;
+			Result.Nodes[ResultIndex] = MovingCorner;
+
+			MovingCorner += NodeDiff;
 		}
 		{
-			s32 NodeIndex = CornerStartIndex + CornerIndex;
-			v2 NodeDiff = (CornerVectors[(NodeIndex+1)%4 + 4] - 
-										 CornerVectors[(NodeIndex+0)%4 + 4]);
+			v2 V0 = MVerts.Verts[(MovableStartIndex+CornerIndex+0)%4];
+			v2 V1 = MVerts.Verts[(MovableStartIndex+CornerIndex+1)%4];
+			v2 NodeDiff = (V1 - V0);
 
 			s32 ResultIndex = CornerIndex*2+1;
-			Result.BelongToA[ResultIndex] = true;
-			Result.OriginalVertIndex[ResultIndex] = (NodeIndex+0)%4;
-			Result.Nodes[ResultIndex] = EdgeStart;
 
-			EdgeStart += NodeDiff;
+			Result.OriginalLineSeg[ResultIndex][0] = V0;
+			Result.OriginalLineSeg[ResultIndex][1] = V1;
+			Result.Nodes[ResultIndex] = MovingCorner;
+
+			MovingCorner += NodeDiff;
 		}
 	}
 
@@ -1020,10 +1039,8 @@ DEBUGMinkowskiSum(game_offscreen_buffer* Buffer,
 	{
 		v2 N0 = Sum.Nodes[NodeIndex];
 		v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
-		m22 CounterClockWise = { 0, 1,
-													 -1, 0};
 
-		v2 WallNormal = Normalize(CounterClockWise * (N1 - N0));
+		v2 WallNormal = Normalize(CCW90M22() * (N1 - N0));
 
 		DrawLine(Buffer, 
 						 ScreenCenter + GameSpaceToScreenSpace * N0, 
@@ -1507,6 +1524,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			//
 			// NOTE(bjorn): Collision check all.
 			//
+			//TODO(bjorn):
+			// Add negative gravity for penetration if relative velocity is >= 0.
+			// Get relevant contact point.
+			// Do impulse calculation.
+			// Test with object on mouse.
 			for(LoopOverHighEntitiesNamed(OtherEntity))
 			{
 				if(Entity.LowIndex == OtherEntity.LowIndex) { continue; }
@@ -1514,12 +1536,34 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				entity CollisionEntity = OtherEntity;
 
-				b32 Inside = false; 
+				b32 Inside = true; 
 				f32 BestSquareDistanceToWall = positive_infinity32;
-				v2 P = {};
-				v2 N0 = {};
-				v2 N1 = {};
+				s32 RelevantNodeIndex = -1;
+				v2 P = Entity.High->P.XY;
+				vertices EVerts = GetEntityVertices(Entity);
+				vertices CVerts = GetEntityVertices(CollisionEntity);
+				polygon Sum = MinkowskiSum(&CollisionEntity, &Entity);
+				for(s32 NodeIndex = 0; 
+								NodeIndex < Sum.NodeCount; 
+								NodeIndex++)
+				{
+					v2 N0 = Sum.Nodes[NodeIndex];
+					v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
 
+					f32 Det = Determinant(N1-N0, P-N0);
+					if(Inside && (Det <= 0.0f)) 
+					{ 
+						Inside = false; 
+					}
+
+					f32 SquareDistanceToWall = SquareDistancePointToLineSegment(N0, N1, P);
+					if(SquareDistanceToWall < BestSquareDistanceToWall)
+					{
+						BestSquareDistanceToWall = SquareDistanceToWall;
+						RelevantNodeIndex = NodeIndex;
+					}
+				}	
+#if 0
 				//vertices* FinalVerts = 0;
 				vertices EVerts = GetEntityVertices(Entity);
 				vertices CVerts = GetEntityVertices(CollisionEntity);
@@ -1619,24 +1663,41 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						P = LocalP;
 					}
 				}
+#endif
 
 				if(Inside &&
 					 Entity.Low->Collides && 
 					 CollisionEntity.Low->Collides)
 				{
+					Assert(RelevantNodeIndex >= 0);
+					//TODO(bjorn): Do the entity pos proj to the minkowski line and solve
+					//for t. Then use t on the original vector pair to get the actual
+					//impact point. Maybe move 50% of penetration along opposite normal
+					//to get the point inbetween the two objects.
 					f32 BestDistanceToWall;
+					v2 n, t, ImpactPoint;
 					{
 						BestDistanceToWall	= SquareRoot(BestSquareDistanceToWall);
 						Assert(BestDistanceToWall <= 
 									 (Lenght(Entity.Low->Dim) + Lenght(CollisionEntity.Low->Dim)) * 0.5f);
-					}
-					v2 n, t;
-					{
-						m22 CounterClockWise = { 0, 1,
-															 -1, 0};
 
-						n = Normalize(                   (N1 - N0));
-						t = Normalize(CounterClockWise * (N1 - N0));
+						v2 N0 = Sum.Nodes[RelevantNodeIndex];
+						v2 N1 = Sum.Nodes[(RelevantNodeIndex+1) % Sum.NodeCount];
+						v2 V0 = Sum.OriginalLineSeg[RelevantNodeIndex][0];
+						v2 V1 = Sum.OriginalLineSeg[RelevantNodeIndex][1];
+
+						//TODO(bjorn): This needs to be calculated here somehow, maybe just
+						//check relation of bodies and genus of lineseg.
+						v2 V2 = ;
+
+						//TODO(bjorn): This normalization might not be needed.
+						n = Normalize(             (N1 - N0));
+						t = Normalize(CCW90M22() * (N1 - N0));
+
+						closest_point_to_line_result ClosestPoint = GetClosestPointOnLineSegment(N0, N1, P);
+
+						ImpactPoint = V0 + (V1-V0) * ClosestPoint.t;
+						ImpactPoint = (ImpactPoint + V2) * 0.5f;
 					}
 
 					Assert(Entity.Low->Mass);
@@ -1669,6 +1730,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						f32 EImp = ECnMomDiff / Em;
 						f32 CImp = ECnMomDiff / Cm;
 
+						//TODO(bjorn): Ditch displacement for negative gravity and proper impulse handling.
 						f32 EDis = (BestDistanceToWall * (Em / (Em+Cm)));
 						f32 CDis = (BestDistanceToWall * (Cm / (Em+Cm)));
 

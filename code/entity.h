@@ -147,7 +147,7 @@ struct vertices
 };
 
 internal_function vertices
-GetEntityVertices(entity Entity)
+GetEntityVertices(entity* Entity)
 {
 	vertices Result = {};
 	Result.Count = 4;
@@ -157,15 +157,15 @@ GetEntityVertices(entity Entity)
 													{ 0.5f, -0.5f}, 
 													{-0.5f, -0.5f}};
 	
-	m22 Transform = M22(CCW90M22() * Entity.Low->R.XY, 
-											Entity.Low->R.XY);
+	m22 Transform = M22(CCW90M22() * Entity->Low->R.XY, 
+											Entity->Low->R.XY);
 	for(u32 VertexIndex = 0; 
 			VertexIndex < Result.Count; 
 			VertexIndex++)
 	{
 		Result.Verts[VertexIndex] = (Transform * 
-																 Hadamard(OrderOfCorners[VertexIndex], Entity.Low->Dim.XY) + 
-																 Entity.High->P);
+																 Hadamard(OrderOfCorners[VertexIndex], Entity->Low->Dim.XY) + 
+																 Entity->High->P);
 	}
 
 	return Result;

@@ -624,7 +624,8 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	entity A = AddWall(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{2, 4, 0}), 10.0f);
 	entity B = AddWall(GameState, GetChunkPosFromAbsTile(WorldMap, v3u{5, 4, 0}),  5.0f);
 
-	GameState->DEBUG_EntityBoundToMouse = A.LowIndex;
+	//TODO(bjorn): Have an object stuck to the mouse.
+	//GameState->DEBUG_EntityBoundToMouse = A.LowIndex;
 
 	entity E[6];
 	for(u32 i=0;
@@ -958,11 +959,17 @@ struct collision_result
 	v2 Normal;
 };
 
+enum minkowski_sum_origin
+{
+	MinkowskiGenus_Target,
+	MinkowskiGenus_Movable,
+};
 struct polygon
 {
 	s32 NodeCount;
 	v2 Nodes[8];
 	v2 OriginalLineSeg[8][2];
+	minkowski_sum_origin Genus[8];
 };
 	internal_function polygon 
 MinkowskiSum(entity* Target, entity* Movable)
@@ -991,18 +998,19 @@ MinkowskiSum(entity* Target, entity* Movable)
 		}
 	}
 
-	v2 MovingCorner = TVerts.Verts[0] + (MVerts.Verts[MovableStartIndex] - MovableP);
+	v2 MovingCorner = TVerts.Verts[0].XY + (MVerts.Verts[MovableStartIndex].XY - MovableP);
 	for(int CornerIndex = 0; 
 			CornerIndex < 4; 
 			CornerIndex++)
 	{
 		{
-			v2 V0 = TVerts.Verts[(CornerIndex+0)%4];
-			v2 V1 = TVerts.Verts[(CornerIndex+1)%4];
+			v2 V0 = TVerts.Verts[(CornerIndex+0)%4].XY;
+			v2 V1 = TVerts.Verts[(CornerIndex+1)%4].XY;
 			v2 NodeDiff = (V1 - V0);
 
 			s32 ResultIndex = CornerIndex*2+0;
 
+			Result.Genus[ResultIndex] = MinkowskiGenus_Target;
 			Result.OriginalLineSeg[ResultIndex][0] = V0;
 			Result.OriginalLineSeg[ResultIndex][1] = V1;
 			Result.Nodes[ResultIndex] = MovingCorner;
@@ -1010,12 +1018,13 @@ MinkowskiSum(entity* Target, entity* Movable)
 			MovingCorner += NodeDiff;
 		}
 		{
-			v2 V0 = MVerts.Verts[(MovableStartIndex+CornerIndex+0)%4];
-			v2 V1 = MVerts.Verts[(MovableStartIndex+CornerIndex+1)%4];
+			v2 V0 = MVerts.Verts[(MovableStartIndex+CornerIndex+0)%4].XY;
+			v2 V1 = MVerts.Verts[(MovableStartIndex+CornerIndex+1)%4].XY;
 			v2 NodeDiff = (V1 - V0);
 
 			s32 ResultIndex = CornerIndex*2+1;
 
+			Result.Genus[ResultIndex] = MinkowskiGenus_Movable;
 			Result.OriginalLineSeg[ResultIndex][0] = V0;
 			Result.OriginalLineSeg[ResultIndex][1] = V1;
 			Result.Nodes[ResultIndex] = MovingCorner;
@@ -1534,15 +1543,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				if(Entity.LowIndex == OtherEntity.LowIndex) { continue; }
 				if(OtherEntity.High->CollisionDirtyBit) { continue; }
 
-				entity CollisionEntity = OtherEntity;
-
 				b32 Inside = true; 
 				f32 BestSquareDistanceToWall = positive_infinity32;
 				s32 RelevantNodeIndex = -1;
 				v2 P = Entity.High->P.XY;
-				vertices EVerts = GetEntityVertices(Entity);
-				vertices CVerts = GetEntityVertices(CollisionEntity);
-				polygon Sum = MinkowskiSum(&CollisionEntity, &Entity);
+				polygon Sum = MinkowskiSum(&OtherEntity, &Entity);
 				for(s32 NodeIndex = 0; 
 								NodeIndex < Sum.NodeCount; 
 								NodeIndex++)
@@ -1564,6 +1569,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					}
 				}	
 #if 0
+				vertices EVerts = GetEntityVertices(&Entity);
+				vertices CVerts = GetEntityVertices(&CollisionEntity);
 				//vertices* FinalVerts = 0;
 				vertices EVerts = GetEntityVertices(Entity);
 				vertices CVerts = GetEntityVertices(CollisionEntity);
@@ -1667,41 +1674,59 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				if(Inside &&
 					 Entity.Low->Collides && 
-					 CollisionEntity.Low->Collides)
+					 OtherEntity.Low->Collides)
 				{
 					Assert(RelevantNodeIndex >= 0);
 					//TODO(bjorn): Do the entity pos proj to the minkowski line and solve
 					//for t. Then use t on the original vector pair to get the actual
 					//impact point. Maybe move 50% of penetration along opposite normal
 					//to get the point inbetween the two objects.
-					f32 BestDistanceToWall;
+					f32 Penetration;
 					v2 n, t, ImpactPoint;
 					{
-						BestDistanceToWall	= SquareRoot(BestSquareDistanceToWall);
-						Assert(BestDistanceToWall <= 
-									 (Lenght(Entity.Low->Dim) + Lenght(CollisionEntity.Low->Dim)) * 0.5f);
+						Penetration	= SquareRoot(BestSquareDistanceToWall);
+						Assert(Penetration <= (Lenght(Entity.Low->Dim) + Lenght(OtherEntity.Low->Dim)) * 0.5f);
 
 						v2 N0 = Sum.Nodes[RelevantNodeIndex];
 						v2 N1 = Sum.Nodes[(RelevantNodeIndex+1) % Sum.NodeCount];
 						v2 V0 = Sum.OriginalLineSeg[RelevantNodeIndex][0];
 						v2 V1 = Sum.OriginalLineSeg[RelevantNodeIndex][1];
 
-						//TODO(bjorn): This needs to be calculated here somehow, maybe just
-						//check relation of bodies and genus of lineseg.
-						v2 V2 = ;
-
 						//TODO(bjorn): This normalization might not be needed.
-						n = Normalize(             (N1 - N0));
-						t = Normalize(CCW90M22() * (N1 - N0));
+						t = Normalize(N1 - N0);
+						n = CCW90M22() * t;
 
 						closest_point_to_line_result ClosestPoint = GetClosestPointOnLineSegment(N0, N1, P);
 
 						ImpactPoint = V0 + (V1-V0) * ClosestPoint.t;
-						ImpactPoint = (ImpactPoint + V2) * 0.5f;
+						v2 ImpactCorrection = n * Penetration * 0.5f;
+						ImpactCorrection *= Sum.Genus[RelevantNodeIndex] == MinkowskiGenus_Movable ? 1.0f:-1.0f;
+						ImpactPoint += ImpactCorrection;
 					}
 
-					Assert(Entity.Low->Mass);
-					Assert(CollisionEntity.Low->Mass);
+					//NOTE(bjorn): Normal always points away from other entity.
+					v2 AdP = Entity->High->dP.XY:
+					v2 BdP = OtherEntity->High->dP.XY:
+					v2 ABdP = AdP - BdP;
+					f32 ndotAB = Dot(n, ABdP);
+
+					f32 AInvMass = GetInverseMass(Entity->High->Mass);
+					f32 BInvMass = GetInverseMass(OtherEntity->High->Mass);
+
+					if(ndotAB >= 0)
+					{
+						//TODO(bjorn): Max(Negative gravity impulse, ABdP) in normal
+						//direction relative penetration.
+					}
+					else
+					{
+						Impulse = ;
+						Entity->High->dP.XY      +=  n * (Impulse * AInvMass);
+						OtherEntity->High->dP.XY += -n * (Impulse * BInvMass);
+					}
+#if 0
+					//Assert(Entity.Low->Mass);
+					//Assert(CollisionEntity.Low->Mass);
 
 					f32 nEdP = Dot(n, Entity.High->dP.XY);
 					f32 nCdP = Dot(n, CollisionEntity.High->dP.XY);
@@ -1770,6 +1795,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						Entity.High->dR          += ETan / Lenght(P -				  Entity.High->P);
 						CollisionEntity.High->dR -= CTan / Lenght(P - CollisionEntity.High->P);
 					}
+#endif
 				} 
 
 				if(Step == 0)
@@ -2073,7 +2099,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #if HANDMADE_INTERNAL
 		if(GameState->DEBUG_VisualiseCollisionBox)
 		{
-			vertices Verts = GetEntityVertices(Entity);
+			vertices Verts = GetEntityVertices(&Entity);
 			for(u32 VertIndex = 0; VertIndex < Verts.Count; VertIndex++)
 			{
 				v3 V0 = Verts.Verts[VertIndex];

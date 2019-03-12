@@ -50,8 +50,9 @@ struct high_entity
 {
 	u32 LowIndex;
 
-	f32 dR;
-	f32 ddR;
+	f32 A;
+	f32 dA;
+	f32 ddA;
 	v3 P;
 	v3 dP;
 	v3 ddP;
@@ -157,7 +158,7 @@ GetEntityVertices(entity* Entity)
 													{ 0.5f, -0.5f}, 
 													{-0.5f, -0.5f}};
 	
-	m22 Transform = M22(CCW90M22() * Entity->Low->R.XY, 
+	m22 Transform = M22(CW90M22() * Entity->Low->R.XY, 
 											Entity->Low->R.XY);
 	for(u32 VertexIndex = 0; 
 			VertexIndex < Result.Count; 
@@ -324,6 +325,12 @@ ChangeEntityWorldLocationRelativeOther(memory_arena* Arena, world_map* WorldMap,
 		ChangeEntityWorldLocation(Arena, WorldMap, Entity, &NewWorldP);
 }
 
+inline v3
+DefaultEntityOrientation()
+{
+	return {0, 1, 0};
+}
+
 	internal_function entity
 AddEntity(memory_arena* WorldArena, world_map* WorldMap, entities* Entities, 
 					entity_type Type, world_map_position* WorldP = 0)
@@ -337,7 +344,7 @@ AddEntity(memory_arena* WorldArena, world_map* WorldMap, entities* Entities,
 	Result.Low = Entities->LowEntities + Result.LowIndex;
 	*Result.Low = {};
 	Result.Low->Type = Type;
-	Result.Low->R = {0, 1, 0};
+	Result.Low->R = DefaultEntityOrientation();
 	Result.Low->WorldP = WorldMapNullPos();
 
 	if(WorldP)

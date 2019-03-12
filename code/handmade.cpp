@@ -78,8 +78,9 @@ MoveEntity(memory_arena* WorldArena, world_map* WorldMap, world_map_position* Ca
 	v3 ddP = Entity->High->ddP;
 
 	v3 R = Entity->Low->R;
-	f32 dR = Entity->High->dR;
-	f32 ddR = Entity->High->ddR;
+	f32 A = Entity->High->A;
+	f32 dA = Entity->High->dA;
+	f32 ddA = Entity->High->ddA;
 
 	//TODO(bjorn): Re-add the car.
 	if(Entity->Low->MoveSpec.EnforceVerticalGravity)
@@ -105,10 +106,19 @@ MoveEntity(memory_arena* WorldArena, world_map* WorldMap, world_map_position* Ca
 	P += 0.5f * ddP * Square(dT) + dP * dT;
 	dP += ddP * dT;
 
-	//dR -= Entity->Low->MoveSpec.Drag * dR * dT;
-	R.XY *= CWM22(0.5f * ddR * Square(dT) + dR * dT);
+	dA -= Entity->Low->MoveSpec.Drag * 0.1f * dA * dT;
+	A += 0.5f * ddA * Square(dT) + dA * dT;
+	dA += ddA * dT;
+	if(A > tau32)
+	{
+		A -= FloorF32ToS32(A / tau32) * tau32;
+	}
+	else if(A < 0)
+	{
+		A += RoofF32ToS32(A / tau32) * tau32;
+	}
+	R.XY = CCWM22(A) * DefaultEntityOrientation().XY;
 	R = Normalize(R);
-	dR += ddR * dT;
 
 	//TODO(bjorn): Think harder about how to implement the ground.
 	if(P.Z < 0.0f)
@@ -123,8 +133,9 @@ MoveEntity(memory_arena* WorldArena, world_map* WorldMap, world_map_position* Ca
 
 	if(Entity->Low->MoveSpec.AllowRotation)
 	{
-		Entity->High->ddR = ddR;
-		Entity->High->dR = dR;
+		Entity->High->ddA = ddA;
+		Entity->High->dA = dA;
+		Entity->High->A = A;
 		Entity->Low->R = R;
 	}
 
@@ -946,9 +957,9 @@ GetClosestPointOnLineSegment(v2 A, v2 B, v2 P)
 }
 
 	inline f32 
-GetInverseMass(f32 mass)
+GetInverseOrZero(f32 V)
 {
-	if(mass == 0.0f) { return 0; } else { return 1.0f / mass; }
+	if(V == 0.0f) { return 0; } else { return 1.0f / V; }
 }
 
 struct collision_result
@@ -1039,12 +1050,14 @@ MinkowskiSum(entity* Target, entity* Movable)
 #if HANDMADE_INTERNAL
 	internal_function void
 DEBUGMinkowskiSum(game_offscreen_buffer* Buffer, 
-									entity* A, entity* B, 
+									entity* Target, entity* Movable, 
 									m22 GameSpaceToScreenSpace, v2 ScreenCenter)
 {
-	polygon Sum = MinkowskiSum(A, B);
+	polygon Sum = MinkowskiSum(Target, Movable);
 
-	for(int NodeIndex = 0; NodeIndex < Sum.NodeCount; NodeIndex++)
+	for(s32 NodeIndex = 0; 
+			NodeIndex < Sum.NodeCount; 
+			NodeIndex++)
 	{
 		v2 N0 = Sum.Nodes[NodeIndex];
 		v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
@@ -1055,10 +1068,14 @@ DEBUGMinkowskiSum(game_offscreen_buffer* Buffer,
 						 ScreenCenter + GameSpaceToScreenSpace * N0, 
 						 ScreenCenter + GameSpaceToScreenSpace * N1, 
 						 {0, 0, 1});
+
+		v3 NormalColor = {1, 0, 1};
+		if(Sum.Genus[NodeIndex] == MinkowskiGenus_Target) { NormalColor = {0, 1, 1}; }
+
 		DrawLine(Buffer, 
 						 ScreenCenter + GameSpaceToScreenSpace * (N0 + N1) * 0.5f, 
 						 ScreenCenter + GameSpaceToScreenSpace * ((N0 + N1) * 0.5f + WallNormal * 0.2f), 
-						 {1, 0, 1});
+						 NormalColor);
 	}
 }
 #endif
@@ -1556,7 +1573,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
 
 					f32 Det = Determinant(N1-N0, P-N0);
-					if(Inside && (Det <= 0.0f)) 
+					if(Inside && (Det >= 0.0f)) 
 					{ 
 						Inside = false; 
 					}
@@ -1568,119 +1585,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						RelevantNodeIndex = NodeIndex;
 					}
 				}	
-#if 0
-				vertices EVerts = GetEntityVertices(&Entity);
-				vertices CVerts = GetEntityVertices(&CollisionEntity);
-				//vertices* FinalVerts = 0;
-				vertices EVerts = GetEntityVertices(Entity);
-				vertices CVerts = GetEntityVertices(CollisionEntity);
-
-				for(u32 EVertIndex = 0; 
-						EVertIndex < EVerts.Count; 
-						EVertIndex++)
-				{
-					v2 LocalP = EVerts.Verts[EVertIndex].XY;
-
-					b32 InsideThisPolygon = true;
-					f32 BestLocalSquareDistanceToWall = BestSquareDistanceToWall;
-					v2 LocalN0 = {};
-					v2 LocalN1 = {};
-
-					for(u32 CVertIndex = 0; 
-							CVertIndex < CVerts.Count; 
-							CVertIndex++)
-					{
-						v2 LocalLocalN1 = CVerts.Verts[CVertIndex].XY;
-						v2 LocalLocalN0 = CVerts.Verts[(CVertIndex+1) % CVerts.Count].XY;
-
-						f32 Det = Determinant(LocalLocalN1-LocalLocalN0, LocalP-LocalLocalN0);
-						if(Det <= 0.0f) 
-						{ 
-							InsideThisPolygon = false; 
-							break;
-						}
-
-						f32 SquareDistanceToWall = 
-							SquareDistancePointToLineSegment(LocalLocalN0, LocalLocalN1, LocalP);
-						if(SquareDistanceToWall < BestLocalSquareDistanceToWall)
-						{
-							BestLocalSquareDistanceToWall = SquareDistanceToWall;
-							LocalN0 = LocalLocalN0;
-							LocalN1 = LocalLocalN1;
-						}
-					}
-
-					if(InsideThisPolygon)
-					{
-						Inside = true;
-					}
-					if(BestLocalSquareDistanceToWall < BestSquareDistanceToWall)
-					{
-						BestSquareDistanceToWall = BestLocalSquareDistanceToWall;
-						N0 = LocalN0;
-						N1 = LocalN1;
-						P = LocalP;
-					}
-				}
-
-				for(u32 CVertIndex = 0; 
-						CVertIndex < CVerts.Count; 
-						CVertIndex++)
-				{
-					v2 LocalP = CVerts.Verts[CVertIndex].XY;
-
-					b32 InsideThisPolygon = true;
-					f32 BestLocalSquareDistanceToWall = BestSquareDistanceToWall;
-					v2 LocalN0 = {};
-					v2 LocalN1 = {};
-
-					for(u32 EVertIndex = 0; 
-							EVertIndex < EVerts.Count; 
-							EVertIndex++)
-					{
-						v2 LocalLocalN1 = EVerts.Verts[EVertIndex].XY;
-						v2 LocalLocalN0 = EVerts.Verts[(EVertIndex+1) % EVerts.Count].XY;
-
-						f32 Det = Determinant(LocalLocalN1-LocalLocalN0, LocalP-LocalLocalN0);
-						if(Det <= 0.0f) 
-						{ 
-							InsideThisPolygon = false; 
-							break;
-						}
-
-						f32 SquareDistanceToWall = 
-							SquareDistancePointToLineSegment(LocalLocalN0, LocalLocalN1, LocalP);
-						if(SquareDistanceToWall < BestLocalSquareDistanceToWall)
-						{
-							BestLocalSquareDistanceToWall = SquareDistanceToWall;
-							LocalN0 = LocalLocalN0;
-							LocalN1 = LocalLocalN1;
-						}
-					}
-
-					if(InsideThisPolygon)
-					{
-						Inside = true;
-					}
-					if(BestLocalSquareDistanceToWall < BestSquareDistanceToWall)
-					{
-						BestSquareDistanceToWall = BestLocalSquareDistanceToWall;
-						N0 = LocalN0;
-						N1 = LocalN1;
-						P = LocalP;
-					}
-				}
-#endif
 
 				if(Inside &&
 					 Entity.Low->Collides && 
 					 OtherEntity.Low->Collides)
 				{
 					Assert(RelevantNodeIndex >= 0);
-					//TODO(bjorn): Do the entity pos proj to the minkowski line and solve
-					//for t. Then use t on the original vector pair to get the actual
-					//impact point. Maybe move 50% of penetration along opposite normal
-					//to get the point inbetween the two objects.
+
 					f32 Penetration;
 					v2 n, t, ImpactPoint;
 					{
@@ -1705,13 +1616,19 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					}
 
 					//NOTE(bjorn): Normal always points away from other entity.
-					v2 AdP = Entity->High->dP.XY:
-					v2 BdP = OtherEntity->High->dP.XY:
+					v2 AP = Entity.High->P.XY;
+					v2 BP = OtherEntity.High->P.XY;
+					v2 AdP = Entity.High->dP.XY;
+					v2 BdP = OtherEntity.High->dP.XY;
 					v2 ABdP = AdP - BdP;
 					f32 ndotAB = Dot(n, ABdP);
+					v2 rIA = ImpactPoint - AP;
+					v2 rIB = ImpactPoint - BP;
 
-					f32 AInvMass = GetInverseMass(Entity->High->Mass);
-					f32 BInvMass = GetInverseMass(OtherEntity->High->Mass);
+					f32 AInvMass = GetInverseOrZero(Entity.Low->Mass);
+					f32 BInvMass = GetInverseOrZero(OtherEntity.Low->Mass);
+					f32 AInvMoI  = AInvMass ? 0.5f:0.0f;//GetInverseOrZero(Entity->High->MoI);
+					f32 BInvMoI  = BInvMass ? 0.5f:0.0f;//GetInverseOrZero(OtherEntity->High->MoI);
 
 					if(ndotAB >= 0)
 					{
@@ -1720,82 +1637,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					}
 					else
 					{
-						Impulse = ;
-						Entity->High->dP.XY      +=  n * (Impulse * AInvMass);
-						OtherEntity->High->dP.XY += -n * (Impulse * BInvMass);
+						f32 e = 1.0f;
+						f32 Impulse = ((-(1+e) * Dot(ABdP, n)) / 
+													 (Dot(n, n) * (AInvMass + BInvMass) + 
+														Square(Dot(rIA, n))*AInvMoI + Square(Dot(rIB, n))*BInvMoI));
+
+						Entity.High->dP.XY      += n * (Impulse * AInvMass);
+						OtherEntity.High->dP.XY -= n * (Impulse * BInvMass);
+						Entity.High->dA         += Determinant(CCW90M22() * rIA, Impulse * n) * AInvMoI;
+						OtherEntity.High->dA    -= Determinant(CCW90M22() * rIB, Impulse * n) * BInvMoI;
 					}
-#if 0
-					//Assert(Entity.Low->Mass);
-					//Assert(CollisionEntity.Low->Mass);
-
-					f32 nEdP = Dot(n, Entity.High->dP.XY);
-					f32 nCdP = Dot(n, CollisionEntity.High->dP.XY);
-					f32 tEdP = Dot(t, Entity.High->dP.XY);
-					f32 tCdP = Dot(t, CollisionEntity.High->dP.XY);
-
-					f32 Em =          Entity.Low->Mass;
-					f32 Cm = CollisionEntity.Low->Mass;
-
-					b32 Interacted = ((nEdP <= 0 && nCdP >= 0) || 
-														(nEdP <= 0 && (nEdP < nCdP)) || 
-														(nCdP >= 0 && (nCdP > nEdP)));
-
-					if(Interacted)
-					{
-						//TODO IMPORTANT (bjorn): Do rotation with unit circle vector
-						//offset approximations and the closest opposing line-segments of the
-						//objects colliding.
-						f32 ECnMomDiff = Absolute(nEdP*Em - nCdP*Cm);
-
-						//TODO(bjorn): This didn't work. What is the real problem I am
-						//trying to solve? Never show an unresolved collision?
-						//12/2/2019
-						//TODO(bjorn): Incorporate the per entity groundfriction into
-						//how much of the impact velocity gets through.
-						f32 EImp = ECnMomDiff / Em;
-						f32 CImp = ECnMomDiff / Cm;
-
-						//TODO(bjorn): Ditch displacement for negative gravity and proper impulse handling.
-						f32 EDis = (BestDistanceToWall * (Em / (Em+Cm)));
-						f32 CDis = (BestDistanceToWall * (Cm / (Em+Cm)));
-
-						f32 ECtMomDiff = Absolute(tEdP*Em - tCdP*Cm);
-						f32 ETan = ECtMomDiff / Em;
-						f32 CTan = ECtMomDiff / Cm;
-
-						//TODO(bjorn): Move the amount of momentum needed out to the entity struct.
-						if(Em > Cm)
-						{
-							if(ECnMomDiff < 1.0f*(Em))
-							{
-								EImp = 0;
-								ETan = 0;
-								EDis = 0;
-								CDis = BestDistanceToWall;
-							}
-						}
-						else
-						{
-							if(ECnMomDiff < 1.0f*(Cm))
-							{
-								CImp = 0;
-								CTan = 0;
-								EDis = BestDistanceToWall;
-								CDis = 0;
-							}
-						}
-
-						Entity.High->P.XY          += n * EDis;
-						CollisionEntity.High->P.XY -= n * CDis;
-
-						Entity.High->dP.XY          += n * EImp;
-						CollisionEntity.High->dP.XY -= n * CImp;
-
-						//TODO(bjorn): Friction. Tangent to the normal.
-						Entity.High->dR          += ETan / Lenght(P -				  Entity.High->P);
-						CollisionEntity.High->dR -= CTan / Lenght(P - CollisionEntity.High->P);
-					}
-#endif
 				} 
 
 				if(Step == 0)
@@ -2102,12 +1953,20 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			vertices Verts = GetEntityVertices(&Entity);
 			for(u32 VertIndex = 0; VertIndex < Verts.Count; VertIndex++)
 			{
-				v3 V0 = Verts.Verts[VertIndex];
-				v3 V1 = Verts.Verts[(VertIndex+1) % Verts.Count];
+				v2 V0 = Verts.Verts[VertIndex].XY;
+				v2 V1 = Verts.Verts[(VertIndex+1) % Verts.Count].XY;
 				DrawLine(Buffer, 
-								 ScreenCenter + GameSpaceToScreenSpace * V0.XY, 
-								 ScreenCenter + GameSpaceToScreenSpace * V1.XY, 
+								 ScreenCenter + GameSpaceToScreenSpace * V0, 
+								 ScreenCenter + GameSpaceToScreenSpace * V1, 
 								 {0, 0, 1});
+
+				v2 WallNormal = Normalize(CCW90M22() * (V1 - V0));
+				v3 NormalColor = {1, 0, 1};
+
+				DrawLine(Buffer, 
+								 ScreenCenter + GameSpaceToScreenSpace * (V0 + V1) * 0.5f, 
+								 ScreenCenter + GameSpaceToScreenSpace * ((V0 + V1) * 0.5f + WallNormal * 0.2f), 
+								 NormalColor);
 			}
 		}
 

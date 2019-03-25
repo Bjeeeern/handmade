@@ -102,11 +102,13 @@ MoveEntity(memory_arena* WorldArena, world_map* WorldMap, world_map_position* Ca
 		ddP = Entity->High->MovingDirection * Entity->Low->MoveSpec.Speed;
 	}
 
-	dP.XY -= Entity->Low->MoveSpec.Drag * dP.XY * dT;
+	ddP.XY -= Entity->Low->MoveSpec.Drag * dP.XY;
+
+	ddA -= Entity->Low->MoveSpec.Drag * 0.1f * dA;
+
 	P += 0.5f * ddP * Square(dT) + dP * dT;
 	dP += ddP * dT;
 
-	dA -= Entity->Low->MoveSpec.Drag * 0.1f * dA * dT;
 	A += 0.5f * ddA * Square(dT) + dA * dT;
 	dA += ddA * dT;
 	if(A > tau32)
@@ -1512,44 +1514,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			Step < Steps;
 			Step++)
 	{
+		//
+		// NOTE(bjorn): Move all entities.
+		//
 		for(LoopOverHighEntities)
 		{
-			//
-			// NOTE(bjorn): Move all entities.
-			//
-			{
-				v3 OldP = {};
 
-				if(Entity.Low->Type == EntityType_Sword)
-				{
-					OldP = Entity.High->P;
-				}
-
-				MoveEntity(WorldArena, WorldMap, &GameState->CameraP, &Entity, dT);
-
-				if(Entity.Low->Type == EntityType_Sword)
-				{
-					v3 NewP = Entity.High->P;
-					
-					Entity.Low->DistanceRemaining -= Lenght(NewP - OldP);
-					if(Entity.Low->DistanceRemaining <= 0)
-					{
-						entity* Sword = &Entity;
-						ChangeEntityWorldLocation(WorldArena, WorldMap, Sword, 0);
-						MapEntityOutFromHigh(Entities, Sword->LowIndex, Sword->Low->WorldP);
-					}
-				}
-
-				if(Entity.Low->Type == EntityType_Familiar)
-				{
-					Entity.High->BestDistanceToPlayerSquared = Square(6.0f);
-					Entity.High->MovingDirection = {};
-				}
-			}
-
-			//
-			// NOTE(bjorn): Collision check all.
-			//
 			//TODO(bjorn):
 			// Add negative gravity for penetration if relative velocity is >= 0.
 			// Get relevant contact point.
@@ -1632,20 +1602,30 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 					if(ndotAB >= 0)
 					{
-						//TODO(bjorn): Max(Negative gravity impulse, ABdP) in normal
-						//direction relative penetration.
 					}
 					else
 					{
-						f32 e = 1.0f;
+						f32 e = 0.0f;
 						f32 Impulse = ((-(1+e) * Dot(ABdP, n)) / 
 													 (Dot(n, n) * (AInvMass + BInvMass) + 
-														Square(Dot(rIA, n))*AInvMoI + Square(Dot(rIB, n))*BInvMoI));
+														// Square(Dot(rIA, n))*AInvMoI + 
+														// Square(Dot(rIB, n))*BInvMoI
+														0
+													 )
+													);
+						f32 InverseGravity = Penetration * 60.0f;
+						Impulse = Max(Impulse, InverseGravity);
 
 						Entity.High->dP.XY      += n * (Impulse * AInvMass);
 						OtherEntity.High->dP.XY -= n * (Impulse * BInvMass);
-						Entity.High->dA         += Determinant(CCW90M22() * rIA, Impulse * n) * AInvMoI;
-						OtherEntity.High->dA    -= Determinant(CCW90M22() * rIB, Impulse * n) * BInvMoI;
+						//Entity.High->dA         += Determinant(CCW90M22() * rIA, Impulse * n) * AInvMoI;
+						//OtherEntity.High->dA    -= Determinant(CCW90M22() * rIB, Impulse * n) * BInvMoI;
+					}
+					{
+						//TODO(bjorn): Max(Negative gravity impulse, ABdP) in normal
+						//direction relative penetration.
+						Entity.High->dP.XY      += n * (Impulse * AInvMass);
+						OtherEntity.High->dP.XY -= n * (Impulse * BInvMass);
 					}
 				} 
 
@@ -1666,7 +1646,37 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					}
 				}
 			}
+
 			Entity.High->CollisionDirtyBit = true;
+			{
+				v3 OldP = {};
+
+				if(Entity.Low->Type == EntityType_Sword)
+				{
+					OldP = Entity.High->P;
+				}
+
+				MoveEntity(WorldArena, WorldMap, &GameState->CameraP, &Entity, dT);
+
+				if(Entity.Low->Type == EntityType_Sword)
+				{
+					v3 NewP = Entity.High->P;
+					
+					Entity.Low->DistanceRemaining -= Lenght(NewP - OldP);
+					if(Entity.Low->DistanceRemaining <= 0)
+					{
+						entity* Sword = &Entity;
+						ChangeEntityWorldLocation(WorldArena, WorldMap, Sword, 0);
+						MapEntityOutFromHigh(Entities, Sword->LowIndex, Sword->Low->WorldP);
+					}
+				}
+
+				if(Entity.Low->Type == EntityType_Familiar)
+				{
+					Entity.High->BestDistanceToPlayerSquared = Square(6.0f);
+					Entity.High->MovingDirection = {};
+				}
+			}
 		}
 	}
 

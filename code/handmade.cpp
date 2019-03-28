@@ -75,12 +75,12 @@ MoveEntity(memory_arena* WorldArena, world_map* WorldMap, world_map_position* Ca
 {
 	v3 P = Entity->High->P;
 	v3 dP = Entity->High->dP;
-	v3 ddP = Entity->High->ddP;
+	v3 ddP = {};
 
 	v3 R = Entity->Low->R;
 	f32 A = Entity->High->A;
 	f32 dA = Entity->High->dA;
-	f32 ddA = Entity->High->ddA;
+	f32 ddA = 0;
 
 	//TODO(bjorn): Re-add the car.
 	if(Entity->Low->MoveSpec.EnforceVerticalGravity)
@@ -103,8 +103,7 @@ MoveEntity(memory_arena* WorldArena, world_map* WorldMap, world_map_position* Ca
 	}
 
 	ddP.XY -= Entity->Low->MoveSpec.Drag * dP.XY;
-
-	ddA -= Entity->Low->MoveSpec.Drag * 0.1f * dA;
+	ddA -= Entity->Low->MoveSpec.Drag * 0.7f * dA;
 
 	P += 0.5f * ddP * Square(dT) + dP * dT;
 	dP += ddP * dT;
@@ -117,7 +116,7 @@ MoveEntity(memory_arena* WorldArena, world_map* WorldMap, world_map_position* Ca
 	}
 	else if(A < 0)
 	{
-		A += RoofF32ToS32(A / tau32) * tau32;
+		A += RoofF32ToS32(Absolute(A) / tau32) * tau32;
 	}
 	R.XY = CCWM22(A) * DefaultEntityOrientation().XY;
 	R = Normalize(R);
@@ -1592,41 +1591,45 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					v2 BdP = OtherEntity.High->dP.XY;
 					v2 ABdP = AdP - BdP;
 					f32 ndotAB = Dot(n, ABdP);
-					v2 rIA = ImpactPoint - AP;
-					v2 rIB = ImpactPoint - BP;
+					v2 AIt = CW90M22() * (AP - ImpactPoint);
+					v2 BIt = CW90M22() * (BP - ImpactPoint);
 
 					f32 AInvMass = GetInverseOrZero(Entity.Low->Mass);
 					f32 BInvMass = GetInverseOrZero(OtherEntity.Low->Mass);
-					f32 AInvMoI  = AInvMass ? 0.5f:0.0f;//GetInverseOrZero(Entity->High->MoI);
-					f32 BInvMoI  = BInvMass ? 0.5f:0.0f;//GetInverseOrZero(OtherEntity->High->MoI);
+					//TODO(bjorn): Automize inertia calculation.
+					f32 AInvMoI  = AInvMass ? 0.08f:0.0f;//GetInverseOrZero(Entity->High->MoI);
+					f32 BInvMoI  = BInvMass ? 0.08f:0.0f;//GetInverseOrZero(OtherEntity->High->MoI);
 
-					if(ndotAB >= 0)
-					{
-					}
-					else
+					f32 Impulse = 0;
+					f32 InverseGravity = Penetration * 60.0f;
+
+					if(ndotAB < 0)
 					{
 						f32 e = 0.0f;
-						f32 Impulse = ((-(1+e) * Dot(ABdP, n)) / 
-													 (Dot(n, n) * (AInvMass + BInvMass) + 
-														// Square(Dot(rIA, n))*AInvMoI + 
-														// Square(Dot(rIB, n))*BInvMoI
-														0
-													 )
-													);
-						f32 InverseGravity = Penetration * 60.0f;
-						Impulse = Max(Impulse, InverseGravity);
+						f32 j = ((-(1+e) * Dot(ABdP, n)) / 
+										 (/*Dot(n, n) * */(AInvMass + BInvMass) + 
+											Square(Dot(AIt, n))*AInvMoI + 
+											Square(Dot(BIt, n))*BInvMoI
+										 )
+										);
+						Impulse = Max(j, InverseGravity);
 
-						Entity.High->dP.XY      += n * (Impulse * AInvMass);
-						OtherEntity.High->dP.XY -= n * (Impulse * BInvMass);
-						//Entity.High->dA         += Determinant(CCW90M22() * rIA, Impulse * n) * AInvMoI;
-						//OtherEntity.High->dA    -= Determinant(CCW90M22() * rIB, Impulse * n) * BInvMoI;
+						Entity.High->dA         += Dot(AIt, Impulse * n) * AInvMoI;
+						OtherEntity.High->dA    -= Dot(BIt, Impulse * n) * BInvMoI;
 					}
-					{
-						//TODO(bjorn): Max(Negative gravity impulse, ABdP) in normal
-						//direction relative penetration.
-						Entity.High->dP.XY      += n * (Impulse * AInvMass);
-						OtherEntity.High->dP.XY -= n * (Impulse * BInvMass);
-					}
+					//STUDY TODO (bjorn): Excerpt from []
+					//The general sequence of a simulation step using impulse-based
+					//dynamics is somewhat different from that of force-based engines:
+					//
+					//1 Compute all external forces.
+					//2 Apply the forces and determine the resulting velocities, using the
+					//  techniques from Part I.
+					//3 Calculate the constraint velocities based on the behavior functions.
+					//4 Apply the constraint velocities and simulate the resulting motion.
+
+					//TODO(bjorn): Account for rotational momentum. 
+					Entity.High->dP.XY      += (Impulse * AInvMass) * n;
+					OtherEntity.High->dP.XY -= (Impulse * BInvMass) * n;
 				} 
 
 				if(Step == 0)

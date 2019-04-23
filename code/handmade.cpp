@@ -14,7 +14,18 @@
 // car engine that is settable by mouse click and drag
 // collide with rocks
 // ai cars
+
+//STUDY TODO (bjorn): Excerpt from 
+// [https://www.toptal.com/game/video-game-physics-part-iii-constrained-rigid-body-simulation]
 //
+// The general sequence of a simulation step using impulse-based
+// dynamics is somewhat different from that of force-based engines:
+//
+//1 Compute all external forces.
+//2 Apply the forces and determine the resulting velocities, using the
+//  techniques from Part I.
+//3 Calculate the constraint velocities based on the behavior functions.
+//4 Apply the constraint velocities and simulate the resulting motion.
 
 struct hero_bitmaps
 {
@@ -1587,12 +1598,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					//NOTE(bjorn): Normal always points away from other entity.
 					v2 AP = Entity.High->P.XY;
 					v2 BP = OtherEntity.High->P.XY;
-					v2 AdP = Entity.High->dP.XY;
-					v2 BdP = OtherEntity.High->dP.XY;
-					v2 ABdP = AdP - BdP;
-					f32 ndotAB = Dot(n, ABdP);
 					v2 AIt = CW90M22() * (AP - ImpactPoint);
 					v2 BIt = CW90M22() * (BP - ImpactPoint);
+					v2 AdP = Entity.High->dP.XY      + Entity.High->dA      * AIt;
+					v2 BdP = OtherEntity.High->dP.XY + OtherEntity.High->dA * BIt;
+					v2 ABdP = AdP - BdP;
+					f32 ndotAB = Dot(n, ABdP);
 
 					f32 AInvMass = GetInverseOrZero(Entity.Low->Mass);
 					f32 BInvMass = GetInverseOrZero(OtherEntity.Low->Mass);
@@ -1601,35 +1612,31 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					f32 BInvMoI  = BInvMass ? 0.08f:0.0f;//GetInverseOrZero(OtherEntity->High->MoI);
 
 					f32 Impulse = 0;
-					f32 InverseGravity = Penetration * 60.0f;
+					//f32 InverseGravity = Penetration * 60.0f;
+					f32 j = 0;
 
 					if(ndotAB < 0)
 					{
 						f32 e = 0.0f;
-						f32 j = ((-(1+e) * Dot(ABdP, n)) / 
-										 (/*Dot(n, n) * */(AInvMass + BInvMass) + 
-											Square(Dot(AIt, n))*AInvMoI + 
-											Square(Dot(BIt, n))*BInvMoI
-										 )
-										);
-						Impulse = Max(j, InverseGravity);
+						j = ((-(1+e) * Dot(ABdP, n)) / 
+								 (/*Dot(n, n) * */(AInvMass + BInvMass) + 
+									Square(Dot(AIt, n))*AInvMoI + 
+									Square(Dot(BIt, n))*BInvMoI
+								 )
+								);
 
-						Entity.High->dA         += Dot(AIt, Impulse * n) * AInvMoI;
-						OtherEntity.High->dA    -= Dot(BIt, Impulse * n) * BInvMoI;
+						Impulse = j;
 					}
-					//STUDY TODO (bjorn): Excerpt from []
-					//The general sequence of a simulation step using impulse-based
-					//dynamics is somewhat different from that of force-based engines:
-					//
-					//1 Compute all external forces.
-					//2 Apply the forces and determine the resulting velocities, using the
-					//  techniques from Part I.
-					//3 Calculate the constraint velocities based on the behavior functions.
-					//4 Apply the constraint velocities and simulate the resulting motion.
 
-					//TODO(bjorn): Account for rotational momentum. 
+					//Impulse = Max(j, InverseGravity);
+
 					Entity.High->dP.XY      += (Impulse * AInvMass) * n;
 					OtherEntity.High->dP.XY -= (Impulse * BInvMass) * n;
+					Entity.High->dA         += Dot(AIt, Impulse * n) * AInvMoI;
+					OtherEntity.High->dA    -= Dot(BIt, Impulse * n) * BInvMoI;
+
+					Entity.High->P.XY       += n * Penetration * 0.5f;
+					OtherEntity.High->P.XY  -= n * Penetration * 0.5f;
 				} 
 
 				if(Step == 0)
@@ -1664,7 +1671,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				if(Entity.Low->Type == EntityType_Sword)
 				{
 					v3 NewP = Entity.High->P;
-					
+
 					Entity.Low->DistanceRemaining -= Lenght(NewP - OldP);
 					if(Entity.Low->DistanceRemaining <= 0)
 					{
@@ -1705,50 +1712,50 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		{
 			DeltaPSign = Sign(Dot(PrelDeltaP, LeftFrontWheel.High->R));
 			NewFrontP = OldFrontP + LeftFrontWheel.High->R * Lenght(PrelDeltaP) * DeltaPSign;
-				}
-				else if(RightFrontWheel.High)
-				{
-					DeltaPSign = Sign(Dot(PrelDeltaP, RightFrontWheel.High->R));
-					NewFrontP = OldFrontP + RightFrontWheel.High->R * Lenght(PrelDeltaP) * DeltaPSign;
-				}
-				else
-				{
-					DeltaPSign = Sign(Dot(PrelDeltaP, Vehicle->High->R));
-					NewFrontP = OldFrontP + Vehicle->High->R * Lenght(PrelDeltaP) * DeltaPSign;
-				}
+		}
+		else if(RightFrontWheel.High)
+		{
+			DeltaPSign = Sign(Dot(PrelDeltaP, RightFrontWheel.High->R));
+			NewFrontP = OldFrontP + RightFrontWheel.High->R * Lenght(PrelDeltaP) * DeltaPSign;
+		}
+		else
+		{
+			DeltaPSign = Sign(Dot(PrelDeltaP, Vehicle->High->R));
+			NewFrontP = OldFrontP + Vehicle->High->R * Lenght(PrelDeltaP) * DeltaPSign;
+		}
 
-				v3 OldP = Vehicle->High->P;
-				NewR = Normalize(NewFrontP - OldP);
-				v3 NewP = NewFrontP - NewR * Distance(OldP, OldFrontP);
+		v3 OldP = Vehicle->High->P;
+		NewR = Normalize(NewFrontP - OldP);
+		v3 NewP = NewFrontP - NewR * Distance(OldP, OldFrontP);
 
-				P = NewP.XY;
-				DeltaP = (NewP - OldP).XY;
-			}
-			else
+		P = NewP.XY;
+		DeltaP = (NewP - OldP).XY;
+	}
+	else
 #endif
 #if 0
-			if(Entity.Low->Type == EntityType_CarFrame)
+		if(Entity.Low->Type == EntityType_CarFrame)
+		{
+			v3 NewP = P;
+			entity* Vehicle = &Entity;
+			Vehicle->High->ddP = (NewR * Lenght(Vehicle->High->ddP) * 
+														Sign(Dot(Vehicle->High->ddP, Vehicle->High->R)));
+
+			if(Lenght(Vehicle->High->ddP) < 0.1f && Lenght(Vehicle->High->dP) < 0.4f)
 			{
-				v3 NewP = P;
-				entity* Vehicle = &Entity;
-				Vehicle->High->ddP = (NewR * Lenght(Vehicle->High->ddP) * 
-															Sign(Dot(Vehicle->High->ddP, Vehicle->High->R)));
-
-				if(Lenght(Vehicle->High->ddP) < 0.1f && Lenght(Vehicle->High->dP) < 0.4f)
-				{
-					Vehicle->High->dP = {};
-				}
-
-				UpdateCarPos(WorldArena, WorldMap, Entities, Vehicle, &GameState->CameraP, NewP.XY, NewR.XY);
+				Vehicle->High->dP = {};
 			}
-			else
+
+			UpdateCarPos(WorldArena, WorldMap, Entities, Vehicle, &GameState->CameraP, NewP.XY, NewR.XY);
+		}
+		else
 #endif
 
 
-	//
-	// NOTE(bjorn): Update camera
-	//
-	entity CameraTarget = GetEntityByLowIndex(Entities, GameState->CameraFollowingPlayerIndex);
+			//
+			// NOTE(bjorn): Update camera
+			//
+			entity CameraTarget = GetEntityByLowIndex(Entities, GameState->CameraFollowingPlayerIndex);
 	if(CameraTarget.Low)
 	{
 #if 0

@@ -46,33 +46,6 @@ enum entity_type
 	EntityType_Sword,
 };
 
-struct high_entity
-{
-	u32 LowIndex;
-
-	f32 A;
-	f32 dA;
-	f32 ddA;
-	v3 P;
-	v3 dP;
-	v3 ddP;
-
-	//v3 Displacement;
-	b32 CollisionDirtyBit;
-
-	u32 FacingDirection;
-
-	//NOTE(bjorn): Player
-	v3 MovingDirection;
-
-	//NOTE(bjorn): Familiar
-	f32 BestDistanceToPlayerSquared;
-
-	//NOTE(bjorn): CarFrame
-	//TODO(bjorn): Use this to move out the turning code to the cars update loop.
-	b32 AutoPilot;
-};
-
 #define HIT_POINT_SUB_COUNT 4
 struct hit_point
 {
@@ -84,10 +57,14 @@ struct hit_point
 struct low_entity
 {
 	entity_type Type;
-	u32 HighIndex;
+
+	f32 A;
+	f32 dA;
+	v3 dP;
 
 	v3 R;
 	world_map_position WorldP;
+
 	v3 Dim;
 
 	b32 Collides;
@@ -96,6 +73,8 @@ struct low_entity
 	f32 Mass;
 	move_spec MoveSpec;
 	f32 GroundFriction;
+
+	u32 FacingDirection;
 
 	//TODO(casey): Should hitpoints themselves be entities?
 	u32 HitPointMax;
@@ -118,6 +97,16 @@ struct low_entity
 
 	//NOTE(bjorn): Sword
 	f32 DistanceRemaining;
+
+	//NOTE(bjorn): Player, Familiar
+	v3 MovingDirection;
+
+	//NOTE(bjorn): Familiar
+	f32 BestDistanceToPlayerSquared;
+
+	//NOTE(bjorn): CarFrame
+	//TODO(bjorn): Use this to move out the turning code to the cars update loop.
+	b32 AutoPilot;
 };
 
 struct entity
@@ -131,7 +120,6 @@ struct entities
 {
 	u32 HighEntityCount;
 	u32 LowEntityCount;
-	high_entity HighEntities[1024];
 	low_entity LowEntities[100000];
 };
 

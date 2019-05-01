@@ -93,24 +93,24 @@ MoveEntity(memory_arena* WorldArena, world_map* WorldMap, world_map_position* Ca
 	f32 dA = Entity->High->dA;
 	f32 ddA = 0;
 
-	//TODO(bjorn): Re-add the car.
 	if(Entity->Low->MoveSpec.EnforceVerticalGravity)
 	{
 		if(Entity->High->MovingDirection.Z > 0 &&
 			 P.Z == 0)
 		{
-			dP.Z = 18.0f * 0.5f;
+			dP.Z = 18.0f;
 		}
 		if(P.Z > 0)
 		{
 			//TODO(bjorn): Why do i need the gravity to be so heavy? Because of upscaling?
-			ddP.Z = -9.82f * 10.0f;
+			ddP.Z = -9.82f * 7.0f;
 		}
 	}
+
 	if(Entity->Low->MoveSpec.EnforceHorizontalMovement)
 	{
 		//TODO(casey): ODE here!
-		ddP = Entity->High->MovingDirection * Entity->Low->MoveSpec.Speed;
+		ddP.XY = Entity->High->MovingDirection.XY * Entity->Low->MoveSpec.Speed;
 	}
 
 	ddP.XY -= Entity->Low->MoveSpec.Drag * dP.XY;
@@ -1484,7 +1484,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							if(Clicked(Keyboard, N))
 							{
 								entity Sword = GetEntityByLowIndex(Entities, ControlledEntity.Low->Sword);
-								if(Sword.Low && !IsValid(Sword.Low->WorldP) && LenghtSquared(InputDirection))
+								if(Sword.Low && 
+									 !IsValid(Sword.Low->WorldP) && 
+									 LenghtSquared(InputDirection))
 								{
 									Sword.Low->R = InputDirection;
 									ChangeEntityWorldLocationRelativeOther(&GameState->WorldArena, 
@@ -1499,7 +1501,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 									if(Sword.High)
 									{
 										Sword.High->dP = Sword.Low->R * 8.0f;
-										Sword.Low->DistanceRemaining = 3.0f;
+										Sword.Low->DistanceRemaining = 20.0f;
 									}
 								}
 							}

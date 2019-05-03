@@ -224,8 +224,8 @@ AreInSameChunk(world_map* WorldMap, world_map_position* A, world_map_position* B
 //TODO(bjorn): Should hashmap chunks that contains no blocks in the hashmap be
 //recycled like blocks are?
 inline void
-UpdateEntityChunkLocation(memory_arena* Arena, world_map* WorldMap, u32 LowEntityIndex,
-													world_map_position* OldP, world_map_position* NewP)
+UpdateStoredEntityChunkLocation(memory_arena* Arena, world_map* WorldMap, u32 StoredEntityIndex,
+																world_map_position* OldP, world_map_position* NewP)
 {
 	Assert(!OldP || IsValid(*OldP));
 	Assert(!NewP || IsValid(*NewP));
@@ -251,7 +251,7 @@ UpdateEntityChunkLocation(memory_arena* Arena, world_map* WorldMap, u32 LowEntit
 							Index < Block->EntityIndexCount;
 							Index++)
 					{
-						if(Block->EntityIndexes[Index] == LowEntityIndex)
+						if(Block->EntityIndexes[Index] == StoredEntityIndex)
 						{
 							Assert(FirstBlock->EntityIndexCount > 0);
 
@@ -306,7 +306,7 @@ IndexInOldChunkFound:;
 				Block = NewChunk->Block;
 			}
 		}
-		Block->EntityIndexes[Block->EntityIndexCount++] = LowEntityIndex;
+		Block->EntityIndexes[Block->EntityIndexCount++] = StoredEntityIndex;
 	}
 }
 

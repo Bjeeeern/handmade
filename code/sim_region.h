@@ -1,5 +1,9 @@
 #if !defined(SIM_REGION_H)
 
+#include "types_and_defines.h"
+#include "world_map.h"
+#include "stored_entity"
+
 struct sim_entity
 {
 	u32 StorageIndex;
@@ -15,7 +19,7 @@ struct sim_entity
 struct sim_region
 {
 	world_map* WorldMap;
-	world_map_position* Origin; 
+	world_map_position Origin; 
 	rectangle3 Bounds;
 
 	u32 EntityMaxCount;
@@ -41,13 +45,14 @@ AddSimEntity(sim_region* SimRegion)
 	return Entity;
 }
 
-internal_function sim_entity*
+internal_function void
 AddSimEntity(sim_region* SimRegion, stored_entity* Source, v3* SimP)
 {
 	sim_entity* Dest = AddSimEntity(SimRegion);
 
 	if(Dest)
 	{
+		Dest->StoredIndex = Source->StoredIndex;
 		if(SimP)
 		{
 			Dest->P = *SimP;
@@ -57,17 +62,21 @@ AddSimEntity(sim_region* SimRegion, stored_entity* Source, v3* SimP)
 			Dest->P = GetWorldMapPosDifference(SimRegion->WorldMap, Source->WorldP, SimRegion->Origin);
 		}
 	}
-
-	return Dest;
 }
 
-internal_function sim_region
-BeginSim(world_map* WorldMap, world_map_position* RegionCenter, rectangle3 RegionBounds)
+internal_function sim_region*
+BeginSim(entities* Entities, memory_arena* SimArena, world_map* WorldMap, 
+				 world_map_position* RegionCenter, rectangle3 RegionBounds)
 {        
-	sim_region Result = {};
-	Result.WorldMap = WorldMap;
-	Result.Origin = RegionCenter;
-	Result.Bounds = RegionBounds;
+	sim_region* Result = PushStruct(SimArena, sim_region);
+
+	Result->WorldMap = WorldMap;
+	Result->Origin = RegionCenter;
+	Result->Bounds = RegionBounds;
+
+	Result->EntityMaxCount = 4096;
+	Result->EntityCount = 0;
+	Result->Entities = PushArray(SimArena, Result->EntityMaxCount, sim_entity);
 
 	world_map_position MinWorldP = OffsetWorldPos(WorldMap, *RegionCenter, RegionBounds.Min);
 	world_map_position MaxWorldP = OffsetWorldPos(WorldMap, *RegionCenter, RegionBounds.Max);
@@ -96,12 +105,13 @@ BeginSim(world_map* WorldMap, world_map_position* RegionCenter, rectangle3 Regio
 								Index < Block->EntityIndexCount;
 								Index++)
 						{
-							stored_entity* Entity = GetEntityByLowIndex(Entities, Block->EntityIndexes[Index]).Low;
-							Assert(Entity);
+							stored_entity* StoredEntity = GetStoredEntityByIndex(Entities, 
+																																	 Block->EntityIndexes[Index]);
+							Assert(Entity.Stored);
 
-							v3 SimPos = GetWorldMapPosDifference(SimRegion->WorldMap, 
+							v3 SimPos = GetWorldMapPosDifference(SimRegion->WorldMap->StoredEntities, 
 																									 Entity->WorldP, 
-																									 SimRegion->Origin);
+																									 RegionCenter);
 							if(IsInRectangle(RegionBounds, SimPos))
 							{
 								//TODO(bjorn): Add if entity is to be updated or not.
@@ -116,14 +126,19 @@ BeginSim(world_map* WorldMap, world_map_position* RegionCenter, rectangle3 Regio
 }
 
 internal_function void
-EndSim(sim_region* SimRegion)
+EndSim(entities* Entities, memory_arena* WorldArena, sim_region* SimRegion)
 {
-	sim_entity* Entity = SimRegion->Entities;
+	sim_entity* SimEntity = SimRegion->Entities;
 	for(u32 EntityIndex = 0;
 			EntityIndex < SimRegion->EntityCount;
-			EntityIndex++, Entity++)
+			EntityIndex++, SimEntity++)
 	{
 		//TODO(bjorn): Store entity.
+		stored_entity* StoredEntity = GetStoredEntityByIndex(Entities, SimEntity->StoredIndex);
+		Assert(StoredEntity);
+
+		ChangeStoredEntityWorldLocationRelativeOther(WorldArena, SimRegion->WorldMap, 
+																					 StoredEntity, SimRegion->Origin, SimEntity->P);
 	}
 }
 

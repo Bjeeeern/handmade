@@ -5,6 +5,7 @@
 #include "random.h"
 #include "renderer.h"
 #include "resource.h"
+#include "sim_region.h"
 #include "entity.h"
 
 // QUICK TODO

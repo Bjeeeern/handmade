@@ -2,7 +2,7 @@
 
 #include "types_and_defines.h"
 #include "world_map.h"
-#include "stored_entity"
+#include "stored_entity.h"
 
 struct move_spec
 {
@@ -48,6 +48,9 @@ struct hit_point
 	u8 Flags;
 	u8 FilledAmount;
 };
+
+struct sim_entity;
+
 union entity_reference
 {
 	u32 Index;
@@ -119,6 +122,112 @@ struct sim_entity
 	b32 AutoPilot;
 };
 
+struct stored_entity
+{
+	sim_entity Sim;
+};
+
+struct stored_entities
+{
+	u32 EntityCount;
+	stored_entity Entities[100000];
+};
+
+	inline stored_entity*
+GetStoredEntityByIndex(stored_entities* Entities, u32 StorageIndex)
+{
+	stored_entity* Result = 0;
+
+	if(0 < StorageIndex && StorageIndex <= Entities->EntityCount)
+	{
+		Result = Entities->Entities + StorageIndex;
+		Assert(Result->Sim.StorageIndex == StorageIndex);
+	}
+	else
+	{
+		InvalidCodePath;
+	}
+
+	return Result;
+}
+
+inline void
+ChangeStoredEntityWorldLocation(memory_arena* WorldArena, world_map* WorldMap, 
+																stored_entity* Stored, world_map_position* NewP)
+{
+	Assert(Stored); 
+
+	world_map_position* OldP = 0;
+	if(IsValid(Stored->Sim.WorldP))
+	{
+		OldP = &(Stored->Sim.WorldP); 
+	}
+
+	if(NewP) 
+	{ 
+		Assert(IsValid(*NewP)); 
+	}
+
+	UpdateStoredEntityChunkLocation(WorldArena, WorldMap, Stored->Sim.StorageIndex, OldP, NewP);
+
+	if(NewP)
+	{
+		Stored->Sim.WorldP = *NewP;
+	}
+	else
+	{
+		Stored->Sim.WorldP = WorldMapNullPos();
+	}
+}
+
+inline void
+ChangeStoredEntityWorldLocationRelativeOther(memory_arena* Arena, world_map* WorldMap, 
+																						 stored_entity* Stored, world_map_position WorldP, 
+																						 v3 Offset)
+{
+		world_map_position NewWorldP = OffsetWorldPos(WorldMap, WorldP, Offset);
+		ChangeStoredEntityWorldLocation(Arena, WorldMap, Stored, &NewWorldP);
+}
+
+inline v3
+DefaultEntityOrientation()
+{
+	return {0, 1, 0};
+}
+
+	internal_function stored_entity*
+AddEntity(memory_arena* WorldArena, world_map* WorldMap, stored_entities* StoredEntities, 
+					entity_type Type, world_map_position* WorldP = 0)
+{
+	stored_entity* Stored = {};
+
+	StoredEntities->EntityCount++;
+	Assert(StoredEntities->EntityCount < ArrayCount(StoredEntities->Entities));
+	Stored = StoredEntities->Entities + StoredEntities->EntityCount;
+
+	*Stored = {};
+	Stored->Sim.StorageIndex = StoredEntities->EntityCount;
+	Stored->Sim.Type = Type;
+	Stored->Sim.R = DefaultEntityOrientation();
+	Stored->Sim.WorldP = WorldMapNullPos();
+
+	if(WorldP)
+	{
+		Assert(IsValid(*WorldP));
+		Assert(IsCanonical(WorldMap, WorldP->Offset_));
+	}
+
+	ChangeStoredEntityWorldLocation(WorldArena, WorldMap, Stored, WorldP);
+
+	return Stored;
+}
+
+struct sim_entity_hash
+{
+	u32 Index;
+	sim_entity* Ptr;
+};
+
 struct sim_region
 {
 	world_map* WorldMap;
@@ -128,30 +237,72 @@ struct sim_region
 	u32 EntityMaxCount;
 	u32 EntityCount;
 	sim_entity* Entities;
+
+	//TODO Is a hash here really the right way to go?
+	//NOTE Must be a power of two.
+	sim_entity_hash Hash[4096];
 };
 
-internal_function sim_entity* 
-GetSimEntityFromIndex(sim_region* SimRegion, u32 StorageIndex)
+internal_function sim_entity_hash* 
+GetSimEntityHashSlotFromStorageIndex(sim_region* SimRegion, u32 StorageIndex)
 {
-}
+	Assert(StorageIndex);
 
-internal_function void
-MapStorageIndexToEntity(u32 SimRegion, u32 StorageIndex, sim_entity* Entity)
-{
-}
+	sim_entity_hash* Result = 0;
 
-internal_function void
-LoadEntityReference(sim_region* SimRegion, entity_reference* Ref)
-{
-	if(Ref->Index != 0)
+	u32 HashValue = StorageIndex;
+	for(s32 Offset = 0;
+			Offset < ArrayCount(SimRegion->Hash);
+			Offset++)
 	{
-		sim_entity* Ptr = GetSimEntityFromIndex(Ref->Index);
-		Assert(Ptr);
-		Ref->Ptr = Ptr;
+		sim_entity_hash* HashEntry = SimRegion->Hash + ((HashValue + Offset) & 
+																										(ArrayCount(SimRegion->Hash)-1));
+
+		if((HashEntry->Index == StorageIndex) ||
+			 (HashEntry->Index == 0))
+		{
+			Result = HashEntry;
+			break;
+		}
+	}
+
+	return Result;
+}
+
+	internal_function void
+MapStorageIndexToEntity(sim_region* SimRegion, u32 StorageIndex, sim_entity* Entity)
+{
+	sim_entity_hash* Entry = GetSimEntityHashSlotFromStorageIndex(SimRegion, StorageIndex);
+	Assert(Entry->Index == 0 || Entry->Index == StorageIndex);
+
+	Entry->Index = StorageIndex;
+	Entry->Ptr = Entity;
+}
+
+	internal_function sim_entity*
+AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
+						 u32 StorageIndex);
+
+	internal_function void
+LoadEntityReference(stored_entities* StoredEntities, sim_region* SimRegion, entity_reference* Ref)
+{
+	if(Ref->Index)
+	{
+		sim_entity_hash* Entry = GetSimEntityHashSlotFromStorageIndex(SimRegion, Ref->Index);
+		Assert(Entry);
+
+		if(Entry->Ptr == 0)
+		{
+			Entry->Index = Ref->Index;
+			Entry->Ptr = AddSimEntity(StoredEntities, SimRegion, 
+														 GetStoredEntityByIndex(StoredEntities, Ref->Index), Ref->Index);
+		}
+
+		Ref->Ptr = Entry->Ptr;
 	}
 }
 
-internal_function void
+	internal_function void
 StoreEntityReference(entity_reference* Ref)
 {
 	if(Ref->Ptr != 0)
@@ -160,8 +311,9 @@ StoreEntityReference(entity_reference* Ref)
 	}
 }
 
-internal_function sim_entity*
-AddSimEntity(sim_region* SimRegion, stored_entity* Source, u32 StorageIndex)
+	internal_function sim_entity*
+AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
+						 u32 StorageIndex)
 {
 	Assert(StorageIndex);
 	sim_entity* Entity = 0;
@@ -169,15 +321,24 @@ AddSimEntity(sim_region* SimRegion, stored_entity* Source, u32 StorageIndex)
 	if(SimRegion->EntityCount < SimRegion->EntityMaxCount)
 	{
 		Entity = SimRegion->Entities + SimRegion->EntityCount++;
+		MapStorageIndexToEntity(SimRegion, StorageIndex, Entity);
 
 		if(Source)
 		{
 			//TODO Decompression step instead of block copy!!
 			*Entity = Source->Sim;
+			LoadEntityReference(StoredEntities, SimRegion, &Entity->Vehicle);
+			LoadEntityReference(StoredEntities, SimRegion, &Entity->RidingVehicle);
+			LoadEntityReference(StoredEntities, SimRegion, &Entity->Sword);
+			LoadEntityReference(StoredEntities, SimRegion, &Entity->Wheels[0]);
+			LoadEntityReference(StoredEntities, SimRegion, &Entity->Wheels[1]);
+			LoadEntityReference(StoredEntities, SimRegion, &Entity->Wheels[2]);
+			LoadEntityReference(StoredEntities, SimRegion, &Entity->Wheels[3]);
+			LoadEntityReference(StoredEntities, SimRegion, &Entity->DriverSeat);
+			LoadEntityReference(StoredEntities, SimRegion, &Entity->Engine);
 		}
 
 		Entity->StorageIndex = StorageIndex;
-		MapStorageIndexToEntity(SimRegion, StorageIndex, Entity);
 	}
 	else
 	{
@@ -187,10 +348,11 @@ AddSimEntity(sim_region* SimRegion, stored_entity* Source, u32 StorageIndex)
 	return Entity;
 }
 
-internal_function void
-AddSimEntity(sim_region* SimRegion, stored_entity* Source, u32 StoredIndex, v3* SimP)
+	internal_function void
+AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
+						 u32 StoredIndex, v3* SimP)
 {
-	sim_entity* Dest = AddSimEntity(SimRegion, Source, StoredIndex);
+	sim_entity* Dest = AddSimEntity(StoredEntities, SimRegion, Source, StoredIndex);
 
 	if(Dest)
 	{
@@ -200,19 +362,21 @@ AddSimEntity(sim_region* SimRegion, stored_entity* Source, u32 StoredIndex, v3* 
 		}
 		else
 		{
-			Dest->P = GetWorldMapPosDifference(SimRegion->WorldMap, Source->WorldP, SimRegion->Origin);
+			Dest->P = GetWorldMapPosDifference(SimRegion->WorldMap, Source->Sim.WorldP, SimRegion->Origin);
 		}
 	}
 }
 
-internal_function sim_region*
-BeginSim(entities* StoredEntities, memory_arena* SimArena, world_map* WorldMap, 
+	internal_function sim_region*
+BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* WorldMap, 
 				 world_map_position* RegionCenter, rectangle3 RegionBounds)
 {        
+	//TODO IMPORTANT Clear the hash table.
+	//TODO IMPORTANT Active vs inactive entities for the apron.
 	sim_region* Result = PushStruct(SimArena, sim_region);
 
 	Result->WorldMap = WorldMap;
-	Result->Origin = RegionCenter;
+	Result->Origin = *RegionCenter;
 	Result->Bounds = RegionBounds;
 
 	Result->EntityMaxCount = 4096;
@@ -248,13 +412,14 @@ BeginSim(entities* StoredEntities, memory_arena* SimArena, world_map* WorldMap,
 						{
 							u32 StoredIndex = Block->EntityIndexes[Index];
 							stored_entity* StoredEntity = GetStoredEntityByIndex(StoredEntities, StoredIndex);
-							Assert(Entity.Stored);
+							Assert(StoredEntity);
 
-							v3 SimPos = GetWorldMapPosDifference(WorldMap, Entity->WorldP, RegionCenter);
+							v3 SimPos = GetWorldMapPosDifference(WorldMap, StoredEntity->Sim.WorldP,
+																									 *RegionCenter);
 							if(IsInRectangle(RegionBounds, SimPos))
 							{
 								//TODO(bjorn): Add if entity is to be updated or not.
-								AddSimEntity(SimRegion, Entity, StoredIndex, &SimPos);
+								AddSimEntity(StoredEntities, Result, StoredEntity, StoredIndex, &SimPos);
 							}
 						}
 					}
@@ -262,10 +427,12 @@ BeginSim(entities* StoredEntities, memory_arena* SimArena, world_map* WorldMap,
 			}
 		}
 	}
+
+	return Result;
 }
 
 internal_function void
-EndSim(entities* Entities, memory_arena* WorldArena, sim_region* SimRegion)
+EndSim(stored_entities* Entities, memory_arena* WorldArena, sim_region* SimRegion)
 {
 	sim_entity* SimEntity = SimRegion->Entities;
 	for(u32 EntityIndex = 0;
@@ -276,15 +443,15 @@ EndSim(entities* Entities, memory_arena* WorldArena, sim_region* SimRegion)
 		Assert(Stored);
 
 		Stored->Sim = *SimEntity;
-		StoreEntityReference(&Stored->Sim->Vehicle);
-		StoreEntityReference(&Stored->Sim->RidingVehicle);
-		StoreEntityReference(&Stored->Sim->Sword);
-		StoreEntityReference(&Stored->Sim->Wheels[0]);
-		StoreEntityReference(&Stored->Sim->Wheels[1]);
-		StoreEntityReference(&Stored->Sim->Wheels[2]);
-		StoreEntityReference(&Stored->Sim->Wheels[3]);
-		StoreEntityReference(&Stored->Sim->DriverSeat);
-		StoreEntityReference(&Stored->Sim->Engine);
+		StoreEntityReference(&Stored->Sim.Vehicle);
+		StoreEntityReference(&Stored->Sim.RidingVehicle);
+		StoreEntityReference(&Stored->Sim.Sword);
+		StoreEntityReference(&Stored->Sim.Wheels[0]);
+		StoreEntityReference(&Stored->Sim.Wheels[1]);
+		StoreEntityReference(&Stored->Sim.Wheels[2]);
+		StoreEntityReference(&Stored->Sim.Wheels[3]);
+		StoreEntityReference(&Stored->Sim.DriverSeat);
+		StoreEntityReference(&Stored->Sim.Engine);
 
 		ChangeStoredEntityWorldLocationRelativeOther(WorldArena, SimRegion->WorldMap, 
 																								 Stored, SimRegion->Origin, SimEntity->P);

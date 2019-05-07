@@ -1,22 +1,11 @@
 #if !defined(ENTITY_H)
 
-#include"sim_entity"
-#include"stored_entity"
-
-internal_function entity
-GetEntityFromSimEntity(entities* Entities, sim_entity* SimEntity)
-{
-	entity Result = {};
-
-	Assert(SimEntity && SimEntity->StoredIndex);
-	Result.Sim = SimEntity;
-	Result.Stored = GetStoredEntityByIndex(Entities, SimEntity->StoredIndex);
-}
+#include"sim_region.h"
 
 struct entity_pair
 {
-	entity Obj;
-	entity Sub;
+	sim_entity Obj;
+	sim_entity Sub;
 };
 
 struct vertices
@@ -26,7 +15,7 @@ struct vertices
 };
 
 internal_function vertices
-GetEntityVertices(entity* Entity)
+GetEntityVertices(sim_entity* Entity)
 {
 	vertices Result = {};
 	Result.Count = 4;
@@ -36,37 +25,37 @@ GetEntityVertices(entity* Entity)
 													{ 0.5f, -0.5f}, 
 													{-0.5f, -0.5f}};
 	
-	m22 Transform = M22(CW90M22() * Entity->Low->R.XY, 
-											Entity->Low->R.XY);
+	m22 Transform = M22(CW90M22() * Entity->R.XY, 
+											Entity->R.XY);
 	for(u32 VertexIndex = 0; 
 			VertexIndex < Result.Count; 
 			VertexIndex++)
 	{
 		Result.Verts[VertexIndex] = (Transform * 
-																 Hadamard(OrderOfCorners[VertexIndex], Entity->Low->Dim.XY) + 
-																 Entity->High->P);
+																 Hadamard(OrderOfCorners[VertexIndex], Entity->Dim.XY) + 
+																 Entity->P);
 	}
 
 	return Result;
 }
 
-inline entity*
-GetEntityOfType(entity_type Type, entity* A, entity* B)
+inline sim_entity*
+GetEntityOfType(entity_type Type, sim_entity* A, sim_entity* B)
 {
-	entity* Result = 0;
-	if(A->Low->Type == Type)
+	sim_entity* Result = 0;
+	if(A->Type == Type)
 	{
 		Result = A;
 	}
-	if(B->Low->Type == Type)
+	if(B->Type == Type)
 	{
 		Result = B;
 	}
 	return Result;
 }
 
-inline entity*
-GetRemainingEntity(entity* E, entity* A, entity* B)
+inline sim_entity*
+GetRemainingEntity(sim_entity* E, sim_entity* A, sim_entity* B)
 {
 	Assert(E == A || E == B);
 	return E==A ? B:A;

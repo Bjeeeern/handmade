@@ -4,16 +4,119 @@
 #include "world_map.h"
 #include "stored_entity"
 
+struct move_spec
+{
+	b32 EnforceHorizontalMovement;
+	b32 EnforceVerticalGravity;
+	b32 AllowRotation;
+	f32 Speed;
+	f32 Drag;
+	f32 AngularDrag;
+};
+
+internal_function move_spec
+DefaultMoveSpec()
+{
+	move_spec Result = {};
+
+	Result.AllowRotation = true;
+
+	Result.EnforceHorizontalMovement = true;
+	Result.Drag = 0.4f * 30.0f;
+
+	return Result;
+}
+
+enum entity_type
+{
+	EntityType_Player,
+	EntityType_Wall,
+	EntityType_Stair,
+	EntityType_Ground,
+	EntityType_Wheel,
+	EntityType_CarFrame,
+	EntityType_Engine,
+	EntityType_Monstar,
+	EntityType_Familiar,
+	EntityType_Sword,
+};
+
+#define HIT_POINT_SUB_COUNT 4
+struct hit_point
+{
+	//TODO(casey): Bake this down into one variable.
+	u8 Flags;
+	u8 FilledAmount;
+};
+union entity_reference
+{
+	u32 Index;
+	sim_entity* Ptr;
+};
+
 struct sim_entity
 {
 	u32 StorageIndex;
 
+	b32 CollisionDirtyBit;
+
+	world_map_position WorldP;
+
+	//TODO(casey): Generation index so we know how "up to date" the entity is.
+
+	entity_type Type;
+
+	v3 R;
+	f32 A;
+	f32 dA;
 	f32 ddA;
 
 	v3 P;
+	v3 dP;
 	v3 ddP;
 
-	b32 CollisionDirtyBit;
+	v3 Dim;
+
+	b32 Collides;
+	b32 Attached;
+
+	f32 Mass;
+	move_spec MoveSpec;
+	f32 GroundFriction;
+
+	u32 FacingDirection;
+
+	//TODO(casey): Should hitpoints themselves be entities?
+	u32 HitPointMax;
+	hit_point HitPoints[16];
+
+	//NOTE(bjorn): Stair
+	f32 dZ;
+
+	//NOTE(bjorn): Car-parts
+	entity_reference Vehicle;
+
+	//NOTE(bjorn): Player
+	entity_reference RidingVehicle;
+	entity_reference Sword;
+
+	//NOTE(bjorn): CarFrame
+	entity_reference Wheels[4];
+	entity_reference DriverSeat;
+	entity_reference Engine;
+
+	//NOTE(bjorn): Sword
+	f32 DistanceRemaining;
+
+	//NOTE(bjorn): Player, Familiar
+	v3 MovingDirection;
+
+	//NOTE(bjorn): Familiar
+	f32 BestDistanceToPlayerSquared;
+
+	//NOTE(bjorn): CarFrame
+	//TODO(bjorn): Use this to move out the turning code to the cars update loop.
+	b32 AutoPilot;
 };
 
 struct sim_region
@@ -27,15 +130,54 @@ struct sim_region
 	sim_entity* Entities;
 };
 
-internal_function sim_entity*
-AddSimEntity(sim_region* SimRegion)
+internal_function sim_entity* 
+GetSimEntityFromIndex(sim_region* SimRegion, u32 StorageIndex)
 {
+}
+
+internal_function void
+MapStorageIndexToEntity(u32 SimRegion, u32 StorageIndex, sim_entity* Entity)
+{
+}
+
+internal_function void
+LoadEntityReference(sim_region* SimRegion, entity_reference* Ref)
+{
+	if(Ref->Index != 0)
+	{
+		sim_entity* Ptr = GetSimEntityFromIndex(Ref->Index);
+		Assert(Ptr);
+		Ref->Ptr = Ptr;
+	}
+}
+
+internal_function void
+StoreEntityReference(entity_reference* Ref)
+{
+	if(Ref->Ptr != 0)
+	{
+		Ref->Index = Ref->Ptr->StorageIndex;
+	}
+}
+
+internal_function sim_entity*
+AddSimEntity(sim_region* SimRegion, stored_entity* Source, u32 StorageIndex)
+{
+	Assert(StorageIndex);
 	sim_entity* Entity = 0;
 
 	if(SimRegion->EntityCount < SimRegion->EntityMaxCount)
 	{
-		Entity = SimRegion->Entities[SimRegion->EntityCount++];
-		Entity = {};
+		Entity = SimRegion->Entities + SimRegion->EntityCount++;
+
+		if(Source)
+		{
+			//TODO Decompression step instead of block copy!!
+			*Entity = Source->Sim;
+		}
+
+		Entity->StorageIndex = StorageIndex;
+		MapStorageIndexToEntity(SimRegion, StorageIndex, Entity);
 	}
 	else
 	{
@@ -46,13 +188,12 @@ AddSimEntity(sim_region* SimRegion)
 }
 
 internal_function void
-AddSimEntity(sim_region* SimRegion, stored_entity* Source, v3* SimP)
+AddSimEntity(sim_region* SimRegion, stored_entity* Source, u32 StoredIndex, v3* SimP)
 {
-	sim_entity* Dest = AddSimEntity(SimRegion);
+	sim_entity* Dest = AddSimEntity(SimRegion, Source, StoredIndex);
 
 	if(Dest)
 	{
-		Dest->StoredIndex = Source->StoredIndex;
 		if(SimP)
 		{
 			Dest->P = *SimP;
@@ -65,7 +206,7 @@ AddSimEntity(sim_region* SimRegion, stored_entity* Source, v3* SimP)
 }
 
 internal_function sim_region*
-BeginSim(entities* Entities, memory_arena* SimArena, world_map* WorldMap, 
+BeginSim(entities* StoredEntities, memory_arena* SimArena, world_map* WorldMap, 
 				 world_map_position* RegionCenter, rectangle3 RegionBounds)
 {        
 	sim_region* Result = PushStruct(SimArena, sim_region);
@@ -105,17 +246,15 @@ BeginSim(entities* Entities, memory_arena* SimArena, world_map* WorldMap,
 								Index < Block->EntityIndexCount;
 								Index++)
 						{
-							stored_entity* StoredEntity = GetStoredEntityByIndex(Entities, 
-																																	 Block->EntityIndexes[Index]);
+							u32 StoredIndex = Block->EntityIndexes[Index];
+							stored_entity* StoredEntity = GetStoredEntityByIndex(StoredEntities, StoredIndex);
 							Assert(Entity.Stored);
 
-							v3 SimPos = GetWorldMapPosDifference(SimRegion->WorldMap->StoredEntities, 
-																									 Entity->WorldP, 
-																									 RegionCenter);
+							v3 SimPos = GetWorldMapPosDifference(WorldMap, Entity->WorldP, RegionCenter);
 							if(IsInRectangle(RegionBounds, SimPos))
 							{
 								//TODO(bjorn): Add if entity is to be updated or not.
-								AddSimEntity(SimRegion, Entity, &SimPos);
+								AddSimEntity(SimRegion, Entity, StoredIndex, &SimPos);
 							}
 						}
 					}
@@ -133,12 +272,22 @@ EndSim(entities* Entities, memory_arena* WorldArena, sim_region* SimRegion)
 			EntityIndex < SimRegion->EntityCount;
 			EntityIndex++, SimEntity++)
 	{
-		//TODO(bjorn): Store entity.
-		stored_entity* StoredEntity = GetStoredEntityByIndex(Entities, SimEntity->StoredIndex);
-		Assert(StoredEntity);
+		stored_entity* Stored = GetStoredEntityByIndex(Entities, SimEntity->StorageIndex);
+		Assert(Stored);
+
+		Stored->Sim = *SimEntity;
+		StoreEntityReference(&Stored->Sim->Vehicle);
+		StoreEntityReference(&Stored->Sim->RidingVehicle);
+		StoreEntityReference(&Stored->Sim->Sword);
+		StoreEntityReference(&Stored->Sim->Wheels[0]);
+		StoreEntityReference(&Stored->Sim->Wheels[1]);
+		StoreEntityReference(&Stored->Sim->Wheels[2]);
+		StoreEntityReference(&Stored->Sim->Wheels[3]);
+		StoreEntityReference(&Stored->Sim->DriverSeat);
+		StoreEntityReference(&Stored->Sim->Engine);
 
 		ChangeStoredEntityWorldLocationRelativeOther(WorldArena, SimRegion->WorldMap, 
-																					 StoredEntity, SimRegion->Origin, SimEntity->P);
+																								 Stored, SimRegion->Origin, SimEntity->P);
 	}
 }
 

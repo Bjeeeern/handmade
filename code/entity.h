@@ -3,12 +3,6 @@
 #include"sim_entity"
 #include"stored_entity"
 
-struct entity
-{
-	sim_entity* Sim;
-	stored_entity* Stored;
-};
-
 internal_function entity
 GetEntityFromSimEntity(entities* Entities, sim_entity* SimEntity)
 {

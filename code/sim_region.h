@@ -189,39 +189,6 @@ ChangeStoredEntityWorldLocationRelativeOther(memory_arena* Arena, world_map* Wor
 		ChangeStoredEntityWorldLocation(Arena, WorldMap, Stored, &NewWorldP);
 }
 
-inline v3
-DefaultEntityOrientation()
-{
-	return {0, 1, 0};
-}
-
-	internal_function stored_entity*
-AddEntity(memory_arena* WorldArena, world_map* WorldMap, stored_entities* StoredEntities, 
-					entity_type Type, world_map_position* WorldP = 0)
-{
-	stored_entity* Stored = {};
-
-	StoredEntities->EntityCount++;
-	Assert(StoredEntities->EntityCount < ArrayCount(StoredEntities->Entities));
-	Stored = StoredEntities->Entities + StoredEntities->EntityCount;
-
-	*Stored = {};
-	Stored->Sim.StorageIndex = StoredEntities->EntityCount;
-	Stored->Sim.Type = Type;
-	Stored->Sim.R = DefaultEntityOrientation();
-	Stored->Sim.WorldP = WorldMapNullPos();
-
-	if(WorldP)
-	{
-		Assert(IsValid(*WorldP));
-		Assert(IsCanonical(WorldMap, WorldP->Offset_));
-	}
-
-	ChangeStoredEntityWorldLocation(WorldArena, WorldMap, Stored, WorldP);
-
-	return Stored;
-}
-
 struct sim_entity_hash
 {
 	u32 Index;
@@ -356,6 +323,8 @@ AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_enti
 
 	if(Dest)
 	{
+		Dest->CollisionDirtyBit = false;
+
 		if(SimP)
 		{
 			Dest->P = *SimP;

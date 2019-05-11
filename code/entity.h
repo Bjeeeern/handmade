@@ -97,111 +97,109 @@ AddEntity(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Stored
 	internal_function void
 AddHitPoints(stored_entity* Entity, u32 HitPointMax)
 {
-	Assert(HitPointMax <= ArrayCount(Entity->HitPoints));
-	Entity->HitPointMax = HitPointMax;
+	Assert(HitPointMax <= ArrayCount(Entity->Sim.HitPoints));
+	Entity->Sim.HitPointMax = HitPointMax;
 	for(u32 HitPointIndex = 0;
-			HitPointIndex < Entity->HitPointMax;
+			HitPointIndex < Entity->Sim.HitPointMax;
 			HitPointIndex++)
 	{
-		Entity->HitPoints[HitPointIndex].FilledAmount = HIT_POINT_SUB_COUNT;
+		Entity->Sim.HitPoints[HitPointIndex].FilledAmount = HIT_POINT_SUB_COUNT;
 	}
 }
 
 	internal_function stored_entity*
-AddSword(game_state* GameState)
+AddSword(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entities)
 {
-	stored_entity* Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, 
-																		&GameState->Entities, EntityType_Sword);
+	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityType_Sword);
 
-	Entity->Dim = v2{0.4f, 1.5f} * GameState->WorldMap->TileSideInMeters;
-	Entity->Mass = 8.0f;
+	Entity->Sim.Dim = v2{0.4f, 1.5f} * WorldMap->TileSideInMeters;
+	Entity->Sim.Mass = 8.0f;
 
-	Entity->MoveSpec.Drag = 0.0f;
-	Entity->Collides = false;
+	Entity->Sim.MoveSpec.Drag = 0.0f;
+	Entity->Sim.Collides = false;
 
 	return Entity;
 }
 
 	internal_function stored_entity*
-AddPlayer(game_state* GameState)
+AddPlayer(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entities, 
+					world_map_position CameraP, u32* CameraFollowingPlayerIndex)
 {
-	world_map_position InitP = OffsetWorldPos(GameState->WorldMap, GameState->CameraP, 
-																						GetChunkPosFromAbsTile(GameState->WorldMap, 
-																																	 v3s{-2, 1, 0}).Offset_);
+	v3 OffsetInTiles = GetChunkPosFromAbsTile(WorldMap, v3s{-2, 1, 0}).Offset_;
+	world_map_position InitP = OffsetWorldPos(WorldMap, CameraP, OffsetInTiles);
 
-	stored_entity* Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
-																		EntityType_Player, &InitP);
+	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityType_Player, &InitP);
 
-	Entity->Dim = v2{0.5f, 0.3f} * GameState->WorldMap->TileSideInMeters;
-	Entity->Collides = true;
+	Entity->Sim.Dim = v2{0.5f, 0.3f} * WorldMap->TileSideInMeters;
+	Entity->Sim.Collides = true;
 
 	//TODO(bjorn): Why does weight differences matter so much in the collision system.
-	Entity->Mass = 40.0f / 8.0f;
+	Entity->Sim.Mass = 40.0f / 8.0f;
 
-	Entity->MoveSpec.EnforceVerticalGravity = true;
-	Entity->MoveSpec.EnforceHorizontalMovement = true;
-	Entity->MoveSpec.Speed = 85.f;
-	Entity->MoveSpec.Drag = 0.24f * 30.0f;
+	Entity->Sim.MoveSpec.EnforceVerticalGravity = true;
+	Entity->Sim.MoveSpec.EnforceHorizontalMovement = true;
+	Entity->Sim.MoveSpec.Speed = 85.f;
+	Entity->Sim.MoveSpec.Drag = 0.24f * 30.0f;
 
-	AddHitPoints(&Entity, 6);
-	entity Sword = AddSword(GameState);
-	Entity->Sword = Sword.StoredIndex;
+	AddHitPoints(Entity, 6);
+	stored_entity* Sword = AddSword(WorldArena, WorldMap, Entities);
+	Entity->Sim.Sword.Index = Sword->Sim.StorageIndex;
 
-	stored_entity* Test = GetStoredEntityByIndex(&GameState->Entities, 
-																							 GameState->CameraFollowingPlayerIndex);
+	stored_entity* Test = GetStoredEntityByIndex(Entities, *CameraFollowingPlayerIndex);
 	if(!Test)
 	{
-		GameState->CameraFollowingPlayerIndex = Entity.StoredIndex;
+		*CameraFollowingPlayerIndex = Entity->Sim.StorageIndex;
 	}
 
 	return Entity;
 }
 
 	internal_function stored_entity*
-AddMonstar(game_state* GameState, world_map_position InitP)
+AddMonstar(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entities,
+					 world_map_position InitP)
 {
-	stored_entity* Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
-																		EntityType_Monstar, &InitP);
+	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityType_Monstar, &InitP);
 
-	Entity->Dim = v2{0.5f, 0.3f} * GameState->WorldMap->TileSideInMeters;
-	Entity->Collides = true;
+	Entity->Sim.Dim = v2{0.5f, 0.3f} * WorldMap->TileSideInMeters;
+	Entity->Sim.Collides = true;
 
-	Entity->Mass = 40.0f / 8.0f;
+	Entity->Sim.Mass = 40.0f / 8.0f;
 
-	Entity->MoveSpec.EnforceHorizontalMovement = true;
-	Entity->MoveSpec.Speed = 85.f * 0.75;
-	Entity->MoveSpec.Drag = 0.24f * 30.0f;
+	Entity->Sim.MoveSpec.EnforceHorizontalMovement = true;
+	Entity->Sim.MoveSpec.Speed = 85.f * 0.75;
+	Entity->Sim.MoveSpec.Drag = 0.24f * 30.0f;
 
-	AddHitPoints(&Entity, 3);
+	AddHitPoints(Entity, 3);
 
 	for(u32 HitPointIndex = 0;
-			HitPointIndex < Entity->HitPointMax;
+			HitPointIndex < Entity->Sim.HitPointMax;
 			HitPointIndex++)
 	{
-		Entity->HitPoints[HitPointIndex].FilledAmount = (u8)(HIT_POINT_SUB_COUNT - HitPointIndex);
+		Entity->Sim.HitPoints[HitPointIndex].FilledAmount = (u8)(HIT_POINT_SUB_COUNT - HitPointIndex);
 	}
 
 	return Entity;
 }
 
 	internal_function stored_entity*
-AddFamiliar(game_state* GameState, world_map_position InitP)
+AddFamiliar(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entities, 
+						world_map_position InitP)
 {
-	stored_entity* Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, 
-																		&GameState->Entities, EntityType_Familiar, &InitP);
+	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityType_Familiar, &InitP);
 
-	Entity->Dim = v2{0.5f, 0.3f} * GameState->WorldMap->TileSideInMeters;
-	Entity->Collides = true;
+	Entity->Sim.Dim = v2{0.5f, 0.3f} * WorldMap->TileSideInMeters;
+	Entity->Sim.Collides = true;
 
-	Entity->Mass = 40.0f / 8.0f;
+	Entity->Sim.Mass = 40.0f / 8.0f;
 
-	Entity->MoveSpec.EnforceHorizontalMovement = true;
-	Entity->MoveSpec.Speed = 85.f * 0.5f;
-	Entity->MoveSpec.Drag = 0.2f * 30.0f;
+	Entity->Sim.MoveSpec.EnforceHorizontalMovement = true;
+	Entity->Sim.MoveSpec.Speed = 85.f * 0.5f;
+	Entity->Sim.MoveSpec.Drag = 0.2f * 30.0f;
 
 	return Entity;
 }
 
+#if 0
 	internal_function entity
 AddCarFrame(game_state* GameState, world_map_position WorldPos)
 {
@@ -242,7 +240,6 @@ AddWheel(game_state* GameState, world_map_position WorldPos)
 	return Entity;
 }
 
-#if 0
 	internal_function void
 MoveCarPartsToStartingPosition(memory_arena* WorldArena, world_map* WorldMap, entities* Entities,
 															 u32 CarFrameIndex)
@@ -342,32 +339,33 @@ AddCar(game_state* GameState, world_map_position WorldPos)
 #endif
 
 	internal_function stored_entity*
-AddGround(game_state* GameState, world_map_position WorldPos)
+AddGround(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entities, 
+					world_map_position WorldPos)
 {
-	stored_entity* Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
-																		EntityType_Ground, &WorldPos);
+	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityType_Ground, &WorldPos);
 
-	Entity->Dim = v2{1, 1} * GameState->WorldMap->TileSideInMeters;
-	Entity->Collides = false;
+	Entity->Sim.Dim = v2{1, 1} * WorldMap->TileSideInMeters;
+	Entity->Sim.Collides = false;
 
 	return Entity;
 }
 
 	internal_function stored_entity*
-AddWall(game_state* GameState, world_map_position WorldPos, f32 Mass = 1000.0f)
+AddWall(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entities, 
+				world_map_position WorldPos, f32 Mass = 1000.0f)
 {
-	stored_entity* Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
-																		EntityType_Wall, &WorldPos);
+	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityType_Wall, &WorldPos);
 
-	Entity->Dim = v2{1, 1} * GameState->WorldMap->TileSideInMeters;
-	Entity->Collides = true;
+	Entity->Sim.Dim = v2{1, 1} * WorldMap->TileSideInMeters;
+	Entity->Sim.Collides = true;
 
-	Entity->Mass = Mass;
-	Entity->MoveSpec = DefaultMoveSpec();
+	Entity->Sim.Mass = Mass;
+	Entity->Sim.MoveSpec = DefaultMoveSpec();
 
 	return Entity;
 }
 
+#if 0
 	internal_function stored_entity*
 AddStair(game_state* GameState, world_map_position WorldPos, f32 dZ)
 {
@@ -380,22 +378,23 @@ AddStair(game_state* GameState, world_map_position WorldPos, f32 dZ)
 
 	return Entity;
 }
+#endif
 
 	internal_function void
-MoveEntity(entity* Entity, f32 dT)
+MoveEntity(sim_entity* Entity, f32 dT)
 {
-	v3 P = Entity->Sim->P;
-	v3 dP = Entity->Stored->dP;
+	v3 P = Entity->P;
+	v3 dP = Entity->dP;
 	v3 ddP = {};
 
-	v3 R = Entity->Stored->R;
-	f32 A = Entity->Stored->A;
-	f32 dA = Entity->Stored->dA;
+	v3 R = Entity->R;
+	f32 A = Entity->A;
+	f32 dA = Entity->dA;
 	f32 ddA = 0;
 
-	if(Entity->Stored->MoveSpec.EnforceVerticalGravity)
+	if(Entity->MoveSpec.EnforceVerticalGravity)
 	{
-		if(Entity->Stored->MovingDirection.Z > 0 &&
+		if(Entity->MovingDirection.Z > 0 &&
 			 P.Z == 0)
 		{
 			dP.Z = 18.0f;
@@ -407,14 +406,14 @@ MoveEntity(entity* Entity, f32 dT)
 		}
 	}
 
-	if(Entity->Stored->MoveSpec.EnforceHorizontalMovement)
+	if(Entity->MoveSpec.EnforceHorizontalMovement)
 	{
 		//TODO(casey): ODE here!
-		ddP.XY = Entity->Stored->MovingDirection.XY * Entity->Stored->MoveSpec.Speed;
+		ddP.XY = Entity->MovingDirection.XY * Entity->MoveSpec.Speed;
 	}
 
-	ddP.XY -= Entity->Stored->MoveSpec.Drag * dP.XY;
-	ddA -= Entity->Stored->MoveSpec.Drag * 0.7f * dA;
+	ddP.XY -= Entity->MoveSpec.Drag * dP.XY;
+	ddA -= Entity->MoveSpec.Drag * 0.7f * dA;
 
 	P += 0.5f * ddP * Square(dT) + dP * dT;
 	dP += ddP * dT;
@@ -439,48 +438,40 @@ MoveEntity(entity* Entity, f32 dT)
 		dP.Z = 0.0f;
 	}
 
-	Entity->Sim->ddP = ddP;
-	Entity->Stored->dP = dP;
-	Entity->Sim->P = P;
+	Entity->ddP = ddP;
+	Entity->dP = dP;
+	Entity->P = P;
 
-	if(Entity->Stored->MoveSpec.AllowRotation)
+	if(Entity->MoveSpec.AllowRotation)
 	{
-		Entity->Sim->ddA = ddA;
-		Entity->Stored->dA = dA;
-		Entity->Stored->A = A;
-		Entity->Stored->R = R;
+		Entity->ddA = ddA;
+		Entity->dA = dA;
+		Entity->A = A;
+		Entity->R = R;
 	}
 }
 
 	internal_function void
-UpdateFamiliarPairwise(entity* Familiar, entity* Target)
+UpdateFamiliarPairwise(sim_entity* Familiar, sim_entity* Target)
 {
-	if(Target->Stored->Type == EntityType_Player)
+	if(Target->Type == EntityType_Player)
 	{
-		f32 DistanceToPlayerSquared = LenghtSquared(Target->Sim->P - Familiar->Sim->P);
-		if(DistanceToPlayerSquared < Familiar->Stored->BestDistanceToPlayerSquared &&
+		f32 DistanceToPlayerSquared = LenghtSquared(Target->P - Familiar->P);
+		if(DistanceToPlayerSquared < Familiar->BestDistanceToPlayerSquared &&
 			 DistanceToPlayerSquared > Square(2.0f))
 		{
-			Familiar->Stored->BestDistanceToPlayerSquared = DistanceToPlayerSquared;
-			Familiar->Sim->MovingDirection = Normalize(Target->Sim->P - Familiar->Sim->P).XY;
+			Familiar->BestDistanceToPlayerSquared = DistanceToPlayerSquared;
+			Familiar->MovingDirection = Normalize(Target->P - Familiar->P).XY;
 		}
 	}
 }
 
 	internal_function void
-UpdateSwordPairwise(entity* Sword, entity* Target, b32 Intersect,
-										memory_arena* WorldArena, world_map* WorldMap)
+UpdateSwordPairwise(sim_entity* Sword, sim_entity* Target, b32 Intersect)
 {
-	if(Intersect &&
-		 Target->Stored->Type != EntityType_Player)
+	if(Intersect && Target->Type != EntityType_Player)
 	{
-		//TODO(bjorn): Is it safe to let high entities just disappear in the middle of a loop?
-		//TODO(bjorn): Also, the fact that this needs to be done is
-		//non-obvious. As is the fact that calling SetCamera doesn't work as
-		//well.
-		//TODO IMPORTANT this does not work anymore since the world pos gets
-		//overwritten when the SimRegion gets released!!!
-		ChangeStoredEntityWorldLocation(WorldArena, WorldMap, Sword->Stored, 0);
+		Sword->HasPositionInWorld = false;
 	}
 }
 

@@ -84,13 +84,13 @@ struct polygon
 	minkowski_sum_origin Genus[8];
 };
 	internal_function polygon 
-MinkowskiSum(entity* Target, entity* Movable)
+MinkowskiSum(sim_entity* Target, sim_entity* Movable)
 {
 	polygon Result = {};
 	Result.NodeCount = 8;
 
-	v2 MovableP = Movable->High->P.XY;
-	v2 TargetP  = Target->High->P.XY;
+	v2 MovableP = Movable->P.XY;
+	v2 TargetP  = Target->P.XY;
 
 	vertices TVerts = GetEntityVertices(Target);
 	vertices MVerts = GetEntityVertices(Movable);
@@ -98,8 +98,8 @@ MinkowskiSum(entity* Target, entity* Movable)
 	//TODO(bjorn): This sum is _NOT_ made for general polygons atm!
 	s32 MovableStartIndex;
 	{
-		v2 MovableR = Movable->Low->R.XY;
-		v2 TargetR  = Target->Low->R.XY;
+		v2 MovableR = Movable->R.XY;
+		v2 TargetR  = Target->R.XY;
 		if(Dot(TargetR, MovableR) > 0)
 		{
 			MovableStartIndex = (Cross((v3)TargetR, (v3)MovableR).Z > 0) ? 1 : 0;
@@ -151,7 +151,7 @@ MinkowskiSum(entity* Target, entity* Movable)
 #if HANDMADE_INTERNAL
 	internal_function void
 DEBUGMinkowskiSum(game_offscreen_buffer* Buffer, 
-									entity* Target, entity* Movable, 
+									sim_entity* Target, sim_entity* Movable, 
 									m22 GameSpaceToScreenSpace, v2 ScreenCenter)
 {
 	polygon Sum = MinkowskiSum(Target, Movable);

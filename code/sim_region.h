@@ -2,7 +2,6 @@
 
 #include "types_and_defines.h"
 #include "world_map.h"
-#include "stored_entity.h"
 
 struct move_spec
 {
@@ -418,12 +417,13 @@ EndSim(stored_entities* Entities, memory_arena* WorldArena, sim_region* SimRegio
 
 		if(SimEntity->HasPositionInWorld)
 		{
-			world_map_position NewWorldP = OffsetWorldPos(WorldMap, SimRegion->Origin, SimEntity->P);
-			ChangeStoredEntityWorldLocation(WorldArena, WorldMap, Stored, &NewWorldP);
+			world_map_position NewWorldP = OffsetWorldPos(SimRegion->WorldMap, 
+																										SimRegion->Origin, SimEntity->P);
+			ChangeStoredEntityWorldLocation(WorldArena, SimRegion->WorldMap, Stored, &NewWorldP);
 		}
 		else
 		{
-			ChangeStoredEntityWorldLocation(WorldArena, WorldMap, Stored, 0);
+			ChangeStoredEntityWorldLocation(WorldArena, SimRegion->WorldMap, Stored, 0);
 		}
 	}
 }

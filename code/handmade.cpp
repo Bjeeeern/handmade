@@ -642,7 +642,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						 !Player->RidingVehicle.Ptr)
 					{
 						sim_entity* Target = GetRemainingEntity(Player, Entity, OtherEntity);
-						DEBUGMinkowskiSum(Buffer, Entity, Player, GameSpaceToScreenSpace, ScreenCenter);
+						DEBUGMinkowskiSum(Buffer, Target, Player, GameSpaceToScreenSpace, ScreenCenter);
 					}
 
 					sim_entity* CarFrame = GetEntityOfType(EntityType_CarFrame, Entity, OtherEntity);

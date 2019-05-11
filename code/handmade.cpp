@@ -8,6 +8,11 @@
 #include "sim_region.h"
 #include "entity.h"
 
+// @IMPORTANT @IDEA
+// Maybe sort the order of entity execution while creating the sim regions so
+// that there is a guaranteed hirarchiy to the collision resolution. Depending
+// on how I want to do the collision this migt be a nice tool.
+
 // QUICK TODO
 //
 // Make it so that I can visually step through a frame of collision.
@@ -642,32 +647,30 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					if(Entity.Low->DistanceRemaining <= 0)
 					{
 						entity* Sword = &Entity;
-						ChangeEntityWorldLocation(WorldArena, WorldMap, Sword, 0);
-						MapEntityOutFromHigh(Entities, Sword->LowIndex, Sword->Low->WorldP);
+						Sword->HasPositionInWorld = false;
 					}
-
-					//TODO IMPORTANT Pass down data from the input gathering step as appropiate.
-							stored_entity* Sword = GetEntityByLowIndex(Entities, ControlledEntity->Sword);
-							if(Sword && 
-								 !IsValid(Sword->WorldP) && 
-								 LenghtSquared(InputDirection))
-							{
-								Sword->R = InputDirection;
-								ChangeStoredEntityWorldLocationRelativeOther(&GameState->WorldArena, 
-																														 GameState->WorldMap, 
-																														 &Sword,
-																														 ControlledEntity->WorldP, 
-																														 InputDirection * Sword->Dim.Y);
-
-								Sword->dP = Sword->R * 8.0f;
-								Sword->DistanceRemaining = 20.0f;
-							}
 				}
 
 				if(Entity.Low->Type == EntityType_Familiar)
 				{
 					Entity.High->BestDistanceToPlayerSquared = Square(6.0f);
 					Entity.High->MovingDirection = {};
+				}
+
+				if(Entity->Type == EntityType_Player)
+				{
+					//TODO IMPORTANT Pass down data from the input gathering step as appropiate.
+					entity* Sword = Entity->Sword.Ptr;
+					if(Sword && 
+						 !Sword->HasPositionInWorld && 
+						 LenghtSquared(InputDirection))
+					{
+						Sword->HasPositionInWorld = true;
+						Sword->R = InputDirection;
+						Sword->P = Entity->P + InputDirection * Sword->Dim.Y;
+						Sword->dP = Sword->R * 8.0f;
+						Sword->DistanceRemaining = 20.0f;
+					}
 				}
 			}
 

@@ -61,6 +61,7 @@ struct sim_entity
 {
 	u32 StorageIndex;
 
+	b32 HasPositionInWorld;
 	b32 CollisionDirtyBit;
 
 	world_map_position WorldP;
@@ -173,20 +174,13 @@ ChangeStoredEntityWorldLocation(memory_arena* WorldArena, world_map* WorldMap,
 	if(NewP)
 	{
 		Stored->Sim.WorldP = *NewP;
+		Stored->Sim.HasPositionInWorld = true;
 	}
 	else
 	{
 		Stored->Sim.WorldP = WorldMapNullPos();
+		Stored->Sim.HasPositionInWorld = false;
 	}
-}
-
-inline void
-ChangeStoredEntityWorldLocationRelativeOther(memory_arena* Arena, world_map* WorldMap, 
-																						 stored_entity* Stored, world_map_position WorldP, 
-																						 v3 Offset)
-{
-		world_map_position NewWorldP = OffsetWorldPos(WorldMap, WorldP, Offset);
-		ChangeStoredEntityWorldLocation(Arena, WorldMap, Stored, &NewWorldP);
 }
 
 struct sim_entity_hash
@@ -422,8 +416,15 @@ EndSim(stored_entities* Entities, memory_arena* WorldArena, sim_region* SimRegio
 		StoreEntityReference(&Stored->Sim.DriverSeat);
 		StoreEntityReference(&Stored->Sim.Engine);
 
-		ChangeStoredEntityWorldLocationRelativeOther(WorldArena, SimRegion->WorldMap, 
-																								 Stored, SimRegion->Origin, SimEntity->P);
+		if(SimEntity->HasPositionInWorld)
+		{
+			world_map_position NewWorldP = OffsetWorldPos(WorldMap, SimRegion->Origin, SimEntity->P);
+			ChangeStoredEntityWorldLocation(WorldArena, WorldMap, Stored, &NewWorldP);
+		}
+		else
+		{
+			ChangeStoredEntityWorldLocation(WorldArena, WorldMap, Stored, 0);
+		}
 	}
 }
 

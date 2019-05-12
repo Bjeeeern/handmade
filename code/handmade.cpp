@@ -41,6 +41,13 @@ struct hero_bitmaps
 	loaded_bitmap Torso;
 };
 
+struct simulation_request
+{
+	u32 PlayerStorageIndex;
+	v3 ddP;
+	b32 FireSword;
+};
+
 struct game_state
 {
 	memory_arena WorldArena;
@@ -56,8 +63,16 @@ struct game_state
 	u32 CameraFollowingPlayerIndex;
 	world_map_position CameraP;
 
-	u32 PlayerIndexForController[ArrayCount(((game_input*)0)->Keyboards)];
-	u32 PlayerIndexForKeyboard[ArrayCount(((game_input*)0)->Controllers)];
+	union
+	{
+		simulation_request PlayerSimulationRequests[(ArrayCount(((game_input*)0)->Keyboards) + 
+																								 ArrayCount(((game_input*)0)->Controllers))];
+		struct
+		{
+			simulation_request KeyboardSimulationRequests[ArrayCount(((game_input*)0)->Keyboards)]; 
+			simulation_request ControllerSimulationRequests[ArrayCount(((game_input*)0)->Controllers)]; 
+		};
+	};
 
 	stored_entities Entities;
 
@@ -182,7 +197,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 
 	stored_entity* Player = AddPlayer(&GameState->WorldArena, WorldMap, &GameState->Entities,
 																		GameState->CameraP, &GameState->CameraFollowingPlayerIndex);
-	GameState->PlayerIndexForKeyboard[0] = Player->Sim.StorageIndex;
+	GameState->KeyboardSimulationRequests[0].PlayerStorageIndex = Player->Sim.StorageIndex;
 #if 0
 	AddCar(&GameState->WorldArena, WorldMap, &GameState->Entities,
 				 OffsetWorldPos(WorldMap, Player->Sim.WorldP, {3.0f, 7.0f, 0}));

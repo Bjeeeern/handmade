@@ -111,11 +111,9 @@ struct sim_entity
 	//NOTE(bjorn): Sword
 	f32 DistanceRemaining;
 
-	//NOTE(bjorn): Player, Familiar
-	v3 MovingDirection;
-
 	//NOTE(bjorn): Familiar
 	f32 BestDistanceToPlayerSquared;
+	v3 MovingDirection;
 
 	//NOTE(bjorn): CarFrame
 	//TODO(bjorn): Use this to move out the turning code to the cars update loop.

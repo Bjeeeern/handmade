@@ -60,8 +60,13 @@ struct sim_entity
 {
 	u32 StorageIndex;
 
-	b32 HasPositionInWorld;
-	b32 CollisionDirtyBit;
+	b32 HasPositionInWorld : 1;
+	b32 CollisionDirtyBit : 1;
+	b32 Collides : 1;
+	b32 Attached : 1;
+	//NOTE(bjorn): CarFrame
+	//TODO(bjorn): Use this to move out the turning code to the cars update loop.
+	b32 AutoPilot : 1;
 
 	world_map_position WorldP;
 
@@ -79,9 +84,6 @@ struct sim_entity
 	v3 ddP;
 
 	v3 Dim;
-
-	b32 Collides;
-	b32 Attached;
 
 	f32 Mass;
 	move_spec MoveSpec;
@@ -114,10 +116,6 @@ struct sim_entity
 	//NOTE(bjorn): Familiar
 	f32 BestDistanceToPlayerSquared;
 	v3 MovingDirection;
-
-	//NOTE(bjorn): CarFrame
-	//TODO(bjorn): Use this to move out the turning code to the cars update loop.
-	b32 AutoPilot;
 };
 
 struct stored_entity

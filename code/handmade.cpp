@@ -45,7 +45,7 @@ struct simulation_request
 {
 	u32 PlayerStorageIndex;
 	v3 ddP;
-	b32 FireSword;
+	v2 FireSword;
 };
 
 struct game_state
@@ -293,20 +293,17 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	world_map* WorldMap = GameState->WorldMap;
 	stored_entities* Entities = &GameState->Entities;
 
+	simulation_request* SimReq = GameState->ControllerSimulationRequests;
 	for(s32 ControllerIndex = 0;
 			ControllerIndex < ArrayCount(Input->Controllers);
-			ControllerIndex++)
+			ControllerIndex++, SimReq++)
 	{
 		game_controller* Controller = GetController(Input, ControllerIndex);
 		if(Controller->IsConnected)
 		{
-			u32 ControlledEntityIndex = GameState->PlayerIndexForController[ControllerIndex];
-			if(ControlledEntityIndex)
+			if(SimReq->PlayerStorageIndex)
 			{
-
-				v2 InputDirection = {};
-
-				InputDirection = Controller->LeftStick.End;
+				SimReq->ddP = Controller->LeftStick.End;
 
 #if 0
 				//TODO IMPORTANT Collect the relevant interpretation of the input and
@@ -325,7 +322,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			{
 				if(Clicked(Controller, Start))
 				{
-					GameState->PlayerIndexForController[ControllerIndex] = 
+					SimReq->PlayerStorageIndex = 
 						AddPlayer(WorldArena, WorldMap, Entities, GameState->CameraP, 
 											&GameState->CameraFollowingPlayerIndex)->Sim.StorageIndex;
 				}
@@ -333,9 +330,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		}
 	}
 
+	SimReq = GameState->KeyboardSimulationRequests;
 	for(s32 KeyboardIndex = 0;
 			KeyboardIndex < ArrayCount(Input->Keyboards);
-			KeyboardIndex++)
+			KeyboardIndex++, SimReq++)
 	{
 		game_keyboard* Keyboard = GetKeyboard(Input, KeyboardIndex);
 		if(Keyboard->IsConnected)
@@ -373,6 +371,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				GameState->DEBUG_VisualiseCollisionBox = !GameState->DEBUG_VisualiseCollisionBox;
 			}
 
+			if(SimReq->PlayerStorageIndex)
 			{
 				v3 InputDirection = {};
 
@@ -402,53 +401,78 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					InputDirection *= inv_root2;
 				}
 
+				SimReq->ddP = InputDirection;
+
+				v2 ArrowKeysDirection = {};
+
+				if(Held(Keyboard, Down))
 				{
-					if(Clicked(Keyboard, E))
+					ArrowKeysDirection.Y += -1;
+				}
+				if(Held(Keyboard, Left))
+				{
+					ArrowKeysDirection.X += -1;
+				}
+				if(Held(Keyboard, Up))
+				{
+					ArrowKeysDirection.Y += 1;
+				}
+				if(Held(Keyboard, Right))
+				{
+					ArrowKeysDirection.X += 1;
+				}
+
+				if(Clicked(Keyboard, Q) && LenghtSquared(ArrowKeysDirection))
+				{
+					SimReq->FireSword = ArrowKeysDirection;
+					//TODO send spawn arrow direction to game logic
+					//ControlledEntity->MovingDirection = InputDirection;
+				}
+				else
+				{
+					SimReq->FireSword = {};
+				}
+
+#if 0
+				if(Clicked(Keyboard, E))
+				{
+					//if(ControlledEntity->RidingVehicle)
 					{
-						//if(ControlledEntity->RidingVehicle)
+						//entity Vehicle = GetEntityByLowIndex(Entities, 
+						//																		 ControlledEntity->RidingVehicle);
+						//DismountEntityFromCar(WorldArena, WorldMap, &ControlledEntity, &Vehicle);
+					}
+					{
 						{
-							//entity Vehicle = GetEntityByLowIndex(Entities, 
-							//																		 ControlledEntity->RidingVehicle);
-							//DismountEntityFromCar(WorldArena, WorldMap, &ControlledEntity, &Vehicle);
-						}
-						{
+							//if(Entity->Type == EntityType_CarFrame && 
+							//	 Distance(Entity->P, ControlledEntity->P) < 4.0f)
 							{
-								//if(Entity->Type == EntityType_CarFrame && 
-								//	 Distance(Entity->P, ControlledEntity->P) < 4.0f)
-								{
-									//MountEntityOnCar(WorldArena, WorldMap, &ControlledEntity, &Entity);
-									//break;
-								}
+								//MountEntityOnCar(WorldArena, WorldMap, &ControlledEntity, &Entity);
+								//break;
 							}
 						}
 					}
-					{
-						//entity CarFrame = GetEntityByLowIndex(Entities, ControlledEntity->RidingVehicle);
-						//Assert(CarFrame->Type == EntityType_CarFrame);
-
-						if(InputDirection.X)
-						{ 
-							//TurnWheels(Entities, &CarFrame, InputDirection.XY, SecondsToUpdate); 
-						}
-						else
-						{ 
-							//AlignWheelsForward(Entities, &CarFrame, SecondsToUpdate); 
-						}
-
-						//if(Clicked(Keyboard, One))   { CarFrame->ddP = CarFrame->R * -3.0f; }
-						//if(Clicked(Keyboard, Two))   { CarFrame->ddP = CarFrame->R *  0.0f; }
-						//if(Clicked(Keyboard, Three)) { CarFrame->ddP = CarFrame->R *  3.0f; }
-						//if(Clicked(Keyboard, Four))  { CarFrame->ddP = CarFrame->R *  6.0f; }
-						//if(Clicked(Keyboard, Five))  { CarFrame->ddP = CarFrame->R *  9.0f; }
-					}
-					{
-						if(Clicked(Keyboard, N))
-						{
-							//TODO send spawn arrow direction to game logic
-							//ControlledEntity->MovingDirection = InputDirection;
-						}
-					}
 				}
+				{
+					//entity CarFrame = GetEntityByLowIndex(Entities, ControlledEntity->RidingVehicle);
+					//Assert(CarFrame->Type == EntityType_CarFrame);
+
+					if(InputDirection.X)
+					{ 
+						//TurnWheels(Entities, &CarFrame, InputDirection.XY, SecondsToUpdate); 
+					}
+					else
+					{ 
+						//AlignWheelsForward(Entities, &CarFrame, SecondsToUpdate); 
+					}
+
+					//if(Clicked(Keyboard, One))   { CarFrame->ddP = CarFrame->R * -3.0f; }
+					//if(Clicked(Keyboard, Two))   { CarFrame->ddP = CarFrame->R *  0.0f; }
+					//if(Clicked(Keyboard, Three)) { CarFrame->ddP = CarFrame->R *  3.0f; }
+					//if(Clicked(Keyboard, Four))  { CarFrame->ddP = CarFrame->R *  6.0f; }
+					//if(Clicked(Keyboard, Five))  { CarFrame->ddP = CarFrame->R *  9.0f; }
+				}
+#endif
 			}
 		}
 	}

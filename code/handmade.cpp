@@ -293,186 +293,191 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	world_map* WorldMap = GameState->WorldMap;
 	stored_entities* Entities = &GameState->Entities;
 
-	simulation_request* SimReq = GameState->ControllerSimulationRequests;
-	for(s32 ControllerIndex = 0;
-			ControllerIndex < ArrayCount(Input->Controllers);
-			ControllerIndex++, SimReq++)
+	//
+	//NOTE(bjorn): Gather input for this frame.
+	//
 	{
-		game_controller* Controller = GetController(Input, ControllerIndex);
-		if(Controller->IsConnected)
+		simulation_request* SimReq = GameState->ControllerSimulationRequests;
+		for(s32 ControllerIndex = 0;
+				ControllerIndex < ArrayCount(Input->Controllers);
+				ControllerIndex++, SimReq++)
 		{
-			if(SimReq->PlayerStorageIndex)
+			game_controller* Controller = GetController(Input, ControllerIndex);
+			if(Controller->IsConnected)
 			{
-				SimReq->ddP = Controller->LeftStick.End;
+				if(SimReq->PlayerStorageIndex)
+				{
+					SimReq->ddP = Controller->LeftStick.End;
 
 #if 0
-				//TODO IMPORTANT Collect the relevant interpretation of the input and
-				//pass it on to the game logic.
-				ControlledEntity->ddP = InputDirection * 85.0f;
+					//TODO IMPORTANT Collect the relevant interpretation of the input and
+					//pass it on to the game logic.
+					ControlledEntity->ddP = InputDirection * 85.0f;
 #endif
 
-				if(Clicked(Controller, Start))
-				{
-					//TODO(bjorn) Implement RemoveEntity();
-					//GameState->EntityResidencies[ControlledEntityIndex] = EntityResidence_Nonexistent;
-					//GameState->PlayerIndexForController[ControllerIndex] = 0;
-				}
-			}
-			else
-			{
-				if(Clicked(Controller, Start))
-				{
-					SimReq->PlayerStorageIndex = 
-						AddPlayer(WorldArena, WorldMap, Entities, GameState->CameraP, 
-											&GameState->CameraFollowingPlayerIndex)->Sim.StorageIndex;
-				}
-			}
-		}
-	}
-
-	SimReq = GameState->KeyboardSimulationRequests;
-	for(s32 KeyboardIndex = 0;
-			KeyboardIndex < ArrayCount(Input->Keyboards);
-			KeyboardIndex++, SimReq++)
-	{
-		game_keyboard* Keyboard = GetKeyboard(Input, KeyboardIndex);
-		if(Keyboard->IsConnected)
-		{
-#if HANDMADE_INTERNAL
-			if(Clicked(Keyboard, Q))
-			{
-				GameState->NoteTone = 500.0f;
-				GameState->NoteDuration = 0.05f;
-				GameState->NoteSecondsPassed = 0.0f;
-
-				//TODO(bjorn): Just setting the flag is not working anymore.
-				//Memory->IsInitialized = false;
-
-				GameState->DEBUG_StepThroughTheCollisionLoop = 
-					!GameState->DEBUG_StepThroughTheCollisionLoop;
-				GameState->DEBUG_CollisionLoopEntity = 0;
-				GameState->DEBUG_CollisionLoopStepIndex = 0;
-			}
-
-			if(GameState->DEBUG_StepThroughTheCollisionLoop && Clicked(Keyboard, Space))
-			{
-				GameState->DEBUG_CollisionLoopAdvance = true;
-				GameState->DEBUG_CollisionLoopAdvance = true;
-			}
-#endif
-
-			if(Clicked(Keyboard, M))
-			{
-				GameState->DEBUG_VisualiseMinkowskiSum = !GameState->DEBUG_VisualiseMinkowskiSum;
-			}
-
-			if(Clicked(Keyboard, C))
-			{
-				GameState->DEBUG_VisualiseCollisionBox = !GameState->DEBUG_VisualiseCollisionBox;
-			}
-
-			if(SimReq->PlayerStorageIndex)
-			{
-				v3 InputDirection = {};
-
-				if(Held(Keyboard, S))
-				{
-					InputDirection.Y += -1;
-				}
-				if(Held(Keyboard, A))
-				{
-					InputDirection.X += -1;
-				}
-				if(Held(Keyboard, W))
-				{
-					InputDirection.Y += 1;
-				}
-				if(Held(Keyboard, D))
-				{
-					InputDirection.X += 1;
-				}
-				if(Held(Keyboard, Space))
-				{
-					InputDirection.Z += 1;
-				}
-
-				if(InputDirection.X && InputDirection.Y)
-				{
-					InputDirection *= inv_root2;
-				}
-
-				SimReq->ddP = InputDirection;
-
-				v2 ArrowKeysDirection = {};
-
-				if(Held(Keyboard, Down))
-				{
-					ArrowKeysDirection.Y += -1;
-				}
-				if(Held(Keyboard, Left))
-				{
-					ArrowKeysDirection.X += -1;
-				}
-				if(Held(Keyboard, Up))
-				{
-					ArrowKeysDirection.Y += 1;
-				}
-				if(Held(Keyboard, Right))
-				{
-					ArrowKeysDirection.X += 1;
-				}
-
-				if(Clicked(Keyboard, Q) && LenghtSquared(ArrowKeysDirection))
-				{
-					SimReq->FireSword = ArrowKeysDirection;
-					//TODO send spawn arrow direction to game logic
-					//ControlledEntity->MovingDirection = InputDirection;
+					if(Clicked(Controller, Start))
+					{
+						//TODO(bjorn) Implement RemoveEntity();
+						//GameState->EntityResidencies[ControlledEntityIndex] = EntityResidence_Nonexistent;
+						//GameState->PlayerIndexForController[ControllerIndex] = 0;
+					}
 				}
 				else
 				{
-					SimReq->FireSword = {};
+					if(Clicked(Controller, Start))
+					{
+						SimReq->PlayerStorageIndex = 
+							AddPlayer(WorldArena, WorldMap, Entities, GameState->CameraP, 
+												&GameState->CameraFollowingPlayerIndex)->Sim.StorageIndex;
+					}
+				}
+			}
+		}
+
+		SimReq = GameState->KeyboardSimulationRequests;
+		for(s32 KeyboardIndex = 0;
+				KeyboardIndex < ArrayCount(Input->Keyboards);
+				KeyboardIndex++, SimReq++)
+		{
+			game_keyboard* Keyboard = GetKeyboard(Input, KeyboardIndex);
+			if(Keyboard->IsConnected)
+			{
+#if HANDMADE_INTERNAL
+				if(Clicked(Keyboard, Q))
+				{
+					GameState->NoteTone = 500.0f;
+					GameState->NoteDuration = 0.05f;
+					GameState->NoteSecondsPassed = 0.0f;
+
+					//TODO(bjorn): Just setting the flag is not working anymore.
+					//Memory->IsInitialized = false;
+
+					GameState->DEBUG_StepThroughTheCollisionLoop = 
+						!GameState->DEBUG_StepThroughTheCollisionLoop;
+					GameState->DEBUG_CollisionLoopEntity = 0;
+					GameState->DEBUG_CollisionLoopStepIndex = 0;
 				}
 
-#if 0
-				if(Clicked(Keyboard, E))
+				if(GameState->DEBUG_StepThroughTheCollisionLoop && Clicked(Keyboard, Space))
 				{
-					//if(ControlledEntity->RidingVehicle)
+					GameState->DEBUG_CollisionLoopAdvance = true;
+					GameState->DEBUG_CollisionLoopAdvance = true;
+				}
+#endif
+
+				if(Clicked(Keyboard, M))
+				{
+					GameState->DEBUG_VisualiseMinkowskiSum = !GameState->DEBUG_VisualiseMinkowskiSum;
+				}
+
+				if(Clicked(Keyboard, C))
+				{
+					GameState->DEBUG_VisualiseCollisionBox = !GameState->DEBUG_VisualiseCollisionBox;
+				}
+
+				if(SimReq->PlayerStorageIndex)
+				{
+					v3 InputDirection = {};
+
+					if(Held(Keyboard, S))
 					{
-						//entity Vehicle = GetEntityByLowIndex(Entities, 
-						//																		 ControlledEntity->RidingVehicle);
-						//DismountEntityFromCar(WorldArena, WorldMap, &ControlledEntity, &Vehicle);
+						InputDirection.Y += -1;
 					}
+					if(Held(Keyboard, A))
 					{
+						InputDirection.X += -1;
+					}
+					if(Held(Keyboard, W))
+					{
+						InputDirection.Y += 1;
+					}
+					if(Held(Keyboard, D))
+					{
+						InputDirection.X += 1;
+					}
+					if(Held(Keyboard, Space))
+					{
+						InputDirection.Z += 1;
+					}
+
+					if(InputDirection.X && InputDirection.Y)
+					{
+						InputDirection *= inv_root2;
+					}
+
+					SimReq->ddP = InputDirection;
+
+					v2 ArrowKeysDirection = {};
+
+					if(Held(Keyboard, Down))
+					{
+						ArrowKeysDirection.Y += -1;
+					}
+					if(Held(Keyboard, Left))
+					{
+						ArrowKeysDirection.X += -1;
+					}
+					if(Held(Keyboard, Up))
+					{
+						ArrowKeysDirection.Y += 1;
+					}
+					if(Held(Keyboard, Right))
+					{
+						ArrowKeysDirection.X += 1;
+					}
+
+					if(Clicked(Keyboard, Q) && LenghtSquared(ArrowKeysDirection))
+					{
+						SimReq->FireSword = ArrowKeysDirection;
+						//TODO send spawn arrow direction to game logic
+						//ControlledEntity->MovingDirection = InputDirection;
+					}
+					else
+					{
+						SimReq->FireSword = {};
+					}
+
+#if 0
+					if(Clicked(Keyboard, E))
+					{
+						//if(ControlledEntity->RidingVehicle)
 						{
-							//if(Entity->Type == EntityType_CarFrame && 
-							//	 Distance(Entity->P, ControlledEntity->P) < 4.0f)
+							//entity Vehicle = GetEntityByLowIndex(Entities, 
+							//																		 ControlledEntity->RidingVehicle);
+							//DismountEntityFromCar(WorldArena, WorldMap, &ControlledEntity, &Vehicle);
+						}
+						{
 							{
-								//MountEntityOnCar(WorldArena, WorldMap, &ControlledEntity, &Entity);
-								//break;
+								//if(Entity->Type == EntityType_CarFrame && 
+								//	 Distance(Entity->P, ControlledEntity->P) < 4.0f)
+								{
+									//MountEntityOnCar(WorldArena, WorldMap, &ControlledEntity, &Entity);
+									//break;
+								}
 							}
 						}
 					}
-				}
-				{
-					//entity CarFrame = GetEntityByLowIndex(Entities, ControlledEntity->RidingVehicle);
-					//Assert(CarFrame->Type == EntityType_CarFrame);
+					{
+						//entity CarFrame = GetEntityByLowIndex(Entities, ControlledEntity->RidingVehicle);
+						//Assert(CarFrame->Type == EntityType_CarFrame);
 
-					if(InputDirection.X)
-					{ 
-						//TurnWheels(Entities, &CarFrame, InputDirection.XY, SecondsToUpdate); 
-					}
-					else
-					{ 
-						//AlignWheelsForward(Entities, &CarFrame, SecondsToUpdate); 
-					}
+						if(InputDirection.X)
+						{ 
+							//TurnWheels(Entities, &CarFrame, InputDirection.XY, SecondsToUpdate); 
+						}
+						else
+						{ 
+							//AlignWheelsForward(Entities, &CarFrame, SecondsToUpdate); 
+						}
 
-					//if(Clicked(Keyboard, One))   { CarFrame->ddP = CarFrame->R * -3.0f; }
-					//if(Clicked(Keyboard, Two))   { CarFrame->ddP = CarFrame->R *  0.0f; }
-					//if(Clicked(Keyboard, Three)) { CarFrame->ddP = CarFrame->R *  3.0f; }
-					//if(Clicked(Keyboard, Four))  { CarFrame->ddP = CarFrame->R *  6.0f; }
-					//if(Clicked(Keyboard, Five))  { CarFrame->ddP = CarFrame->R *  9.0f; }
-				}
+						//if(Clicked(Keyboard, One))   { CarFrame->ddP = CarFrame->R * -3.0f; }
+						//if(Clicked(Keyboard, Two))   { CarFrame->ddP = CarFrame->R *  0.0f; }
+						//if(Clicked(Keyboard, Three)) { CarFrame->ddP = CarFrame->R *  3.0f; }
+						//if(Clicked(Keyboard, Four))  { CarFrame->ddP = CarFrame->R *  6.0f; }
+						//if(Clicked(Keyboard, Five))  { CarFrame->ddP = CarFrame->R *  9.0f; }
+					}
 #endif
+				}
 			}
 		}
 	}
@@ -673,7 +678,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					{PixelsPerMeter, 0             ,
 						0             ,-PixelsPerMeter};
 
-					u32 Player1StorageIndex = GameState->PlayerIndexForKeyboard[0];
+					u32 Player1StorageIndex = GameState->KeyboardSimulationRequests[0].PlayerStorageIndex;
 
 					sim_entity* Player = GetEntityOfType(EntityType_Player, Entity, OtherEntity);
 					if(Player && 
@@ -704,6 +709,31 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				OldP = Entity->P;
 			}
 
+			if(Entity->Type == EntityType_Player)
+			{
+				simulation_request* SimReq = GameState->PlayerSimulationRequests;
+				for(s32 SimReqIndex = 0;
+						SimReqIndex < ArrayCount(GameState->PlayerSimulationRequests);
+						SimReqIndex++, SimReq++)
+				{
+					if(SimReq->PlayerStorageIndex == Entity->StorageIndex)
+					{
+						sim_entity* Sword = Entity->Sword.Ptr;
+						if(Sword && 
+							 LenghtSquared(SimReq->FireSword))
+						{
+							Sword->HasPositionInWorld = true;
+							Sword->R = SimReq->FireSword;
+							Sword->P = Entity->P + SimReq->FireSword * Sword->Dim.Y;
+							Sword->dP = Sword->R * 8.0f;
+							Sword->DistanceRemaining = 20.0f;
+						}
+
+						Entity->MovingDirection = SimReq->ddP;
+					}
+				}
+			}
+
 			if(Entity->HasPositionInWorld)
 			{
 				MoveEntity(Entity, dT);
@@ -727,30 +757,15 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				Entity->MovingDirection = {};
 			}
 
-			if(Entity->Type == EntityType_Player)
-			{
-				//TODO IMPORTANT Pass down data from the input gathering step as appropiate.
-				sim_entity* Sword = Entity->Sword.Ptr;
-				if(Sword && 
-					 !Sword->HasPositionInWorld && 
-					 LenghtSquared(InputDirection))
-				{
-					Sword->HasPositionInWorld = true;
-					Sword->R = InputDirection;
-					Sword->P = Entity->P + InputDirection * Sword->Dim.Y;
-					Sword->dP = Sword->R * 8.0f;
-					Sword->DistanceRemaining = 20.0f;
-				}
-			}
-
+			//
+			// NOTE(bjorn): Rendering
+			//
 			if(Step == (Steps-1))
 			{
-				//
-				// NOTE(bjorn): Rendering
-				//
-				v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
-
+				if(!Entity->HasPositionInWorld) { continue; }
 				if(Entity->WorldP.ChunkP.Z != GameState->CameraP.ChunkP.Z) { continue; }
+
+				v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
 
 				v2 CollisionMarkerPixelDim = Hadamard(Entity->Dim.XY, {PixelsPerMeter, PixelsPerMeter});
 				m22 GameSpaceToScreenSpace = 

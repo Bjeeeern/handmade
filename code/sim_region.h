@@ -229,7 +229,9 @@ GetSimEntityHashSlotFromStorageIndex(sim_region* SimRegion, u32 StorageIndex)
 MapStorageIndexToEntity(sim_region* SimRegion, u32 StorageIndex, sim_entity* Entity)
 {
 	sim_entity_hash* Entry = GetSimEntityHashSlotFromStorageIndex(SimRegion, StorageIndex);
+
 	Assert(Entry->Index == 0 || Entry->Index == StorageIndex);
+	Assert(Entry->Ptr == 0 || Entry->Ptr == Entity);
 
 	Entry->Index = StorageIndex;
 	Entry->Ptr = Entity;
@@ -249,9 +251,11 @@ LoadEntityReference(stored_entities* StoredEntities, sim_region* SimRegion, enti
 
 		if(Entry->Ptr == 0)
 		{
-			Entry->Index = Ref->Index;
 			Entry->Ptr = AddSimEntity(StoredEntities, SimRegion, 
 														 GetStoredEntityByIndex(StoredEntities, Ref->Index), Ref->Index);
+			//IMPORTANT: If the index is set before creating the entity it looks like
+			//there already exists a hash that is pointing to null.
+			Entry->Index = Ref->Index;		
 		}
 
 		Ref->Ptr = Entry->Ptr;
@@ -308,7 +312,14 @@ AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_enti
 AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
 						 u32 StoredIndex, v3* SimP)
 {
-	sim_entity* Dest = AddSimEntity(StoredEntities, SimRegion, Source, StoredIndex);
+	sim_entity_hash* Entry = GetSimEntityHashSlotFromStorageIndex(SimRegion, StoredIndex);
+	Assert(Entry);
+
+	sim_entity* Dest = 0;
+	if(Entry->Ptr == 0)
+	{
+		Dest = AddSimEntity(StoredEntities, SimRegion, Source, StoredIndex);
+	}
 
 	if(Dest)
 	{
@@ -329,9 +340,9 @@ AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_enti
 BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* WorldMap, 
 				 world_map_position* RegionCenter, rectangle3 RegionBounds)
 {        
-	//TODO IMPORTANT Clear the hash table.
 	//TODO IMPORTANT Active vs inactive entities for the apron.
 	sim_region* Result = PushStruct(SimArena, sim_region);
+	ZeroArray(Result->Hash);
 
 	Result->WorldMap = WorldMap;
 	Result->Origin = *RegionCenter;
@@ -368,16 +379,17 @@ BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* Wor
 								Index < Block->EntityIndexCount;
 								Index++)
 						{
-							u32 StoredIndex = Block->EntityIndexes[Index];
-							stored_entity* StoredEntity = GetStoredEntityByIndex(StoredEntities, StoredIndex);
+							u32 StorageIndex = Block->EntityIndexes[Index];
+							stored_entity* StoredEntity = GetStoredEntityByIndex(StoredEntities, StorageIndex);
 							Assert(StoredEntity);
+							Assert(StoredEntity->Sim.HasPositionInWorld);
 
 							v3 SimPos = GetWorldMapPosDifference(WorldMap, StoredEntity->Sim.WorldP,
 																									 *RegionCenter);
 							if(IsInRectangle(RegionBounds, SimPos))
 							{
 								//TODO(bjorn): Add if entity is to be updated or not.
-								AddSimEntity(StoredEntities, Result, StoredEntity, StoredIndex, &SimPos);
+								AddSimEntity(StoredEntities, Result, StoredEntity, StorageIndex, &SimPos);
 							}
 						}
 					}

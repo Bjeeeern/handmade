@@ -274,7 +274,7 @@ UpdateStoredEntityChunkLocation(memory_arena* Arena, world_map* WorldMap, u32 St
 					Assert(Block->Next);
 				}
 			}
-IndexInOldChunkFound:;
+IndexInOldChunkFound:; 
 		}
 		else
 		{

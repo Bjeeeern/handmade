@@ -145,8 +145,7 @@ AddPlayer(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entiti
 	stored_entity* Sword = AddSword(WorldArena, WorldMap, Entities);
 	Entity->Sim.Sword.Index = Sword->Sim.StorageIndex;
 
-	stored_entity* Test = GetStoredEntityByIndex(Entities, *CameraFollowingPlayerIndex);
-	if(!Test)
+	if(!*CameraFollowingPlayerIndex)
 	{
 		*CameraFollowingPlayerIndex = Entity->Sim.StorageIndex;
 	}
@@ -369,7 +368,8 @@ AddWall(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entities
 	internal_function stored_entity*
 AddStair(game_state* GameState, world_map_position WorldPos, f32 dZ)
 {
-	stored_entity* Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
+	stored_entity* Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, 
+																		&GameState->Entities,
 																		EntityType_Stair, &WorldPos);
 
 	Entity->Dim = v3{1, 1, 1} * GameState->WorldMap->TileSideInMeters;
@@ -383,6 +383,8 @@ AddStair(game_state* GameState, world_map_position WorldPos, f32 dZ)
 	internal_function void
 MoveEntity(sim_entity* Entity, f32 dT)
 {
+	Assert(Entity->HasPositionInWorld);
+
 	v3 P = Entity->P;
 	v3 dP = Entity->dP;
 	v3 ddP = {};

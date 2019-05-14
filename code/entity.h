@@ -4,8 +4,8 @@
 
 struct entity_pair
 {
-	sim_entity Obj;
-	sim_entity Sub;
+	entity Obj;
+	entity Sub;
 };
 
 struct vertices
@@ -15,7 +15,7 @@ struct vertices
 };
 
 internal_function vertices
-GetEntityVertices(sim_entity* Entity)
+GetEntityVertices(entity* Entity)
 {
 	vertices Result = {};
 	Result.Count = 4;
@@ -39,10 +39,10 @@ GetEntityVertices(sim_entity* Entity)
 	return Result;
 }
 
-inline sim_entity*
-GetEntityOfType(entity_type Type, sim_entity* A, sim_entity* B)
+inline entity*
+GetEntityOfType(entity_type Type, entity* A, entity* B)
 {
-	sim_entity* Result = 0;
+	entity* Result = 0;
 	if(A->Type == Type)
 	{
 		Result = A;
@@ -54,8 +54,8 @@ GetEntityOfType(entity_type Type, sim_entity* A, sim_entity* B)
 	return Result;
 }
 
-inline sim_entity*
-GetRemainingEntity(sim_entity* E, sim_entity* A, sim_entity* B)
+inline entity*
+GetRemainingEntity(entity* E, entity* A, entity* B)
 {
 	Assert(E == A || E == B);
 	return E==A ? B:A;
@@ -87,9 +87,13 @@ AddEntity(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Stored
 	{
 		Assert(IsValid(*WorldP));
 		Assert(IsCanonical(WorldMap, WorldP->Offset_));
-	}
 
-	ChangeStoredEntityWorldLocation(WorldArena, WorldMap, Stored, WorldP);
+		ChangeStoredEntityWorldLocation(WorldArena, WorldMap, Stored, *WorldP);
+	}
+	else
+	{
+		ChangeStoredEntityWorldLocation(WorldArena, WorldMap, Stored, WorldMapNullPos());
+	}
 
 	return Stored;
 }
@@ -381,9 +385,9 @@ AddStair(game_state* GameState, world_map_position WorldPos, f32 dZ)
 #endif
 
 	internal_function void
-MoveEntity(sim_entity* Entity, f32 dT)
+MoveEntity(entity* Entity, f32 dT)
 {
-	Assert(Entity->HasPositionInWorld);
+	Assert(Entity->IsSpacial);
 
 	v3 P = Entity->P;
 	v3 dP = Entity->dP;
@@ -454,7 +458,7 @@ MoveEntity(sim_entity* Entity, f32 dT)
 }
 
 	internal_function void
-UpdateFamiliarPairwise(sim_entity* Familiar, sim_entity* Target)
+UpdateFamiliarPairwise(entity* Familiar, entity* Target)
 {
 	if(Target->Type == EntityType_Player)
 	{
@@ -469,11 +473,11 @@ UpdateFamiliarPairwise(sim_entity* Familiar, sim_entity* Target)
 }
 
 	internal_function void
-UpdateSwordPairwise(sim_entity* Sword, sim_entity* Target, b32 Intersect)
+UpdateSwordPairwise(entity* Sword, entity* Target, b32 Intersect)
 {
 	if(Intersect && Target->Type != EntityType_Player)
 	{
-		Sword->HasPositionInWorld = false;
+		Sword->IsSpacial = false;
 	}
 }
 

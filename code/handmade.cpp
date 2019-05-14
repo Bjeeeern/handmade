@@ -91,7 +91,7 @@ struct game_state
 	b32 DEBUG_StepThroughTheCollisionLoop;
 	b32 DEBUG_CollisionLoopAdvance;
 
-	sim_entity* DEBUG_CollisionLoopEntity;
+	entity* DEBUG_CollisionLoopEntity;
 	s32 DEBUG_CollisionLoopStepIndex;
 	v3 DEBUG_CollisionLoopEstimatedPos;
 #endif
@@ -528,7 +528,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			Step < Steps;
 			Step++)
 	{
-		sim_entity* Entity = SimRegion->Entities;
+		entity* Entity = SimRegion->Entities;
 		for(u32 EntityIndex = 0;
 				EntityIndex < SimRegion->EntityCount;
 				EntityIndex++, Entity++)
@@ -542,7 +542,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			// Get relevant contact point.
 			// Do impulse calculation.
 			// Test with object on mouse.
-			sim_entity* OtherEntity = SimRegion->Entities;
+			entity* OtherEntity = SimRegion->Entities;
 			for(u32 OtherEntityIndex = 0;
 					OtherEntityIndex < SimRegion->EntityCount;
 					OtherEntityIndex++, OtherEntity++)
@@ -555,7 +555,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				s32 RelevantNodeIndex = -1;
 				v2 P = Entity->P.XY;
 				polygon Sum = MinkowskiSum(OtherEntity, Entity);
-				if(!Entity->HasPositionInWorld || !OtherEntity->HasPositionInWorld)
+				if(!Entity->IsSpacial || !OtherEntity->IsSpacial)
 				{
 					Inside = false;
 				}
@@ -656,17 +656,17 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					OtherEntity->P.XY  -= n * Penetration * 0.5f;
 				} 
 
-				sim_entity* Familiar = GetEntityOfType(EntityType_Familiar, Entity, OtherEntity);
+				entity* Familiar = GetEntityOfType(EntityType_Familiar, Entity, OtherEntity);
 				if(Familiar)
 				{
-					sim_entity* Target = GetRemainingEntity(Familiar, Entity, OtherEntity);
+					entity* Target = GetRemainingEntity(Familiar, Entity, OtherEntity);
 					UpdateFamiliarPairwise(Familiar, Target);
 				}
 
-				sim_entity* Sword = GetEntityOfType(EntityType_Sword, Entity, OtherEntity);
+				entity* Sword = GetEntityOfType(EntityType_Sword, Entity, OtherEntity);
 				if(Sword)
 				{
-					sim_entity* Target = GetRemainingEntity(Sword, Entity, OtherEntity);
+					entity* Target = GetRemainingEntity(Sword, Entity, OtherEntity);
 					UpdateSwordPairwise(Sword, Target, Inside);
 				}
 
@@ -680,21 +680,21 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 					u32 Player1StorageIndex = GameState->KeyboardSimulationRequests[0].PlayerStorageIndex;
 
-					sim_entity* Player = GetEntityOfType(EntityType_Player, Entity, OtherEntity);
+					entity* Player = GetEntityOfType(EntityType_Player, Entity, OtherEntity);
 					if(Player && 
 						 Player->StorageIndex == Player1StorageIndex &&
 						 !Player->RidingVehicle.Ptr)
 					{
-						sim_entity* Target = GetRemainingEntity(Player, Entity, OtherEntity);
+						entity* Target = GetRemainingEntity(Player, Entity, OtherEntity);
 						DEBUGMinkowskiSum(Buffer, Target, Player, GameSpaceToScreenSpace, ScreenCenter);
 					}
 
-					sim_entity* CarFrame = GetEntityOfType(EntityType_CarFrame, Entity, OtherEntity);
+					entity* CarFrame = GetEntityOfType(EntityType_CarFrame, Entity, OtherEntity);
 					if(CarFrame &&
 						 CarFrame->DriverSeat.Ptr &&
 						 CarFrame->DriverSeat.Ptr->StorageIndex == Player1StorageIndex)
 					{
-						sim_entity* Target = GetRemainingEntity(CarFrame, Entity, OtherEntity);
+						entity* Target = GetRemainingEntity(CarFrame, Entity, OtherEntity);
 						DEBUGMinkowskiSum(Buffer, Target, CarFrame, GameSpaceToScreenSpace, ScreenCenter);
 					}
 				}
@@ -718,14 +718,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				{
 					if(SimReq->PlayerStorageIndex == Entity->StorageIndex)
 					{
-						sim_entity* Sword = Entity->Sword.Ptr;
+						entity* Sword = Entity->Sword.Ptr;
 						if(Sword && 
 							 LenghtSquared(SimReq->FireSword))
 						{
-							Sword->HasPositionInWorld = true;
-							Sword->R = SimReq->FireSword;
-							Sword->P = Entity->P + SimReq->FireSword * Sword->Dim.Y;
-							Sword->dP = Sword->R * 8.0f;
+							MakeEntitySpacial(Sword, 
+																SimReq->FireSword,
+																Entity->P + SimReq->FireSword * Sword->Dim.Y,
+																SimReq->FireSword * 8.0f);
 							Sword->DistanceRemaining = 20.0f;
 						}
 
@@ -734,7 +734,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				}
 			}
 
-			if(Entity->HasPositionInWorld)
+			if(Entity->IsSpacial)
 			{
 				MoveEntity(Entity, dT);
 			}
@@ -743,11 +743,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			{
 				v3 NewP = Entity->P;
 
-				Entity->DistanceRemaining -= Lenght(NewP - OldP);
-				if(Entity->DistanceRemaining <= 0)
+				if(Entity->IsSpacial)
 				{
-					sim_entity* Sword = Entity;
-					Sword->HasPositionInWorld = false;
+					Entity->DistanceRemaining -= Lenght(NewP - OldP);
+					if(Entity->DistanceRemaining <= 0)
+					{
+						entity* Sword = Entity;
+						MakeEntityNonSpacial(Sword);
+					}
 				}
 			}
 
@@ -762,7 +765,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			//
 			if(Step == (Steps-1))
 			{
-				if(!Entity->HasPositionInWorld) { continue; }
+				if(!Entity->IsSpacial) { continue; }
 				if(Entity->WorldP.ChunkP.Z != GameState->CameraP.ChunkP.Z) { continue; }
 
 				v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;

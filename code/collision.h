@@ -84,7 +84,7 @@ struct polygon
 	minkowski_sum_origin Genus[8];
 };
 	internal_function polygon 
-MinkowskiSum(sim_entity* Target, sim_entity* Movable)
+MinkowskiSum(entity* Target, entity* Movable)
 {
 	polygon Result = {};
 	Result.NodeCount = 8;
@@ -151,7 +151,7 @@ MinkowskiSum(sim_entity* Target, sim_entity* Movable)
 #if HANDMADE_INTERNAL
 	internal_function void
 DEBUGMinkowskiSum(game_offscreen_buffer* Buffer, 
-									sim_entity* Target, sim_entity* Movable, 
+									entity* Target, entity* Movable, 
 									m22 GameSpaceToScreenSpace, v2 ScreenCenter)
 {
 	polygon Sum = MinkowskiSum(Target, Movable);

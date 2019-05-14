@@ -48,19 +48,19 @@ struct hit_point
 	u8 FilledAmount;
 };
 
-struct sim_entity;
+struct entity;
 
 union entity_reference
 {
 	u32 Index;
-	sim_entity* Ptr;
+	entity* Ptr;
 };
 
-struct sim_entity
+struct entity
 {
 	u32 StorageIndex;
 
-	b32 HasPositionInWorld : 1;
+	b32 IsSpacial : 1;
 	b32 CollisionDirtyBit : 1;
 	b32 Collides : 1;
 	b32 Attached : 1;
@@ -118,9 +118,35 @@ struct sim_entity
 	v3 MovingDirection;
 };
 
+inline void
+MakeEntitySpacial(entity* Entity, v3 R, v3 P, v3 dP)
+{
+	Entity->IsSpacial = true;
+	Entity->R = R;
+	Entity->P = P;
+	Entity->dP = dP;
+}
+
+inline void
+MakeEntityNonSpacial(entity* Entity)
+{
+	Entity->IsSpacial = false;
+#if HANDMADE_INTERNAL
+	ActivateSignalingNaNs();
+	v3 InvalidV3 = {signaling_not_a_number32, 
+									signaling_not_a_number32, 
+									signaling_not_a_number32 };
+#elif
+	v3 InvalidV3 = {-10000, -10000, -10000};
+#endif
+	Entity->R = InvalidV3;
+	Entity->P = InvalidV3;
+	Entity->dP = InvalidV3;
+}
+
 struct stored_entity
 {
-	sim_entity Sim;
+	entity Sim;
 };
 
 struct stored_entities
@@ -149,7 +175,7 @@ GetStoredEntityByIndex(stored_entities* Entities, u32 StorageIndex)
 
 inline void
 ChangeStoredEntityWorldLocation(memory_arena* WorldArena, world_map* WorldMap, 
-																stored_entity* Stored, world_map_position* NewP)
+																stored_entity* Stored, world_map_position NewWorldP)
 {
 	Assert(Stored); 
 
@@ -159,9 +185,10 @@ ChangeStoredEntityWorldLocation(memory_arena* WorldArena, world_map* WorldMap,
 		OldP = &(Stored->Sim.WorldP); 
 	}
 
-	if(NewP) 
-	{ 
-		Assert(IsValid(*NewP)); 
+	world_map_position* NewP = 0;
+	if(IsValid(NewWorldP))
+	{
+		NewP = &NewWorldP; 
 	}
 
 	UpdateStoredEntityChunkLocation(WorldArena, WorldMap, Stored->Sim.StorageIndex, OldP, NewP);
@@ -169,19 +196,19 @@ ChangeStoredEntityWorldLocation(memory_arena* WorldArena, world_map* WorldMap,
 	if(NewP)
 	{
 		Stored->Sim.WorldP = *NewP;
-		Stored->Sim.HasPositionInWorld = true;
+		Stored->Sim.IsSpacial = true;
 	}
 	else
 	{
 		Stored->Sim.WorldP = WorldMapNullPos();
-		Stored->Sim.HasPositionInWorld = false;
+		Stored->Sim.IsSpacial = false;
 	}
 }
 
-struct sim_entity_hash
+struct entity_hash
 {
 	u32 Index;
-	sim_entity* Ptr;
+	entity* Ptr;
 };
 
 struct sim_region
@@ -192,26 +219,26 @@ struct sim_region
 
 	u32 EntityMaxCount;
 	u32 EntityCount;
-	sim_entity* Entities;
+	entity* Entities;
 
 	//TODO Is a hash here really the right way to go?
 	//NOTE Must be a power of two.
-	sim_entity_hash Hash[4096];
+	entity_hash Hash[4096];
 };
 
-internal_function sim_entity_hash* 
+internal_function entity_hash* 
 GetSimEntityHashSlotFromStorageIndex(sim_region* SimRegion, u32 StorageIndex)
 {
 	Assert(StorageIndex);
 
-	sim_entity_hash* Result = 0;
+	entity_hash* Result = 0;
 
 	u32 HashValue = StorageIndex;
 	for(s32 Offset = 0;
 			Offset < ArrayCount(SimRegion->Hash);
 			Offset++)
 	{
-		sim_entity_hash* HashEntry = SimRegion->Hash + ((HashValue + Offset) & 
+		entity_hash* HashEntry = SimRegion->Hash + ((HashValue + Offset) & 
 																										(ArrayCount(SimRegion->Hash)-1));
 
 		if((HashEntry->Index == StorageIndex) ||
@@ -226,9 +253,9 @@ GetSimEntityHashSlotFromStorageIndex(sim_region* SimRegion, u32 StorageIndex)
 }
 
 	internal_function void
-MapStorageIndexToEntity(sim_region* SimRegion, u32 StorageIndex, sim_entity* Entity)
+MapStorageIndexToEntity(sim_region* SimRegion, u32 StorageIndex, entity* Entity)
 {
-	sim_entity_hash* Entry = GetSimEntityHashSlotFromStorageIndex(SimRegion, StorageIndex);
+	entity_hash* Entry = GetSimEntityHashSlotFromStorageIndex(SimRegion, StorageIndex);
 
 	Assert(Entry->Index == 0 || Entry->Index == StorageIndex);
 	Assert(Entry->Ptr == 0 || Entry->Ptr == Entity);
@@ -237,7 +264,7 @@ MapStorageIndexToEntity(sim_region* SimRegion, u32 StorageIndex, sim_entity* Ent
 	Entry->Ptr = Entity;
 }
 
-	internal_function sim_entity*
+	internal_function entity*
 AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
 						 u32 StorageIndex);
 
@@ -246,13 +273,13 @@ LoadEntityReference(stored_entities* StoredEntities, sim_region* SimRegion, enti
 {
 	if(Ref->Index)
 	{
-		sim_entity_hash* Entry = GetSimEntityHashSlotFromStorageIndex(SimRegion, Ref->Index);
+		entity_hash* Entry = GetSimEntityHashSlotFromStorageIndex(SimRegion, Ref->Index);
 		Assert(Entry);
 
 		if(Entry->Ptr == 0)
 		{
 			Entry->Ptr = AddSimEntity(StoredEntities, SimRegion, 
-														 GetStoredEntityByIndex(StoredEntities, Ref->Index), Ref->Index);
+																GetStoredEntityByIndex(StoredEntities, Ref->Index), Ref->Index);
 			//IMPORTANT: If the index is set before creating the entity it looks like
 			//there already exists a hash that is pointing to null.
 			Entry->Index = Ref->Index;		
@@ -271,12 +298,12 @@ StoreEntityReference(entity_reference* Ref)
 	}
 }
 
-	internal_function sim_entity*
+	internal_function entity*
 AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
 						 u32 StorageIndex)
 {
 	Assert(StorageIndex);
-	sim_entity* Entity = 0;
+	entity* Entity = 0;
 
 	if(SimRegion->EntityCount < SimRegion->EntityMaxCount)
 	{
@@ -312,10 +339,10 @@ AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_enti
 AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
 						 u32 StoredIndex, v3* SimP)
 {
-	sim_entity_hash* Entry = GetSimEntityHashSlotFromStorageIndex(SimRegion, StoredIndex);
+	entity_hash* Entry = GetSimEntityHashSlotFromStorageIndex(SimRegion, StoredIndex);
 	Assert(Entry);
 
-	sim_entity* Dest = 0;
+	entity* Dest = 0;
 	if(Entry->Ptr == 0)
 	{
 		Dest = AddSimEntity(StoredEntities, SimRegion, Source, StoredIndex);
@@ -325,13 +352,22 @@ AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_enti
 	{
 		Dest->CollisionDirtyBit = false;
 
+		//TODO(bjorn): The pos should be set to an invalid one here if the entitiy is non-spatial.
 		if(SimP)
 		{
 			Dest->P = *SimP;
 		}
 		else
 		{
-			Dest->P = GetWorldMapPosDifference(SimRegion->WorldMap, Source->Sim.WorldP, SimRegion->Origin);
+			if(Dest->IsSpacial)
+			{
+				Dest->P = GetWorldMapPosDifference(SimRegion->WorldMap, Source->Sim.WorldP, 
+																					 SimRegion->Origin);
+			}
+			else
+			{
+				MakeEntityNonSpacial(Dest);
+			}
 		}
 	}
 }
@@ -350,7 +386,7 @@ BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* Wor
 
 	Result->EntityMaxCount = 4096;
 	Result->EntityCount = 0;
-	Result->Entities = PushArray(SimArena, Result->EntityMaxCount, sim_entity);
+	Result->Entities = PushArray(SimArena, Result->EntityMaxCount, entity);
 
 	world_map_position MinWorldP = OffsetWorldPos(WorldMap, *RegionCenter, RegionBounds.Min);
 	world_map_position MaxWorldP = OffsetWorldPos(WorldMap, *RegionCenter, RegionBounds.Max);
@@ -382,7 +418,7 @@ BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* Wor
 							u32 StorageIndex = Block->EntityIndexes[Index];
 							stored_entity* StoredEntity = GetStoredEntityByIndex(StoredEntities, StorageIndex);
 							Assert(StoredEntity);
-							Assert(StoredEntity->Sim.HasPositionInWorld);
+							Assert(StoredEntity->Sim.IsSpacial);
 
 							v3 SimPos = GetWorldMapPosDifference(WorldMap, StoredEntity->Sim.WorldP,
 																									 *RegionCenter);
@@ -404,7 +440,7 @@ BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* Wor
 internal_function void
 EndSim(stored_entities* Entities, memory_arena* WorldArena, sim_region* SimRegion)
 {
-	sim_entity* SimEntity = SimRegion->Entities;
+	entity* SimEntity = SimRegion->Entities;
 	for(u32 EntityIndex = 0;
 			EntityIndex < SimRegion->EntityCount;
 			EntityIndex++, SimEntity++)
@@ -423,16 +459,12 @@ EndSim(stored_entities* Entities, memory_arena* WorldArena, sim_region* SimRegio
 		StoreEntityReference(&Stored->Sim.DriverSeat);
 		StoreEntityReference(&Stored->Sim.Engine);
 
-		if(SimEntity->HasPositionInWorld)
+		world_map_position NewWorldP = WorldMapNullPos();
+		if(SimEntity->IsSpacial)
 		{
-			world_map_position NewWorldP = OffsetWorldPos(SimRegion->WorldMap, 
-																										SimRegion->Origin, SimEntity->P);
-			ChangeStoredEntityWorldLocation(WorldArena, SimRegion->WorldMap, Stored, &NewWorldP);
+			NewWorldP = OffsetWorldPos(SimRegion->WorldMap, SimRegion->Origin, SimEntity->P);
 		}
-		else
-		{
-			ChangeStoredEntityWorldLocation(WorldArena, SimRegion->WorldMap, Stored, 0);
-		}
+		ChangeStoredEntityWorldLocation(WorldArena, SimRegion->WorldMap, Stored, NewWorldP);
 	}
 }
 

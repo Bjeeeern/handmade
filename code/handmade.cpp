@@ -719,12 +719,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					if(SimReq->PlayerStorageIndex == Entity->StorageIndex)
 					{
 						entity* Sword = Entity->Sword.Ptr;
-						if(Sword && 
+						if(Sword &&
 							 LenghtSquared(SimReq->FireSword))
 						{
-							MakeEntitySpacial(Sword, 
-																SimReq->FireSword,
-																Entity->P + SimReq->FireSword * Sword->Dim.Y,
+							 
+							MakeEntitySpacial(Sword, SimReq->FireSword,
+																(Sword->IsSpacial ? 
+																 Sword->P : 
+																 (Entity->P + SimReq->FireSword * Sword->Dim.Y)),
 																SimReq->FireSword * 8.0f);
 							Sword->DistanceRemaining = 20.0f;
 						}

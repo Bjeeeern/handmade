@@ -5,9 +5,9 @@
 
 struct move_spec
 {
-	b32 EnforceHorizontalMovement;
-	b32 EnforceVerticalGravity;
-	b32 AllowRotation;
+	b32 EnforceHorizontalMovement : 1;
+	b32 EnforceVerticalGravity : 1;
+	b32 AllowRotation : 1;
 	f32 Speed;
 	f32 Drag;
 	f32 AngularDrag;
@@ -252,20 +252,8 @@ GetSimEntityHashSlotFromStorageIndex(sim_region* SimRegion, u32 StorageIndex)
 	return Result;
 }
 
-	internal_function void
-MapStorageIndexToEntity(sim_region* SimRegion, u32 StorageIndex, entity* Entity)
-{
-	entity_hash* Entry = GetSimEntityHashSlotFromStorageIndex(SimRegion, StorageIndex);
-
-	Assert(Entry->Index == 0 || Entry->Index == StorageIndex);
-	Assert(Entry->Ptr == 0 || Entry->Ptr == Entity);
-
-	Entry->Index = StorageIndex;
-	Entry->Ptr = Entity;
-}
-
 	internal_function entity*
-AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
+AddSimEntityRaw(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
 						 u32 StorageIndex);
 
 	internal_function void
@@ -273,19 +261,9 @@ LoadEntityReference(stored_entities* StoredEntities, sim_region* SimRegion, enti
 {
 	if(Ref->Index)
 	{
-		entity_hash* Entry = GetSimEntityHashSlotFromStorageIndex(SimRegion, Ref->Index);
-		Assert(Entry);
-
-		if(Entry->Ptr == 0)
-		{
-			Entry->Ptr = AddSimEntity(StoredEntities, SimRegion, 
-																GetStoredEntityByIndex(StoredEntities, Ref->Index), Ref->Index);
-			//IMPORTANT: If the index is set before creating the entity it looks like
-			//there already exists a hash that is pointing to null.
-			Entry->Index = Ref->Index;		
-		}
-
-		Ref->Ptr = Entry->Ptr;
+		Ref->Ptr = AddSimEntityRaw(StoredEntities, SimRegion, 
+															 GetStoredEntityByIndex(StoredEntities, Ref->Index), 
+															 Ref->Index);
 	}
 }
 
@@ -299,38 +277,52 @@ StoreEntityReference(entity_reference* Ref)
 }
 
 	internal_function entity*
-AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
+AddSimEntityRaw(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
 						 u32 StorageIndex)
 {
 	Assert(StorageIndex);
 	entity* Entity = 0;
 
-	if(SimRegion->EntityCount < SimRegion->EntityMaxCount)
+	entity_hash* Entry = GetSimEntityHashSlotFromStorageIndex(SimRegion, StorageIndex);
+	Assert(Entry);
+
+	if(Entry->Ptr == 0)
 	{
-		Entity = SimRegion->Entities + SimRegion->EntityCount++;
-		MapStorageIndexToEntity(SimRegion, StorageIndex, Entity);
-
-		if(Source)
+		if(SimRegion->EntityCount < SimRegion->EntityMaxCount)
 		{
-			//TODO Decompression step instead of block copy!!
-			*Entity = Source->Sim;
-			LoadEntityReference(StoredEntities, SimRegion, &Entity->Vehicle);
-			LoadEntityReference(StoredEntities, SimRegion, &Entity->RidingVehicle);
-			LoadEntityReference(StoredEntities, SimRegion, &Entity->Sword);
-			LoadEntityReference(StoredEntities, SimRegion, &Entity->Wheels[0]);
-			LoadEntityReference(StoredEntities, SimRegion, &Entity->Wheels[1]);
-			LoadEntityReference(StoredEntities, SimRegion, &Entity->Wheels[2]);
-			LoadEntityReference(StoredEntities, SimRegion, &Entity->Wheels[3]);
-			LoadEntityReference(StoredEntities, SimRegion, &Entity->DriverSeat);
-			LoadEntityReference(StoredEntities, SimRegion, &Entity->Engine);
-		}
+			Entity = SimRegion->Entities + SimRegion->EntityCount++;
 
-		Entity->StorageIndex = StorageIndex;
+			Entry->Ptr = Entity;
+			Entry->Index = StorageIndex;
+		}
+		else
+		{
+			InvalidCodePath;
+		}
 	}
 	else
 	{
-		InvalidCodePath;
+		Entity = Entry->Ptr;
+		Assert(Entry->Index == StorageIndex);
 	}
+	Assert(Entity);
+
+	if(Source)
+	{
+		//TODO Decompression step instead of block copy!!
+		*Entity = Source->Sim;
+		LoadEntityReference(StoredEntities, SimRegion, &Entity->Vehicle);
+		LoadEntityReference(StoredEntities, SimRegion, &Entity->RidingVehicle);
+		LoadEntityReference(StoredEntities, SimRegion, &Entity->Sword);
+		LoadEntityReference(StoredEntities, SimRegion, &Entity->Wheels[0]);
+		LoadEntityReference(StoredEntities, SimRegion, &Entity->Wheels[1]);
+		LoadEntityReference(StoredEntities, SimRegion, &Entity->Wheels[2]);
+		LoadEntityReference(StoredEntities, SimRegion, &Entity->Wheels[3]);
+		LoadEntityReference(StoredEntities, SimRegion, &Entity->DriverSeat);
+		LoadEntityReference(StoredEntities, SimRegion, &Entity->Engine);
+	}
+
+	Entity->StorageIndex = StorageIndex;
 
 	return Entity;
 }
@@ -339,14 +331,7 @@ AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_enti
 AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
 						 u32 StoredIndex, v3* SimP)
 {
-	entity_hash* Entry = GetSimEntityHashSlotFromStorageIndex(SimRegion, StoredIndex);
-	Assert(Entry);
-
-	entity* Dest = 0;
-	if(Entry->Ptr == 0)
-	{
-		Dest = AddSimEntity(StoredEntities, SimRegion, Source, StoredIndex);
-	}
+	entity* Dest = AddSimEntityRaw(StoredEntities, SimRegion, Source, StoredIndex);
 
 	if(Dest)
 	{
@@ -376,6 +361,7 @@ AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_enti
 BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* WorldMap, 
 				 world_map_position* RegionCenter, rectangle3 RegionBounds)
 {        
+	//TODO IMPORTANT Weird bug where the sword entity moves faster depending on player movement.
 	//TODO IMPORTANT Active vs inactive entities for the apron.
 	sim_region* Result = PushStruct(SimArena, sim_region);
 	ZeroArray(Result->Hash);
@@ -437,7 +423,7 @@ BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* Wor
 	return Result;
 }
 
-internal_function void
+	internal_function void
 EndSim(stored_entities* Entities, memory_arena* WorldArena, sim_region* SimRegion)
 {
 	entity* SimEntity = SimRegion->Entities;

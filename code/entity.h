@@ -119,7 +119,7 @@ AddSword(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entitie
 	Entity->Sim.Dim = v2{0.4f, 1.5f} * WorldMap->TileSideInMeters;
 	Entity->Sim.Mass = 8.0f;
 
-	Entity->Sim.MoveSpec.Drag = 0.0f;
+	Entity->Sim.MoveSpec = {};
 	Entity->Sim.Collides = false;
 
 	return Entity;

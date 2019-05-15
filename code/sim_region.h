@@ -253,17 +253,17 @@ GetSimEntityHashSlotFromStorageIndex(sim_region* SimRegion, u32 StorageIndex)
 }
 
 	internal_function entity*
-AddSimEntityRaw(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
-						 u32 StorageIndex);
+AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
+						 u32 StoredIndex, v3* SimP);
 
 	internal_function void
 LoadEntityReference(stored_entities* StoredEntities, sim_region* SimRegion, entity_reference* Ref)
 {
 	if(Ref->Index)
 	{
-		Ref->Ptr = AddSimEntityRaw(StoredEntities, SimRegion, 
-															 GetStoredEntityByIndex(StoredEntities, Ref->Index), 
-															 Ref->Index);
+		Ref->Ptr = AddSimEntity(StoredEntities, SimRegion, 
+														GetStoredEntityByIndex(StoredEntities, Ref->Index), 
+														Ref->Index, 0);
 	}
 }
 
@@ -278,7 +278,7 @@ StoreEntityReference(entity_reference* Ref)
 
 	internal_function entity*
 AddSimEntityRaw(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
-						 u32 StorageIndex)
+								u32 StorageIndex)
 {
 	Assert(StorageIndex);
 	entity* Entity = 0;
@@ -327,7 +327,7 @@ AddSimEntityRaw(stored_entities* StoredEntities, sim_region* SimRegion, stored_e
 	return Entity;
 }
 
-	internal_function void
+	internal_function entity*
 AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
 						 u32 StoredIndex, v3* SimP)
 {
@@ -355,11 +355,13 @@ AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_enti
 			}
 		}
 	}
+
+	return Dest;
 }
 
 	internal_function sim_region*
 BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* WorldMap, 
-				 world_map_position* RegionCenter, rectangle3 RegionBounds)
+				 world_map_position RegionCenter, rectangle3 RegionBounds)
 {        
 	//TODO IMPORTANT Weird bug where the sword entity moves faster depending on player movement.
 	//TODO IMPORTANT Active vs inactive entities for the apron.
@@ -367,15 +369,15 @@ BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* Wor
 	ZeroArray(Result->Hash);
 
 	Result->WorldMap = WorldMap;
-	Result->Origin = *RegionCenter;
+	Result->Origin = RegionCenter;
 	Result->Bounds = RegionBounds;
 
 	Result->EntityMaxCount = 4096;
 	Result->EntityCount = 0;
 	Result->Entities = PushArray(SimArena, Result->EntityMaxCount, entity);
 
-	world_map_position MinWorldP = OffsetWorldPos(WorldMap, *RegionCenter, RegionBounds.Min);
-	world_map_position MaxWorldP = OffsetWorldPos(WorldMap, *RegionCenter, RegionBounds.Max);
+	world_map_position MinWorldP = OffsetWorldPos(WorldMap, RegionCenter, RegionBounds.Min);
+	world_map_position MaxWorldP = OffsetWorldPos(WorldMap, RegionCenter, RegionBounds.Max);
 	//rectangle3s CameraUpdateAbsBounds = RectMinMax(MinWorldP.ChunkP, MaxWorldP.ChunkP);
 
 	for(s32 Z = MinWorldP.ChunkP.Z; 
@@ -407,7 +409,7 @@ BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* Wor
 							Assert(StoredEntity->Sim.IsSpacial);
 
 							v3 SimPos = GetWorldMapPosDifference(WorldMap, StoredEntity->Sim.WorldP,
-																									 *RegionCenter);
+																									 RegionCenter);
 							if(IsInRectangle(RegionBounds, SimPos))
 							{
 								//TODO(bjorn): Add if entity is to be updated or not.

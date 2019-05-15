@@ -69,7 +69,7 @@ DefaultEntityOrientation()
 
 	internal_function stored_entity*
 AddEntity(memory_arena* WorldArena, world_map* WorldMap, stored_entities* StoredEntities, 
-					entity_type Type, world_map_position* WorldP = 0)
+					entity_type Type, world_map_position WorldP = WorldMapNullPos())
 {
 	stored_entity* Stored = {};
 
@@ -83,17 +83,12 @@ AddEntity(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Stored
 	Stored->Sim.R = DefaultEntityOrientation();
 	Stored->Sim.WorldP = WorldMapNullPos();
 
-	if(WorldP)
+	if(IsValid(WorldP))
 	{
-		Assert(IsValid(*WorldP));
-		Assert(IsCanonical(WorldMap, WorldP->Offset_));
+		Assert(IsCanonical(WorldMap, WorldP.Offset_));
+	}
 
-		ChangeStoredEntityWorldLocation(WorldArena, WorldMap, Stored, *WorldP);
-	}
-	else
-	{
-		ChangeStoredEntityWorldLocation(WorldArena, WorldMap, Stored, WorldMapNullPos());
-	}
+	ChangeStoredEntityWorldLocation(WorldArena, WorldMap, Stored, WorldP);
 
 	return Stored;
 }
@@ -126,13 +121,10 @@ AddSword(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entitie
 }
 
 	internal_function stored_entity*
-AddPlayer(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entities, 
-					world_map_position CameraP, u32* CameraFollowingPlayerIndex)
+AddPlayer(memory_arena* WorldArena, world_map* WorldMap, 
+					stored_entities* Entities, world_map_position InitP)
 {
-	v3 OffsetInTiles = GetChunkPosFromAbsTile(WorldMap, v3s{-2, 1, 0}).Offset_;
-	world_map_position InitP = OffsetWorldPos(WorldMap, CameraP, OffsetInTiles);
-
-	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityType_Player, &InitP);
+	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityType_Player, InitP);
 
 	Entity->Sim.Dim = v2{0.5f, 0.3f} * WorldMap->TileSideInMeters;
 	Entity->Sim.Collides = true;
@@ -149,11 +141,6 @@ AddPlayer(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entiti
 	stored_entity* Sword = AddSword(WorldArena, WorldMap, Entities);
 	Entity->Sim.Sword.Index = Sword->Sim.StorageIndex;
 
-	if(!*CameraFollowingPlayerIndex)
-	{
-		*CameraFollowingPlayerIndex = Entity->Sim.StorageIndex;
-	}
-
 	return Entity;
 }
 
@@ -161,7 +148,7 @@ AddPlayer(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entiti
 AddMonstar(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entities,
 					 world_map_position InitP)
 {
-	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityType_Monstar, &InitP);
+	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityType_Monstar, InitP);
 
 	Entity->Sim.Dim = v2{0.5f, 0.3f} * WorldMap->TileSideInMeters;
 	Entity->Sim.Collides = true;
@@ -188,7 +175,7 @@ AddMonstar(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entit
 AddFamiliar(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entities, 
 						world_map_position InitP)
 {
-	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityType_Familiar, &InitP);
+	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityType_Familiar, InitP);
 
 	Entity->Sim.Dim = v2{0.5f, 0.3f} * WorldMap->TileSideInMeters;
 	Entity->Sim.Collides = true;
@@ -345,7 +332,7 @@ AddCar(game_state* GameState, world_map_position WorldPos)
 AddGround(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entities, 
 					world_map_position WorldPos)
 {
-	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityType_Ground, &WorldPos);
+	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityType_Ground, WorldPos);
 
 	Entity->Sim.Dim = v2{1, 1} * WorldMap->TileSideInMeters;
 	Entity->Sim.Collides = false;
@@ -357,7 +344,7 @@ AddGround(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entiti
 AddWall(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entities, 
 				world_map_position WorldPos, f32 Mass = 1000.0f)
 {
-	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityType_Wall, &WorldPos);
+	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityType_Wall, WorldPos);
 
 	Entity->Sim.Dim = v2{1, 1} * WorldMap->TileSideInMeters;
 	Entity->Sim.Collides = true;
@@ -388,6 +375,10 @@ AddStair(game_state* GameState, world_map_position WorldPos, f32 dZ)
 MoveEntity(entity* Entity, f32 dT)
 {
 	Assert(Entity->IsSpacial);
+	if(Entity->Type == EntityType_Sword)
+	{
+		u32 hej = 6;
+	}
 
 	v3 P = Entity->P;
 	v3 dP = Entity->dP;

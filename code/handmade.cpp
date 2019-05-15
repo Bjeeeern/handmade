@@ -195,9 +195,14 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 
 	GameState->CameraP = GetChunkPosFromAbsTile(WorldMap, GameState->RoomOrigin);
 
-	stored_entity* Player = AddPlayer(&GameState->WorldArena, WorldMap, &GameState->Entities,
-																		GameState->CameraP, &GameState->CameraFollowingPlayerIndex);
-	GameState->KeyboardSimulationRequests[0].PlayerStorageIndex = Player->Sim.StorageIndex;
+	{
+		v3 OffsetInTiles = GetChunkPosFromAbsTile(WorldMap, v3s{-2, 1, 0}).Offset_;
+		world_map_position InitP = OffsetWorldPos(WorldMap, GameState->CameraP, OffsetInTiles);
+		stored_entity* Player = AddPlayer(&GameState->WorldArena, WorldMap, 
+																			&GameState->Entities, InitP);
+		GameState->CameraFollowingPlayerIndex = Player->Sim.StorageIndex;
+		GameState->KeyboardSimulationRequests[0].PlayerStorageIndex = Player->Sim.StorageIndex;
+	}
 #if 0
 	AddCar(&GameState->WorldArena, WorldMap, &GameState->Entities,
 				 OffsetWorldPos(WorldMap, Player->Sim.WorldP, {3.0f, 7.0f, 0}));
@@ -326,9 +331,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				{
 					if(Clicked(Controller, Start))
 					{
-						SimReq->PlayerStorageIndex = 
-							AddPlayer(WorldArena, WorldMap, Entities, GameState->CameraP, 
-												&GameState->CameraFollowingPlayerIndex)->Sim.StorageIndex;
+						v3 OffsetInTiles = GetChunkPosFromAbsTile(WorldMap, v3s{-2, 1, 0}).Offset_;
+						world_map_position InitP = OffsetWorldPos(WorldMap, GameState->CameraP, OffsetInTiles);
+
+						SimReq->PlayerStorageIndex = AddPlayer(WorldArena, WorldMap, 
+																									 Entities, InitP)->Sim.StorageIndex;
 					}
 				}
 			}
@@ -368,11 +375,19 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				if(Clicked(Keyboard, M))
 				{
 					GameState->DEBUG_VisualiseMinkowskiSum = !GameState->DEBUG_VisualiseMinkowskiSum;
+					GameState->DEBUG_VisualiseCollisionBox = !GameState->DEBUG_VisualiseCollisionBox;
 				}
 
 				if(Clicked(Keyboard, C))
 				{
-					GameState->DEBUG_VisualiseCollisionBox = !GameState->DEBUG_VisualiseCollisionBox;
+					if(GameState->CameraFollowingPlayerIndex)
+					{
+						GameState->CameraFollowingPlayerIndex = 0;
+					}
+					else
+					{
+						GameState->CameraFollowingPlayerIndex = SimReq->PlayerStorageIndex;
+					}
 				}
 
 				if(SimReq->PlayerStorageIndex)
@@ -485,10 +500,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	// NOTE(bjorn): Update camera
 	//
-	stored_entity* CameraTarget = GetStoredEntityByIndex(Entities, 
-																											 GameState->CameraFollowingPlayerIndex);
-	if(CameraTarget)
+	if(GameState->CameraFollowingPlayerIndex)
 	{
+		stored_entity* CameraTarget = GetStoredEntityByIndex(Entities, 
+																												 GameState->CameraFollowingPlayerIndex);
+		Assert(CameraTarget);
 		world_map_position NewCameraP = CameraTarget->Sim.WorldP;
 		NewCameraP.Offset_.Z = 0;
 		GameState->CameraP = NewCameraP;
@@ -501,7 +517,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	rectangle3 CameraUpdateBounds = RectCenterDim(v3{0,0,0}, HighFrequencyUpdateDim);
 
 	sim_region* SimRegion = BeginSim(Entities, &(GameState->SimArena), WorldMap, 
-																	 &(GameState->CameraP), CameraUpdateBounds);
+																	 GameState->CameraP, CameraUpdateBounds);
 
 	//
 	// NOTE(bjorn): Moving and Rendering

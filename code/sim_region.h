@@ -59,16 +59,16 @@ union entity_reference
 struct entity
 {
 	u32 StorageIndex;
+	world_map_position WorldP;
+	b32 Updates : 1;
+	b32 EnityHasBeenProcessedAlready : 1;
 
 	b32 IsSpacial : 1;
-	b32 CollisionDirtyBit : 1;
 	b32 Collides : 1;
 	b32 Attached : 1;
 	//NOTE(bjorn): CarFrame
 	//TODO(bjorn): Use this to move out the turning code to the cars update loop.
 	b32 AutoPilot : 1;
-
-	world_map_position WorldP;
 
 	//TODO(casey): Generation index so we know how "up to date" the entity is.
 
@@ -215,7 +215,8 @@ struct sim_region
 {
 	world_map* WorldMap;
 	world_map_position Origin; 
-	rectangle3 Bounds;
+	rectangle3 OuterBounds;
+	rectangle3 UpdateBounds;
 
 	u32 EntityMaxCount;
 	u32 EntityCount;
@@ -331,54 +332,54 @@ AddSimEntityRaw(stored_entities* StoredEntities, sim_region* SimRegion, stored_e
 AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
 						 u32 StoredIndex, v3* SimP)
 {
-	entity* Dest = AddSimEntityRaw(StoredEntities, SimRegion, Source, StoredIndex);
+	entity* Result = AddSimEntityRaw(StoredEntities, SimRegion, Source, StoredIndex);
+	Assert(Result);
 
-	if(Dest)
+	//TODO(bjorn): The pos should be set to an invalid one here if the entitiy is non-spatial.
+	if(SimP)
 	{
-		Dest->CollisionDirtyBit = false;
-
-		//TODO(bjorn): The pos should be set to an invalid one here if the entitiy is non-spatial.
-		if(SimP)
+		Result->P = *SimP;
+	}
+	else
+	{
+		if(Result->IsSpacial)
 		{
-			Dest->P = *SimP;
+			Result->P = GetWorldMapPosDifference(SimRegion->WorldMap, Source->Sim.WorldP, 
+																					 SimRegion->Origin);
 		}
 		else
 		{
-			if(Dest->IsSpacial)
-			{
-				Dest->P = GetWorldMapPosDifference(SimRegion->WorldMap, Source->Sim.WorldP, 
-																					 SimRegion->Origin);
-			}
-			else
-			{
-				MakeEntityNonSpacial(Dest);
-			}
+			MakeEntityNonSpacial(Result);
 		}
 	}
 
-	return Dest;
+	Result->EnityHasBeenProcessedAlready = false;
+	Result->Updates = !Result->IsSpacial || IsInRectangle(SimRegion->UpdateBounds, Result->P);
+
+	return Result;
 }
 
 	internal_function sim_region*
 BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* WorldMap, 
 				 world_map_position RegionCenter, rectangle3 RegionBounds)
 {        
-	//TODO IMPORTANT Weird bug where the sword entity moves faster depending on player movement.
-	//TODO IMPORTANT Active vs inactive entities for the apron.
 	sim_region* Result = PushStruct(SimArena, sim_region);
 	ZeroArray(Result->Hash);
 
+	//TODO: Calculate this somehow-or-other.
+	f32 SafetyUpdateMargin = 10.0f;
+
 	Result->WorldMap = WorldMap;
 	Result->Origin = RegionCenter;
-	Result->Bounds = RegionBounds;
+	Result->UpdateBounds = RegionBounds;
+	Result->OuterBounds= AddMarginToRect(RegionBounds, SafetyUpdateMargin);
 
 	Result->EntityMaxCount = 4096;
 	Result->EntityCount = 0;
 	Result->Entities = PushArray(SimArena, Result->EntityMaxCount, entity);
 
-	world_map_position MinWorldP = OffsetWorldPos(WorldMap, RegionCenter, RegionBounds.Min);
-	world_map_position MaxWorldP = OffsetWorldPos(WorldMap, RegionCenter, RegionBounds.Max);
-	//rectangle3s CameraUpdateAbsBounds = RectMinMax(MinWorldP.ChunkP, MaxWorldP.ChunkP);
+	world_map_position MinWorldP = OffsetWorldPos(WorldMap, RegionCenter, Result->OuterBounds.Min);
+	world_map_position MaxWorldP = OffsetWorldPos(WorldMap, RegionCenter, Result->OuterBounds.Max);
 
 	for(s32 Z = MinWorldP.ChunkP.Z; 
 			Z <= MaxWorldP.ChunkP.Z; 
@@ -408,11 +409,9 @@ BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* Wor
 							Assert(StoredEntity);
 							Assert(StoredEntity->Sim.IsSpacial);
 
-							v3 SimPos = GetWorldMapPosDifference(WorldMap, StoredEntity->Sim.WorldP,
-																									 RegionCenter);
-							if(IsInRectangle(RegionBounds, SimPos))
+							v3 SimPos = GetWorldMapPosDifference(WorldMap, StoredEntity->Sim.WorldP, RegionCenter);
+							if(IsInRectangle(Result->OuterBounds, SimPos))
 							{
-								//TODO(bjorn): Add if entity is to be updated or not.
 								AddSimEntity(StoredEntities, Result, StoredEntity, StorageIndex, &SimPos);
 							}
 						}

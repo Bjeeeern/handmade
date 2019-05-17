@@ -549,10 +549,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				EntityIndex < SimRegion->EntityCount;
 				EntityIndex++, Entity++)
 		{
+			if(!Entity->Updates) { continue; }
 			//
 			// NOTE(bjorn): Moving / Collision / Game Logic
 			//
 
+			//TODO HMH 67 IMPORTANT Actually use the Updatable flag.
 			//TODO(bjorn):
 			// Add negative gravity for penetration if relative velocity is >= 0.
 			// Get relevant contact point.
@@ -564,7 +566,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					OtherEntityIndex++, OtherEntity++)
 			{
 				if(Entity == OtherEntity) { continue; }
-				if(OtherEntity->CollisionDirtyBit) { continue; }
+				if(OtherEntity->EnityHasBeenProcessedAlready) { continue; }
 
 				b32 Inside = true; 
 				f32 BestSquareDistanceToWall = positive_infinity32;
@@ -716,7 +718,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				}
 #endif
 			}
-			Entity->CollisionDirtyBit = true;
+			Entity->EnityHasBeenProcessedAlready = true;
 
 			v3 OldP = {};
 

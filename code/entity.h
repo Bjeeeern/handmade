@@ -39,28 +39,6 @@ GetEntityVertices(entity* Entity)
 	return Result;
 }
 
-inline entity*
-GetEntityOfType(entity_type Type, entity* A, entity* B)
-{
-	entity* Result = 0;
-	if(A->Type == Type)
-	{
-		Result = A;
-	}
-	if(B->Type == Type)
-	{
-		Result = B;
-	}
-	return Result;
-}
-
-inline entity*
-GetRemainingEntity(entity* E, entity* A, entity* B)
-{
-	Assert(E == A || E == B);
-	return E==A ? B:A;
-}
-
 inline v3
 DefaultEntityOrientation()
 {
@@ -79,7 +57,6 @@ AddEntity(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Stored
 
 	*Stored = {};
 	Stored->Sim.StorageIndex = StoredEntities->EntityCount;
-	Stored->Sim.Type = Type;
 	Stored->Sim.R = DefaultEntityOrientation();
 	Stored->Sim.WorldP = WorldMapNullPos();
 
@@ -116,6 +93,8 @@ AddSword(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entitie
 
 	Entity->Sim.MoveSpec = {};
 	Entity->Sim.Collides = false;
+
+	Entity->Sim.TriggerDamage = 1;
 
 	return Entity;
 }
@@ -375,10 +354,6 @@ AddStair(game_state* GameState, world_map_position WorldPos, f32 dZ)
 MoveEntity(entity* Entity, f32 dT)
 {
 	Assert(Entity->IsSpacial);
-	if(Entity->Type == EntityType_Sword)
-	{
-		u32 hej = 6;
-	}
 
 	v3 P = Entity->P;
 	v3 dP = Entity->dP;
@@ -391,7 +366,7 @@ MoveEntity(entity* Entity, f32 dT)
 
 	if(Entity->MoveSpec.EnforceVerticalGravity)
 	{
-		if(Entity->MovingDirection.Z > 0 &&
+		if(Entity->MoveSpec.MovingDirection.Z > 0 &&
 			 P.Z == 0)
 		{
 			dP.Z = 18.0f;
@@ -406,7 +381,7 @@ MoveEntity(entity* Entity, f32 dT)
 	if(Entity->MoveSpec.EnforceHorizontalMovement)
 	{
 		//TODO(casey): ODE here!
-		ddP.XY = Entity->MovingDirection.XY * Entity->MoveSpec.Speed;
+		ddP.XY = Entity->MoveSpec.MovingDirection.XY * Entity->MoveSpec.Speed;
 	}
 
 	ddP.XY -= Entity->MoveSpec.Drag * dP.XY;
@@ -449,26 +424,35 @@ MoveEntity(entity* Entity, f32 dT)
 }
 
 	internal_function void
-UpdateFamiliarPairwise(entity* Familiar, entity* Target)
+HunterLogic(entity* Hunter, entity* Prey)
 {
-	if(Target->Type == EntityType_Player)
+	if(Hunter->HunterSearchRadius)
 	{
-		f32 DistanceToPlayerSquared = LenghtSquared(Target->P - Familiar->P);
-		if(DistanceToPlayerSquared < Familiar->BestDistanceToPlayerSquared &&
-			 DistanceToPlayerSquared > Square(2.0f))
+		v3 DistanceToPrey = Prey->P - Hunter->P;
+		f32 DistanceToPreySquared = LenghtSquared(DistanceToPrey);
+
+		if(DistanceToPreySquared < Hunter->BestDistanceToPreySquared &&
+			 DistanceToPreySquared > Square(Hunter->HunterSearchRadius))
 		{
-			Familiar->BestDistanceToPlayerSquared = DistanceToPlayerSquared;
-			Familiar->MovingDirection = Normalize(Target->P - Familiar->P).XY;
+			Hunter->BestDistanceToPreySquared = DistanceToPreySquared;
+			Hunter->MoveSpec.MovingDirection = Normalize(DistanceToPrey).XY;
 		}
 	}
 }
 
 	internal_function void
-UpdateSwordPairwise(entity* Sword, entity* Target, b32 Intersect)
+ApplyDamage(entity* Assailant, entity* Victim)
 {
-	if(Intersect && Target->Type != EntityType_Player)
+	if(Assailant->TriggerDamage && Victim->HitPointMax)
 	{
-		Sword->IsSpacial = false;
+		if(Victim->HitPointMax >= Assailant->TriggerDamage)
+		{
+			Victim->HitPointMax -= Assailant->TriggerDamage;
+		}
+		else
+		{
+			Victim->HitPointMax = 0;
+		}
 	}
 }
 

@@ -8,9 +8,12 @@ struct move_spec
 	b32 EnforceHorizontalMovement : 1;
 	b32 EnforceVerticalGravity : 1;
 	b32 AllowRotation : 1;
+
 	f32 Speed;
 	f32 Drag;
 	f32 AngularDrag;
+
+	v3 MovingDirection;
 };
 
 internal_function move_spec
@@ -72,7 +75,7 @@ struct entity
 
 	//TODO(casey): Generation index so we know how "up to date" the entity is.
 
-	entity_type Type;
+	//entity_type Type;
 
 	v3 R;
 	f32 A;
@@ -95,30 +98,41 @@ struct entity
 	u32 HitPointMax;
 	hit_point HitPoints[16];
 
+	u32 TriggerDamage;
+
 	//NOTE(bjorn): Stair
 	f32 dZ;
 
-	//NOTE(bjorn): Car-parts
-	entity_reference Vehicle;
+	union
+	{
+		entity_reference EntityReferences[16];
+		struct
+		{
+			entity_reference Attatchments[8];
 
-	//NOTE(bjorn): Player
-	entity_reference RidingVehicle;
-	entity_reference Sword;
+			//NOTE(bjorn): Car-parts
+			entity_reference Vehicle;
 
-	//NOTE(bjorn): CarFrame
-	entity_reference Wheels[4];
-	entity_reference DriverSeat;
-	entity_reference Engine;
+			//NOTE(bjorn): Player
+			entity_reference Sword;
+			entity_reference RidingVehicle;
+
+			//NOTE(bjorn): CarFrame
+			entity_reference Wheels[4];
+			entity_reference DriverSeat;
+			entity_reference Engine;
+		};
+	};
 
 	//NOTE(bjorn): Sword
 	f32 DistanceRemaining;
 
 	//NOTE(bjorn): Familiar
-	f32 BestDistanceToPlayerSquared;
-	v3 MovingDirection;
+	f32 HunterSearchRadius;
+	f32 BestDistanceToPreySquared;
 };
 
-inline void
+	inline void
 MakeEntitySpacial(entity* Entity, v3 R, v3 P, v3 dP)
 {
 	Entity->IsSpacial = true;
@@ -127,7 +141,7 @@ MakeEntitySpacial(entity* Entity, v3 R, v3 P, v3 dP)
 	Entity->dP = dP;
 }
 
-inline void
+	inline void
 MakeEntityNonSpacial(entity* Entity)
 {
 	Entity->IsSpacial = false;

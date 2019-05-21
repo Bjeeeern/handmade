@@ -48,6 +48,17 @@ struct simulation_request
 	v2 FireSword;
 };
 
+internal_function b32
+EntityIsPlayerControlled(simulation_request* SimReq, u32 SimReqCount, u32 StorageIndex)
+{
+	for(u32 SimReqIndex = 0;
+			SimReqIndex < SimReqCount;
+			SimReqIndex++, SimReq++)
+	{
+		if(SimReq->PlayerStorageIndex == StorageIndex) { return true; }
+	}
+}
+
 struct game_state
 {
 	memory_arena WorldArena;
@@ -550,15 +561,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				EntityIndex++, Entity++)
 		{
 			if(!Entity->Updates) { continue; }
+			//TODO Do non-spacial entities ever do logic. Do they affect other entities then? 
+			if(!Entity->IsSpacial) { continue; }
+
 			//
 			// NOTE(bjorn): Moving / Collision / Game Logic
 			//
 
-			//TODO HMH 67 IMPORTANT Actually use the Updatable flag.
 			//TODO(bjorn):
 			// Add negative gravity for penetration if relative velocity is >= 0.
 			// Get relevant contact point.
-			// Do impulse calculation.
 			// Test with object on mouse.
 			entity* OtherEntity = SimRegion->Entities;
 			for(u32 OtherEntityIndex = 0;
@@ -567,39 +579,34 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			{
 				if(Entity == OtherEntity) { continue; }
 				if(OtherEntity->EnityHasBeenProcessedAlready) { continue; }
+				if(!OtherEntity->IsSpacial) { continue; }
 
 				b32 Inside = true; 
 				f32 BestSquareDistanceToWall = positive_infinity32;
 				s32 RelevantNodeIndex = -1;
 				v2 P = Entity->P.XY;
 				polygon Sum = MinkowskiSum(OtherEntity, Entity);
-				if(!Entity->IsSpacial || !OtherEntity->IsSpacial)
+
+				for(s32 NodeIndex = 0; 
+						NodeIndex < Sum.NodeCount; 
+						NodeIndex++)
 				{
-					Inside = false;
-				}
-				else
-				{
-					for(s32 NodeIndex = 0; 
-							NodeIndex < Sum.NodeCount; 
-							NodeIndex++)
+					v2 N0 = Sum.Nodes[NodeIndex];
+					v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
+
+					f32 Det = Determinant(N1-N0, P-N0);
+					if(Inside && (Det >= 0.0f)) 
+					{ 
+						Inside = false; 
+					}
+
+					f32 SquareDistanceToWall = SquareDistancePointToLineSegment(N0, N1, P);
+					if(SquareDistanceToWall < BestSquareDistanceToWall)
 					{
-						v2 N0 = Sum.Nodes[NodeIndex];
-						v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
-
-						f32 Det = Determinant(N1-N0, P-N0);
-						if(Inside && (Det >= 0.0f)) 
-						{ 
-							Inside = false; 
-						}
-
-						f32 SquareDistanceToWall = SquareDistancePointToLineSegment(N0, N1, P);
-						if(SquareDistanceToWall < BestSquareDistanceToWall)
-						{
-							BestSquareDistanceToWall = SquareDistanceToWall;
-							RelevantNodeIndex = NodeIndex;
-						}
-					}	
-				}
+						BestSquareDistanceToWall = SquareDistanceToWall;
+						RelevantNodeIndex = NodeIndex;
+					}
+				}	
 
 				if(Inside &&
 					 Entity->Collides && 
@@ -647,7 +654,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					f32 BInvMoI  = BInvMass ? 0.08f:0.0f;//GetInverseOrZero(OtherEntity->High->MoI);
 
 					f32 Impulse = 0;
-					//f32 InverseGravity = Penetration * 60.0f;
 					f32 j = 0;
 
 					if(ndotAB < 0)
@@ -663,8 +669,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						Impulse = j;
 					}
 
-					//Impulse = Max(j, InverseGravity);
-
 					Entity->dP.XY      += (Impulse * AInvMass) * n;
 					OtherEntity->dP.XY -= (Impulse * BInvMass) * n;
 					Entity->dA         += Dot(AIt, Impulse * n) * AInvMoI;
@@ -674,18 +678,23 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					OtherEntity->P.XY  -= n * Penetration * 0.5f;
 				} 
 
-				entity* Familiar = GetEntityOfType(EntityType_Familiar, Entity, OtherEntity);
-				if(Familiar)
+				b32 Trigger = Inside;
+
+				entity* A = Entity;
+				entity* B = OtherEntity;
+				//TODO STUDY Doublecheck HMH 69 to see what this was for again.
+				if(Entity->StorageIndex > OtherEntity->StorageIndex)
 				{
-					entity* Target = GetRemainingEntity(Familiar, Entity, OtherEntity);
-					UpdateFamiliarPairwise(Familiar, Target);
+					Swap(A, B, entity*);
 				}
 
-				entity* Sword = GetEntityOfType(EntityType_Sword, Entity, OtherEntity);
-				if(Sword)
+				HunterLogic(A, B);
+				HunterLogic(B, A);
+
+				if(Trigger)
 				{
-					entity* Target = GetRemainingEntity(Sword, Entity, OtherEntity);
-					UpdateSwordPairwise(Sword, Target, Inside);
+					ApplyDamage(A, B);
+					ApplyDamage(B, A);
 				}
 
 #if HANDMADE_INTERNAL
@@ -697,16 +706,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						0             ,-PixelsPerMeter};
 
 					u32 Player1StorageIndex = GameState->KeyboardSimulationRequests[0].PlayerStorageIndex;
-
-					entity* Player = GetEntityOfType(EntityType_Player, Entity, OtherEntity);
+					entity* Player = 0;
+					entity* Target = 0;
 					if(Player && 
 						 Player->StorageIndex == Player1StorageIndex &&
 						 !Player->RidingVehicle.Ptr)
 					{
-						entity* Target = GetRemainingEntity(Player, Entity, OtherEntity);
 						DEBUGMinkowskiSum(Buffer, Target, Player, GameSpaceToScreenSpace, ScreenCenter);
 					}
 
+#if 0 
 					entity* CarFrame = GetEntityOfType(EntityType_CarFrame, Entity, OtherEntity);
 					if(CarFrame &&
 						 CarFrame->DriverSeat.Ptr &&
@@ -717,67 +726,51 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					}
 				}
 #endif
+#endif
 			}
 			Entity->EnityHasBeenProcessedAlready = true;
 
-			v3 OldP = {};
+			v3 OldP = Entity->P;
 
-			if(Entity->Type == EntityType_Sword)
+			//TODO For every entity: Is player controlled? If so get SimReq;
+			if(EntityIsPlayerControlled(GameState->PlayerSimulationRequests, 
+																	ArrayCount(GameState->PlayerSimulationRequests),
+																	Entity->StorageIndex))
 			{
-				OldP = Entity->P;
-			}
-
-			if(Entity->Type == EntityType_Player)
-			{
-				simulation_request* SimReq = GameState->PlayerSimulationRequests;
-				for(s32 SimReqIndex = 0;
-						SimReqIndex < ArrayCount(GameState->PlayerSimulationRequests);
-						SimReqIndex++, SimReq++)
+				entity* Sword = Entity->Sword.Ptr;
+				if(Sword &&
+					 LenghtSquared(SimReq->FireSword))
 				{
-					if(SimReq->PlayerStorageIndex == Entity->StorageIndex)
-					{
-						entity* Sword = Entity->Sword.Ptr;
-						if(Sword &&
-							 LenghtSquared(SimReq->FireSword))
-						{
-							 
-							MakeEntitySpacial(Sword, SimReq->FireSword,
-																(Sword->IsSpacial ? 
-																 Sword->P : 
-																 (Entity->P + SimReq->FireSword * Sword->Dim.Y)),
-																SimReq->FireSword * 8.0f);
-							Sword->DistanceRemaining = 20.0f;
-						}
 
-						Entity->MovingDirection = SimReq->ddP;
-					}
+					MakeEntitySpacial(Sword, SimReq->FireSword,
+														(Sword->IsSpacial ? 
+														 Sword->P : 
+														 (Entity->P + SimReq->FireSword * Sword->Dim.Y)),
+														SimReq->FireSword * 8.0f);
+					Sword->DistanceRemaining = 20.0f;
 				}
+
+				Entity->MoveSpec.MovingDirection = SimReq->ddP;
 			}
 
-			if(Entity->IsSpacial)
-			{
-				MoveEntity(Entity, dT);
-			}
+			MoveEntity(Entity, dT);
 
-			if(Entity->Type == EntityType_Sword)
+			if(Entity->DistanceRemaining > 0)
 			{
 				v3 NewP = Entity->P;
-
-				if(Entity->IsSpacial)
+				Entity->DistanceRemaining -= Lenght(NewP - OldP);
+				if(Entity->DistanceRemaining <= 0)
 				{
-					Entity->DistanceRemaining -= Lenght(NewP - OldP);
-					if(Entity->DistanceRemaining <= 0)
-					{
-						entity* Sword = Entity;
-						MakeEntityNonSpacial(Sword);
-					}
+					Entity->DistanceRemaining = 0;
+
+					MakeEntityNonSpacial(Entity);
 				}
 			}
 
-			if(Entity->Type == EntityType_Familiar)
+			if(Entity->HunterSearchRadius)
 			{
-				Entity->BestDistanceToPlayerSquared = Square(6.0f);
-				Entity->MovingDirection = {};
+				Entity->BestDistanceToPlayerSquared = Square(Entity->HunterSearchRadius);
+				Entity->MoveSpec.MovingDirection = {};
 			}
 
 			//

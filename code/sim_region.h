@@ -29,18 +29,18 @@ DefaultMoveSpec()
 	return Result;
 }
 
-enum entity_type
+enum entity_visual_type
 {
-	EntityType_Player,
-	EntityType_Wall,
-	EntityType_Stair,
-	EntityType_Ground,
-	EntityType_Wheel,
-	EntityType_CarFrame,
-	EntityType_Engine,
-	EntityType_Monstar,
-	EntityType_Familiar,
-	EntityType_Sword,
+	EntityVisualType_Player,
+	EntityVisualType_Wall,
+	EntityVisualType_Stair,
+	EntityVisualType_Ground,
+	EntityVisualType_Wheel,
+	EntityVisualType_CarFrame,
+	EntityVisualType_Engine,
+	EntityVisualType_Monstar,
+	EntityVisualType_Familiar,
+	EntityVisualType_Sword,
 };
 
 #define HIT_POINT_SUB_COUNT 4
@@ -75,7 +75,7 @@ struct entity
 
 	//TODO(casey): Generation index so we know how "up to date" the entity is.
 
-	//entity_type Type;
+	entity_visual_type VisualType;
 
 	v3 R;
 	f32 A;
@@ -121,6 +121,8 @@ struct entity
 			entity_reference Wheels[4];
 			entity_reference DriverSeat;
 			entity_reference Engine;
+			
+			entity_reference Prey;
 		};
 	};
 
@@ -326,15 +328,14 @@ AddSimEntityRaw(stored_entities* StoredEntities, sim_region* SimRegion, stored_e
 	{
 		//TODO Decompression step instead of block copy!!
 		*Entity = Source->Sim;
-		LoadEntityReference(StoredEntities, SimRegion, &Entity->Vehicle);
-		LoadEntityReference(StoredEntities, SimRegion, &Entity->RidingVehicle);
-		LoadEntityReference(StoredEntities, SimRegion, &Entity->Sword);
-		LoadEntityReference(StoredEntities, SimRegion, &Entity->Wheels[0]);
-		LoadEntityReference(StoredEntities, SimRegion, &Entity->Wheels[1]);
-		LoadEntityReference(StoredEntities, SimRegion, &Entity->Wheels[2]);
-		LoadEntityReference(StoredEntities, SimRegion, &Entity->Wheels[3]);
-		LoadEntityReference(StoredEntities, SimRegion, &Entity->DriverSeat);
-		LoadEntityReference(StoredEntities, SimRegion, &Entity->Engine);
+
+		entity_reference* EntityRef = Entity->EntityReferences;
+		for(s32 EntityRefIndex = 0;
+				EntityRefIndex < ArrayCount(Entity->EntityReferences);
+				EntityRefIndex++, EntityRef++)
+		{
+			LoadEntityReference(StoredEntities, SimRegion, EntityRef);
+		}
 	}
 
 	Entity->StorageIndex = StorageIndex;
@@ -450,15 +451,14 @@ EndSim(stored_entities* Entities, memory_arena* WorldArena, sim_region* SimRegio
 		Assert(Stored);
 
 		Stored->Sim = *SimEntity;
-		StoreEntityReference(&Stored->Sim.Vehicle);
-		StoreEntityReference(&Stored->Sim.RidingVehicle);
-		StoreEntityReference(&Stored->Sim.Sword);
-		StoreEntityReference(&Stored->Sim.Wheels[0]);
-		StoreEntityReference(&Stored->Sim.Wheels[1]);
-		StoreEntityReference(&Stored->Sim.Wheels[2]);
-		StoreEntityReference(&Stored->Sim.Wheels[3]);
-		StoreEntityReference(&Stored->Sim.DriverSeat);
-		StoreEntityReference(&Stored->Sim.Engine);
+
+		entity_reference* EntityRef = Stored->Sim.EntityReferences;
+		for(s32 EntityRefIndex = 0;
+				EntityRefIndex < ArrayCount(Stored->Sim.EntityReferences);
+				EntityRefIndex++, EntityRef++)
+		{
+			StoreEntityReference(EntityRef);
+		}
 
 		world_map_position NewWorldP = WorldMapNullPos();
 		if(SimEntity->IsSpacial)

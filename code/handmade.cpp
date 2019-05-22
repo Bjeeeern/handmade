@@ -48,15 +48,19 @@ struct simulation_request
 	v2 FireSword;
 };
 
-internal_function b32
-EntityIsPlayerControlled(simulation_request* SimReq, u32 SimReqCount, u32 StorageIndex)
+internal_function simulation_request*
+GetSimRequestForEntity(simulation_request* SimReq, u32 SimReqCount, u32 StorageIndex)
 {
+	simulation_request* Result = 0;
+
 	for(u32 SimReqIndex = 0;
 			SimReqIndex < SimReqCount;
 			SimReqIndex++, SimReq++)
 	{
-		if(SimReq->PlayerStorageIndex == StorageIndex) { return true; }
+		if(SimReq->PlayerStorageIndex == StorageIndex) { Result = SimReq; }
 	}
+
+	return Result;
 }
 
 struct game_state
@@ -213,6 +217,10 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 																			&GameState->Entities, InitP);
 		GameState->CameraFollowingPlayerIndex = Player->Sim.StorageIndex;
 		GameState->KeyboardSimulationRequests[0].PlayerStorageIndex = Player->Sim.StorageIndex;
+
+		stored_entity* Familiar = AddFamiliar(&GameState->WorldArena, WorldMap, &GameState->Entities,
+																					GetChunkPosFromAbsTile(WorldMap, v3u{ 4, 5, 0}));
+		Familiar->Sim.Prey.Index = Player->Sim.StorageIndex;
 	}
 #if 0
 	AddCar(&GameState->WorldArena, WorldMap, &GameState->Entities,
@@ -221,8 +229,6 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 
 	AddMonstar(&GameState->WorldArena, WorldMap, &GameState->Entities,
 						 GetChunkPosFromAbsTile(WorldMap, v3u{ 2, 5, 0}));
-	AddFamiliar(&GameState->WorldArena, WorldMap, &GameState->Entities,
-							GetChunkPosFromAbsTile(WorldMap, v3u{ 4, 5, 0}));
 
 	stored_entity* A = AddWall(&GameState->WorldArena, WorldMap, &GameState->Entities,
 														 GetChunkPosFromAbsTile(WorldMap, v3u{2, 4, 0}), 10.0f);
@@ -474,7 +480,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						}
 						{
 							{
-								//if(Entity->Type == EntityType_CarFrame && 
+								//if(Entity->VisualType == EntityVisualType_CarFrame && 
 								//	 Distance(Entity->P, ControlledEntity->P) < 4.0f)
 								{
 									//MountEntityOnCar(WorldArena, WorldMap, &ControlledEntity, &Entity);
@@ -485,7 +491,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					}
 					{
 						//entity CarFrame = GetEntityByLowIndex(Entities, ControlledEntity->RidingVehicle);
-						//Assert(CarFrame->Type == EntityType_CarFrame);
+						//Assert(CarFrame->VisualType == EntityVisualType_CarFrame);
 
 						if(InputDirection.X)
 						{ 
@@ -563,7 +569,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			if(!Entity->Updates) { continue; }
 			//TODO Do non-spacial entities ever do logic. Do they affect other entities then? 
 			if(!Entity->IsSpacial) { continue; }
-
 			//
 			// NOTE(bjorn): Moving / Collision / Game Logic
 			//
@@ -680,6 +685,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				b32 Trigger = Inside;
 
+				//TODO Is this a thing that we need to handle interactions?
+#if 0
+				simulation_request* OtherPlayerSimReq = 
+					GetSimRequestForEntity(GameState->PlayerSimulationRequests, 
+																 ArrayCount(GameState->PlayerSimulationRequests),
+																 Entity->StorageIndex);
+#endif
+
 				entity* A = Entity;
 				entity* B = OtherEntity;
 				//TODO STUDY Doublecheck HMH 69 to see what this was for again.
@@ -687,9 +700,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				{
 					Swap(A, B, entity*);
 				}
-
-				HunterLogic(A, B);
-				HunterLogic(B, A);
 
 				if(Trigger)
 				{
@@ -707,16 +717,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 					u32 Player1StorageIndex = GameState->KeyboardSimulationRequests[0].PlayerStorageIndex;
 					entity* Player = 0;
-					entity* Target = 0;
-					if(Player && 
-						 Player->StorageIndex == Player1StorageIndex &&
-						 !Player->RidingVehicle.Ptr)
+					if(Entity->StorageIndex == Player1StorageIndex) { Player = Entity;}
+					if(OtherEntity->StorageIndex == Player1StorageIndex) { Player = OtherEntity;}
+
+					if(Player) 
 					{
+						entity* Target = Entity == Player ? OtherEntity : Entity;
 						DEBUGMinkowskiSum(Buffer, Target, Player, GameSpaceToScreenSpace, ScreenCenter);
 					}
-
 #if 0 
-					entity* CarFrame = GetEntityOfType(EntityType_CarFrame, Entity, OtherEntity);
+					entity* CarFrame = GetEntityOfVisualType(EntityVisualType_CarFrame, Entity, OtherEntity);
 					if(CarFrame &&
 						 CarFrame->DriverSeat.Ptr &&
 						 CarFrame->DriverSeat.Ptr->StorageIndex == Player1StorageIndex)
@@ -724,18 +734,19 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						entity* Target = GetRemainingEntity(CarFrame, Entity, OtherEntity);
 						DEBUGMinkowskiSum(Buffer, Target, CarFrame, GameSpaceToScreenSpace, ScreenCenter);
 					}
-				}
 #endif
+				}
 #endif
 			}
 			Entity->EnityHasBeenProcessedAlready = true;
 
+			simulation_request* SimReq = 
+				GetSimRequestForEntity(GameState->PlayerSimulationRequests, 
+															 ArrayCount(GameState->PlayerSimulationRequests),
+															 Entity->StorageIndex);
 			v3 OldP = Entity->P;
 
-			//TODO For every entity: Is player controlled? If so get SimReq;
-			if(EntityIsPlayerControlled(GameState->PlayerSimulationRequests, 
-																	ArrayCount(GameState->PlayerSimulationRequests),
-																	Entity->StorageIndex))
+			if(SimReq)
 			{
 				entity* Sword = Entity->Sword.Ptr;
 				if(Sword &&
@@ -753,6 +764,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				Entity->MoveSpec.MovingDirection = SimReq->ddP;
 			}
 
+			HunterLogic(Entity);
+
 			MoveEntity(Entity, dT);
 
 			if(Entity->DistanceRemaining > 0)
@@ -769,7 +782,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 			if(Entity->HunterSearchRadius)
 			{
-				Entity->BestDistanceToPlayerSquared = Square(Entity->HunterSearchRadius);
+				Entity->BestDistanceToPreySquared = Square(Entity->HunterSearchRadius);
 				Entity->MoveSpec.MovingDirection = {};
 			}
 
@@ -804,7 +817,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					}
 				}
 
-				if(Entity->Type == EntityType_Stair)
+				if(Entity->VisualType == EntityVisualType_Stair)
 				{
 					v3 StairColor = {};
 					if(Entity->dZ == 1)
@@ -819,7 +832,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					}
 					DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), StairColor);
 				}
-				if(Entity->Type == EntityType_Wall)
+				if(Entity->VisualType == EntityVisualType_Wall)
 				{
 #if 0
 					v3 LightYellow = {0.5f, 0.5f, 0.0f};
@@ -828,7 +841,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					DrawBitmap(Buffer, &GameState->Rock, EntityPixelPos - GameState->Rock.Alignment, 
 										 (v2)GameState->Rock.Dim);
 				}
-				if(Entity->Type == EntityType_Ground)
+				if(Entity->VisualType == EntityVisualType_Ground)
 				{
 #if 1
 					DrawBitmap(Buffer, &GameState->Dirt, EntityPixelPos - GameState->Dirt.Alignment, 
@@ -839,13 +852,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 												RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim * 0.9f), LightBrown);
 #endif
 				}
-				if(Entity->Type == EntityType_Wheel ||
-					 Entity->Type == EntityType_CarFrame ||
-					 Entity->Type == EntityType_Engine)
+				if(Entity->VisualType == EntityVisualType_Wheel ||
+					 Entity->VisualType == EntityVisualType_CarFrame ||
+					 Entity->VisualType == EntityVisualType_Engine)
 				{
 					v3 Color = {1, 1, 1};
-					if(Entity->Type == EntityType_Engine) { Color = {0, 1, 0}; }
-					if(Entity->Type == EntityType_Wheel) { Color = {0.2f, 0.2f, 0.2f}; }
+					if(Entity->VisualType == EntityVisualType_Engine) { Color = {0, 1, 0}; }
+					if(Entity->VisualType == EntityVisualType_Wheel) { Color = {0.2f, 0.2f, 0.2f}; }
 
 					DrawFrame(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), 
 										Entity->R.XY, Color);
@@ -858,7 +871,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				}
 
 				f32 ZAlpha = Clamp(1.0f - (Entity->P.Z / 2.0f), 0.0f, 1.0f);
-				if(Entity->Type == EntityType_Player)
+				if(Entity->VisualType == EntityVisualType_Player)
 				{
 					v3 Yellow = {1.0f, 1.0f, 0.0f};
 					//DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), Yellow);
@@ -877,7 +890,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 										 EntityPixelPos + v2{0, ZPixelOffset} - Hero->Head.Alignment, 
 										 (v2)Hero->Head.Dim);
 				}
-				if(Entity->Type == EntityType_Monstar)
+				if(Entity->VisualType == EntityVisualType_Monstar)
 				{
 					v3 Yellow = {1.0f, 1.0f, 0.0f};
 					//DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), Yellow);
@@ -889,7 +902,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					DrawBitmap(Buffer, &Hero->Torso, EntityPixelPos - Hero->Torso.Alignment, 
 										 (v2)Hero->Torso.Dim);
 				}
-				if(Entity->Type == EntityType_Familiar)
+				if(Entity->VisualType == EntityVisualType_Familiar)
 				{
 					v3 Yellow = {1.0f, 1.0f, 0.0f};
 					//DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), Yellow);
@@ -901,14 +914,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					DrawBitmap(Buffer, &Hero->Head, EntityPixelPos - Hero->Head.Alignment, 
 										 (v2)Hero->Head.Dim);
 				}
-				if(Entity->Type == EntityType_Sword)
+				if(Entity->VisualType == EntityVisualType_Sword)
 				{
 					DrawBitmap(Buffer, &GameState->Sword, EntityPixelPos - GameState->Sword.Alignment, 
 										 (v2)GameState->Sword.Dim, 1.0f);
 				}
 
-				if(Entity->Type == EntityType_Monstar ||
-					 Entity->Type == EntityType_Player)
+				if(Entity->VisualType == EntityVisualType_Monstar ||
+					 Entity->VisualType == EntityVisualType_Player)
 				{
 					for(u32 HitPointIndex = 0;
 							HitPointIndex < Entity->HitPointMax;
@@ -977,7 +990,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 						DrawLine(Buffer, 
 										 ScreenCenter + GameSpaceToScreenSpace * (V0 + V1) * 0.5f, 
-										 ScreenCenter + GameSpaceToScreenSpace * ((V0 + V1) * 0.5f + WallNormal * 0.2f), 
+										 ScreenCenter + GameSpaceToScreenSpace * 
+										 ((V0 + V1) * 0.5f + WallNormal * 0.2f), 
 										 NormalColor);
 					}
 				}

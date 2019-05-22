@@ -108,21 +108,27 @@ struct entity
 		entity_reference EntityReferences[16];
 		struct
 		{
-			entity_reference Attatchments[8];
+			union
+			{
+				entity_reference Attatchments[8];
+				struct
+				{
+					//NOTE(bjorn): Car-parts
+					entity_reference Vehicle;
+					//NOTE(bjorn): CarFrame
+					entity_reference Wheels[4];
+					entity_reference DriverSeat;
+					entity_reference Engine;
 
-			//NOTE(bjorn): Car-parts
-			entity_reference Vehicle;
+				};
+			};
 
 			//NOTE(bjorn): Player
 			entity_reference Sword;
 			entity_reference RidingVehicle;
 
-			//NOTE(bjorn): CarFrame
-			entity_reference Wheels[4];
-			entity_reference DriverSeat;
-			entity_reference Engine;
-			
 			entity_reference Prey;
+			entity_reference Struct_Terminator;
 		};
 	};
 

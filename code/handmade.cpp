@@ -295,10 +295,20 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
-	Assert( (&GetController(Input, 0)->Struct_Terminator - 
-					 &GetController(Input, 0)->Buttons[0]) ==
-					ArrayCount(GetController(Input, 0)->Buttons)
-				);
+	{
+		s64 Amount = (&GetController(Input, 0)->Struct_Terminator - 
+									&GetController(Input, 0)->Buttons[0]);
+		s64 Limit = ArrayCount(GetController(Input, 0)->Buttons);
+		Assert(Amount == Limit);
+	}
+
+	{
+		entity TestEntity = {};
+		s64 Amount = (&(TestEntity.Struct_Terminator) - &(TestEntity.EntityReferences[0]));
+		s64 Limit = ArrayCount(TestEntity.EntityReferences);
+		Assert(Amount <= Limit);
+	}
+
 	Assert(sizeof(game_state) <= Memory->PermanentStorageSize);
 	game_state *GameState = (game_state *)Memory->PermanentStorage;
 

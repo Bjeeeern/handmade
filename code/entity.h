@@ -164,7 +164,7 @@ AddFamiliar(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Enti
 	Entity->Sim.Mass = 40.0f / 8.0f;
 
 	Entity->Sim.MoveSpec.EnforceHorizontalMovement = true;
-	Entity->Sim.MoveSpec.Speed = 85.f * 0.8f;
+	Entity->Sim.MoveSpec.Speed = 85.f * 0.7f;
 	Entity->Sim.MoveSpec.Drag = 0.2f * 30.0f;
 
 	Entity->Sim.HunterSearchRadius = 6.0f;

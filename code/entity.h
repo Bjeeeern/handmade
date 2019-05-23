@@ -2,11 +2,35 @@
 
 #include"sim_region.h"
 
-struct entity_pair
+struct trigger_state_result
 {
-	entity Obj;
-	entity Sub;
+	b32 OnEnter;
+	b32 OnLeave;
 };
+
+internal_function trigger_state_result
+UpdateTriggerState(entity* A, entity* B, b32 Inside)
+{
+	trigger_state_result Result = {};
+
+	s32 OldestIndex = (A->YoungestTriggerStateIndex + 1) & (ArrayCount(A->TriggerStates)-1);
+
+	trigger_state* TriggerStateA = A->TriggerStates;
+	trigger_state* TriggerStateB = A->TriggerStates;
+	for(s32 TriggerStateIndex = 0;
+			TriggerStateIndex < ArrayCount(A->TriggerStates);
+			TriggerStateIndex++, TriggerStateA++, TriggerStateB++)
+	{
+		if(TriggerStateA->Triggeree == B)
+		{
+		}
+		if(TriggerStateB->Triggeree == A)
+		{
+		}
+	}
+}
+
+DecrementTriggerStates(Entity, dT, dP);
 
 struct vertices
 {
@@ -447,20 +471,40 @@ HunterLogic(entity* Hunter)
 	}
 }
 
+//TODO IMPORTANT: What is the best way to apply a force over time to make this a smooth bounce?
 	internal_function void
-ApplyDamage(entity* Assailant, entity* Victim)
+BounceRaw(entity* Flyer, entity* Other)
 {
-	if(Assailant->TriggerDamage && Victim->HitPointMax)
+	Assert(Flyer->DistanceRemaining);
+	Flyer->dP = Lenght(Flyer->dP) * Normalize(Flyer->P - Other->);
+}
+
+	internal_function void
+Bounce(entity* A, entity* B)
+{
+	if(A->DistanceRemaining) { ApplyDamageRaw(A, B); }
+	if(B->DistanceRemaining) { ApplyDamageRaw(B, A); }
+}
+
+	internal_function void
+ApplyDamageRaw(entity* Assailant, entity* Victim)
+{
+	Assert(Assailant->TriggerDamage && Victim->HitPointMax);
+
+	if(Victim->HitPointMax >= Assailant->TriggerDamage)
 	{
-		if(Victim->HitPointMax >= Assailant->TriggerDamage)
-		{
-			Victim->HitPointMax -= Assailant->TriggerDamage;
-		}
-		else
-		{
-			Victim->HitPointMax = 0;
-		}
+		Victim->HitPointMax -= Assailant->TriggerDamage;
 	}
+	else
+	{
+		Victim->HitPointMax = 0;
+	}
+}
+	internal_function void
+ApplyDamage(entity* A, entity* B)
+{
+	if(A->TriggerDamage && B->HitPointMax) { ApplyDamageRaw(A, B); }
+	if(B->TriggerDamage && A->HitPointMax) { ApplyDamageRaw(B, A); }
 }
 
 #define ENTITY_H

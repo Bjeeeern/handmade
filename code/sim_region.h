@@ -51,6 +51,10 @@ struct hit_point
 	u8 FilledAmount;
 };
 
+struct trigger_state
+{
+};
+
 struct entity;
 
 union entity_reference
@@ -74,6 +78,10 @@ struct entity
 	b32 AutoPilot : 1;
 
 	//TODO(casey): Generation index so we know how "up to date" the entity is.
+
+	u32 YoungestTriggerStateIndex;
+	//NOTE Must be a power of two.
+	trigger_state TriggerStates[8];
 
 	entity_visual_type VisualType;
 

@@ -693,7 +693,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					OtherEntity->P.XY  -= n * Penetration * 0.5f;
 				} 
 
-				b32 Trigger = Inside;
+				//TODO IMPORTANT Fix the triggers!!1
+				trigger_state_result TriggerState = UpdateTriggerState(Entity, OtherEntity, Inside);
 
 				//TODO Is this a thing that we need to handle interactions?
 #if 0
@@ -711,10 +712,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					Swap(A, B, entity*);
 				}
 
-				if(Trigger)
+				if(TriggerState.OnEnter)
 				{
-					ApplyDamage(A, B);
-					ApplyDamage(B, A);
+					ApplyDamage(Entity, OtherEntity);
+				}
+
+				if(TriggerState.OnLeave)
+				{
+					Bounce(Entity, OtherEntity);
 				}
 
 #if HANDMADE_INTERNAL
@@ -778,10 +783,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 			MoveEntity(Entity, dT);
 
+			v3 NewP = Entity->P;
+			f32 dP = Lenght(NewP - OldP);
+
+			DecrementTriggerStates(Entity, dT, dP);
+
 			if(Entity->DistanceRemaining > 0)
 			{
-				v3 NewP = Entity->P;
-				Entity->DistanceRemaining -= Lenght(NewP - OldP);
+				Entity->DistanceRemaining -= dP;
 				if(Entity->DistanceRemaining <= 0)
 				{
 					Entity->DistanceRemaining = 0;

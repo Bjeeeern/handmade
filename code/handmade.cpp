@@ -8,6 +8,7 @@
 #include "sim_region.h"
 #include "entity.h"
 #include "collision.h"
+#include "trigger.h"
 
 // @IMPORTANT @IDEA
 // Maybe sort the order of entity execution while creating the sim regions so
@@ -693,8 +694,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					OtherEntity->P.XY  -= n * Penetration * 0.5f;
 				} 
 
-				//TODO IMPORTANT Fix the triggers!!1
-				trigger_state_result TriggerState = UpdateTriggerState(Entity, OtherEntity, Inside);
+				trigger_state_result TriggerState = 
+					UpdateAndGetCurrentTriggerState(Entity, OtherEntity, dT, Inside);
 
 				//TODO Is this a thing that we need to handle interactions?
 #if 0
@@ -785,8 +786,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 			v3 NewP = Entity->P;
 			f32 dP = Lenght(NewP - OldP);
-
-			DecrementTriggerStates(Entity, dT, dP);
 
 			if(Entity->DistanceRemaining > 0)
 			{

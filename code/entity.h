@@ -1,36 +1,6 @@
 #if !defined(ENTITY_H)
 
-#include"sim_region.h"
-
-struct trigger_state_result
-{
-	b32 OnEnter;
-	b32 OnLeave;
-};
-
-internal_function trigger_state_result
-UpdateTriggerState(entity* A, entity* B, b32 Inside)
-{
-	trigger_state_result Result = {};
-
-	s32 OldestIndex = (A->YoungestTriggerStateIndex + 1) & (ArrayCount(A->TriggerStates)-1);
-
-	trigger_state* TriggerStateA = A->TriggerStates;
-	trigger_state* TriggerStateB = A->TriggerStates;
-	for(s32 TriggerStateIndex = 0;
-			TriggerStateIndex < ArrayCount(A->TriggerStates);
-			TriggerStateIndex++, TriggerStateA++, TriggerStateB++)
-	{
-		if(TriggerStateA->Triggeree == B)
-		{
-		}
-		if(TriggerStateB->Triggeree == A)
-		{
-		}
-	}
-}
-
-DecrementTriggerStates(Entity, dT, dP);
+#include "sim_region.h"
 
 struct vertices
 {
@@ -476,14 +446,14 @@ HunterLogic(entity* Hunter)
 BounceRaw(entity* Flyer, entity* Other)
 {
 	Assert(Flyer->DistanceRemaining);
-	Flyer->dP = Lenght(Flyer->dP) * Normalize(Flyer->P - Other->);
+	Flyer->dP = Lenght(Flyer->dP) * Normalize(Flyer->P - Other->P);
 }
 
 	internal_function void
 Bounce(entity* A, entity* B)
 {
-	if(A->DistanceRemaining) { ApplyDamageRaw(A, B); }
-	if(B->DistanceRemaining) { ApplyDamageRaw(B, A); }
+	if(A->DistanceRemaining) { BounceRaw(A, B); }
+	if(B->DistanceRemaining) { BounceRaw(B, A); }
 }
 
 	internal_function void

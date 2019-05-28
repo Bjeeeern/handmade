@@ -1,6 +1,131 @@
 #if !defined(ENTITY_H)
 
-#include "sim_region.h"
+#if !defined(ENTITY_H_FIRST_PASS)
+struct entity;
+
+union entity_reference
+{
+	u32 Index;
+	entity* Ptr;
+};
+
+#include "trigger.h"
+
+struct entity
+{
+	u32 StorageIndex;
+	world_map_position WorldP;
+	b32 Updates : 1;
+	b32 EnityHasBeenProcessedAlready : 1;
+
+	b32 IsSpacial : 1;
+	b32 Collides : 1;
+	b32 Attached : 1;
+	//NOTE(bjorn): CarFrame
+	//TODO(bjorn): Use this to move out the turning code to the cars update loop.
+	b32 AutoPilot : 1;
+
+	//TODO(casey): Generation index so we know how "up to date" the entity is.
+
+	u32 OldestTrigStateIndex;
+	//NOTE Must be a power of two.
+	trigger_state TrigStates[8];
+
+	entity_visual_type VisualType;
+
+	v3 R;
+	f32 A;
+	f32 dA;
+	f32 ddA;
+
+	v3 P;
+	v3 dP;
+	v3 ddP;
+
+	v3 Dim;
+
+	f32 Mass;
+	move_spec MoveSpec;
+	f32 GroundFriction;
+
+	u32 FacingDirection;
+
+	//TODO(casey): Should hitpoints themselves be entities?
+	u32 HitPointMax;
+	hit_point HitPoints[16];
+
+	u32 TriggerDamage;
+
+	//NOTE(bjorn): Stair
+	f32 dZ;
+
+	union
+	{
+		entity_reference EntityReferences[16];
+		struct
+		{
+			union
+			{
+				entity_reference Attatchments[8];
+				struct
+				{
+					//NOTE(bjorn): Car-parts
+					entity_reference Vehicle;
+					//NOTE(bjorn): CarFrame
+					entity_reference Wheels[4];
+					entity_reference DriverSeat;
+					entity_reference Engine;
+
+				};
+			};
+
+			//NOTE(bjorn): Player
+			entity_reference Sword;
+			entity_reference RidingVehicle;
+
+			entity_reference Prey;
+			entity_reference Struct_Terminator;
+		};
+	};
+
+	//NOTE(bjorn): Sword
+	f32 DistanceRemaining;
+
+	//NOTE(bjorn): Familiar
+	f32 HunterSearchRadius;
+	f32 BestDistanceToPreySquared;
+};
+
+#include "trigger.h"
+
+	inline void
+MakeEntitySpacial(entity* Entity, v3 R, v3 P, v3 dP)
+{
+	Entity->IsSpacial = true;
+	Entity->R = R;
+	Entity->P = P;
+	Entity->dP = dP;
+}
+
+	inline void
+MakeEntityNonSpacial(entity* Entity)
+{
+	Entity->IsSpacial = false;
+#if HANDMADE_INTERNAL
+	ActivateSignalingNaNs();
+	v3 InvalidV3 = {signaling_not_a_number32, 
+									signaling_not_a_number32, 
+									signaling_not_a_number32 };
+#elif
+	v3 InvalidV3 = {-10000, -10000, -10000};
+#endif
+	Entity->R = InvalidV3;
+	Entity->P = InvalidV3;
+	Entity->dP = InvalidV3;
+}
+
+#define ENTITY_H_FIRST_PASS
+#else
 
 struct vertices
 {
@@ -476,6 +601,7 @@ ApplyDamage(entity* A, entity* B)
 	if(A->TriggerDamage && B->HitPointMax) { ApplyDamageRaw(A, B); }
 	if(B->TriggerDamage && A->HitPointMax) { ApplyDamageRaw(B, A); }
 }
-
 #define ENTITY_H
-#endif
+#endif //ENTITY_H_FIRST_SECOND
+
+#endif //ENTITY_H

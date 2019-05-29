@@ -209,18 +209,14 @@ AddSimEntityRaw(stored_entities* StoredEntities, sim_region* SimRegion, stored_e
 		{
 			InvalidCodePath;
 		}
-	}
-	else
-	{
-		Entity = Entry->Ptr;
-		Assert(Entry->Index == StorageIndex);
-	}
-	Assert(Entity);
 
-	if(Source)
-	{
+		Assert(Source);
+
 		//TODO Decompression step instead of block copy!!
 		*Entity = Source->Sim;
+
+		//TODO Is this assign needed?
+		//Entity->StorageIndex = StorageIndex;
 
 		entity_reference* EntityRef = Entity->EntityReferences;
 		for(s32 EntityRefIndex = 0;
@@ -231,14 +227,20 @@ AddSimEntityRaw(stored_entities* StoredEntities, sim_region* SimRegion, stored_e
 		}
 		trigger_state* TrigState = Entity->TrigStates;
 		for(u32 TrigStateIndex = 0;
-			TrigStateIndex < ArrayCount(Entity->TrigStates);
-			TrigStateIndex++, TrigState++)
+				TrigStateIndex < ArrayCount(Entity->TrigStates);
+				TrigStateIndex++, TrigState++)
 		{
-			LoadEntityReference(StoredEntities, SimRegion, TrigState->Buddy);
+			LoadEntityReference(StoredEntities, SimRegion, &TrigState->Buddy);
 		}
 	}
+	else
+	{
+		Entity = Entry->Ptr;
+		Assert(Entry->Index == StorageIndex);
+	}
 
-	Entity->StorageIndex = StorageIndex;
+	Assert(Entity);
+	Assert(Entity->StorageIndex == StorageIndex);
 
 	return Entity;
 }
@@ -361,10 +363,10 @@ EndSim(stored_entities* Entities, memory_arena* WorldArena, sim_region* SimRegio
 		}
 		trigger_state* TrigState = Stored->Sim.TrigStates;
 		for(u32 TrigStateIndex = 0;
-			TrigStateIndex < ArrayCount(Entity->TrigStates);
+			TrigStateIndex < ArrayCount(Stored->Sim.TrigStates);
 			TrigStateIndex++, TrigState++)
 		{
-			StoreEntityReference(TrigState->Buddy);
+			StoreEntityReference(&TrigState->Buddy);
 		}
 
 		world_map_position NewWorldP = WorldMapNullPos();

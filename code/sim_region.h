@@ -229,6 +229,13 @@ AddSimEntityRaw(stored_entities* StoredEntities, sim_region* SimRegion, stored_e
 		{
 			LoadEntityReference(StoredEntities, SimRegion, EntityRef);
 		}
+		trigger_state* TrigState = Entity->TrigStates;
+		for(u32 TrigStateIndex = 0;
+			TrigStateIndex < ArrayCount(Entity->TrigStates);
+			TrigStateIndex++, TrigState++)
+		{
+			LoadEntityReference(StoredEntities, SimRegion, TrigState->Buddy);
+		}
 	}
 
 	Entity->StorageIndex = StorageIndex;
@@ -351,6 +358,13 @@ EndSim(stored_entities* Entities, memory_arena* WorldArena, sim_region* SimRegio
 				EntityRefIndex++, EntityRef++)
 		{
 			StoreEntityReference(EntityRef);
+		}
+		trigger_state* TrigState = Stored->Sim.TrigStates;
+		for(u32 TrigStateIndex = 0;
+			TrigStateIndex < ArrayCount(Entity->TrigStates);
+			TrigStateIndex++, TrigState++)
+		{
+			StoreEntityReference(TrigState->Buddy);
 		}
 
 		world_map_position NewWorldP = WorldMapNullPos();

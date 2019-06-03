@@ -127,6 +127,9 @@ struct sim_region
 	rectangle3 OuterBounds;
 	rectangle3 UpdateBounds;
 
+	f32 MaxEntityRadius;
+	f32 MaxEntityVelocity;
+
 	u32 EntityMaxCount;
 	u32 EntityCount;
 	entity* Entities;
@@ -278,13 +281,16 @@ AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_enti
 
 	internal_function sim_region*
 BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* WorldMap, 
-				 world_map_position RegionCenter, rectangle3 RegionBounds)
+				 world_map_position RegionCenter, rectangle3 RegionBounds, f32 dT)
 {        
 	sim_region* Result = PushStruct(SimArena, sim_region);
 	ZeroArray(Result->Hash);
 
-	//TODO: Calculate this somehow-or-other.
-	f32 SafetyUpdateMargin = 10.0f;
+	//TODO: Tradeoff with not having huge single entites. But Huge entities
+	//should maybe be made-up out of smaller constituents anyways.
+	Result->MaxEntityRadius = 5.0f;
+	Result->MaxEntityVelocity = 30.0f;
+	f32 SafetyUpdateMargin = Result->MaxEntityRadius + Result->MaxEntityVelocity * dT;
 
 	Result->WorldMap = WorldMap;
 	Result->Origin = RegionCenter;

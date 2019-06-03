@@ -131,7 +131,7 @@ GetWorldChunk(world_map *WorldMap, v3s PotentialChunkP, memory_arena* Arena = 0)
 	inline b32
 IsCanonical(world_map *WorldMap, v3 Offset)
 {
-	f32 HalfUnit = WorldMap->ChunkSideInMeters / 2.0f;
+	f32 HalfUnit = WorldMap->ChunkSideInMeters * 0.5f;
 
 	HalfUnit *= 1.00001f;
 

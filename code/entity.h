@@ -481,12 +481,12 @@ MoveEntity(entity* Entity, f32 dT)
 
 	v3 P = Entity->P;
 	v3 dP = Entity->dP;
-	v3 ddP = {};
+	v3 ddP = Entity->ddP;
 
 	v3 R = Entity->R;
 	f32 A = Entity->A;
 	f32 dA = Entity->dA;
-	f32 ddA = 0;
+	f32 ddA = Entity->ddA;
 
 	if(Entity->MoveSpec.EnforceVerticalGravity)
 	{
@@ -534,13 +534,13 @@ MoveEntity(entity* Entity, f32 dT)
 		dP.Z = 0.0f;
 	}
 
-	Entity->ddP = ddP;
+	Entity->ddP = {};
 	Entity->dP = dP;
 	Entity->P = P;
 
 	if(Entity->MoveSpec.AllowRotation)
 	{
-		Entity->ddA = ddA;
+		Entity->ddA = 0;
 		Entity->dA = dA;
 		Entity->A = A;
 		Entity->R = R;

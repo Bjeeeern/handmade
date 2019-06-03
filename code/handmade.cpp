@@ -288,7 +288,8 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 			world_map_position WorldPos = GetChunkPosFromAbsTile(WorldMap, AbsTile);
 			if((TileY != TilesPerHeight && TileX != TilesPerWidth/2) && TileValue ==  2)
 			{
-				stored_entity* Wall = AddWall(&GameState->WorldArena, WorldMap, &GameState->Entities, WorldPos);
+				stored_entity* Wall = AddWall(&GameState->WorldArena, WorldMap, 
+																			&GameState->Entities, WorldPos);
 			}
 		}
 	}
@@ -545,7 +546,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	rectangle3 CameraUpdateBounds = RectCenterDim(v3{0,0,0}, HighFrequencyUpdateDim);
 
 	sim_region* SimRegion = BeginSim(Entities, &(GameState->SimArena), WorldMap, 
-																	 GameState->CameraP, CameraUpdateBounds);
+																	 GameState->CameraP, CameraUpdateBounds, SecondsToUpdate);
 
 	//
 	// NOTE(bjorn): Moving and Rendering
@@ -783,6 +784,17 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			HunterLogic(Entity);
 
 			MoveEntity(Entity, dT);
+
+#if HANDMADE_SLOW
+			{
+				Assert(LenghtSquared(Entity->dP) <= Square(SimRegion->MaxEntityVelocity));
+				
+				f32 S1 = LenghtSquared(Entity->Dim * 0.5f);
+				f32 S2 = Square(SimRegion->MaxEntityRadius);
+				Assert(S1 <= S2);
+			}
+#endif
+
 
 			v3 NewP = Entity->P;
 			f32 dP = Lenght(NewP - OldP);

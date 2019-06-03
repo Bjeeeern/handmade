@@ -664,8 +664,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					v2 ABdP = AdP - BdP;
 					f32 ndotAB = Dot(n, ABdP);
 
-					f32 AInvMass = GetInverseOrZero(Entity->Mass);
-					f32 BInvMass = GetInverseOrZero(OtherEntity->Mass);
+					f32 AInvMass = SafeRatio0(1.0f, Entity->Mass);
+					f32 BInvMass = SafeRatio0(1.0f, OtherEntity->Mass);
 					//TODO(bjorn): Automize inertia calculation.
 					f32 AInvMoI  = AInvMass ? 0.08f:0.0f;//GetInverseOrZero(Entity->High->MoI);
 					f32 BInvMoI  = BInvMass ? 0.08f:0.0f;//GetInverseOrZero(OtherEntity->High->MoI);
@@ -900,7 +900,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #endif
 				}
 
-				f32 ZAlpha = Clamp(1.0f - (Entity->P.Z / 2.0f), 0.0f, 1.0f);
+				f32 ZAlpha = Clamp01(1.0f - (Entity->P.Z / 2.0f));
 				if(Entity->VisualType == EntityVisualType_Player)
 				{
 					v3 Yellow = {1.0f, 1.0f, 0.0f};

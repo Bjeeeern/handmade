@@ -57,12 +57,6 @@ GetClosestPointOnLineSegment(v2 A, v2 B, v2 P)
 	return Result;
 }
 
-	inline f32 
-GetInverseOrZero(f32 V)
-{
-	if(V == 0.0f) { return 0; } else { return 1.0f / V; }
-}
-
 struct collision_result
 {
 	b32 Hit;

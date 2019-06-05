@@ -70,7 +70,7 @@ GetStoredEntityByIndexRaw(stored_entities* Entities, u32 StorageIndex)
 	stored_entity* Result = 0;
 
 	Assert(0 < StorageIndex && StorageIndex <= ArrayCount(Entities->Entities));
-	Result = Entities->Entities + *StorageIndex;
+	Result = Entities->Entities + StorageIndex;
 	Assert(Result->Sim.StorageIndex == StorageIndex);
 
 	return Result;
@@ -193,11 +193,11 @@ LoadEntityReference(stored_entities* StoredEntities, sim_region* SimRegion, enti
 }
 
 	internal_function void
-StoreEntityReference(entity_reference* Ref)
+StoreEntityReference(stored_entities* StoredEntities, entity_reference* Ref)
 {
 	if(Ref->Ptr)
 	{
-		GetStoredEntityByIndex(Entities, &SimEntity->StorageIndex);
+		GetStoredEntityByIndex(StoredEntities, &Ref->Ptr->StorageIndex);
 		Assert(Ref->Ptr->StorageIndex);
 
 		Ref->Index = Ref->Ptr->StorageIndex;
@@ -380,14 +380,14 @@ EndSim(stored_entities* Entities, memory_arena* WorldArena, sim_region* SimRegio
 				EntityRefIndex < ArrayCount(Stored->Sim.EntityReferences);
 				EntityRefIndex++, EntityRef++)
 		{
-			StoreEntityReference(EntityRef);
+			StoreEntityReference(Entities, EntityRef);
 		}
 		trigger_state* TrigState = Stored->Sim.TrigStates;
 		for(u32 TrigStateIndex = 0;
 			TrigStateIndex < ArrayCount(Stored->Sim.TrigStates);
 			TrigStateIndex++, TrigState++)
 		{
-			StoreEntityReference(&TrigState->Buddy);
+			StoreEntityReference(Entities, &TrigState->Buddy);
 		}
 
 		world_map_position NewWorldP = WorldMapNullPos();

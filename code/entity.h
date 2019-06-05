@@ -164,117 +164,119 @@ DefaultEntityOrientation()
 	return {0, 1, 0};
 }
 
-//TODO IMPORTANT(bjorn): Update the initialization code and the adding of
-//entities!!! Figure out how to set the camera to reference the player.
 	internal_function entity*
-AddEntity(sim_region* SimRegion, entity_visual_type VisualType, v3 P = {})
+AddEntity(sim_region* SimRegion, entity_visual_type VisualType)
 {
 	entity* Entity = AddBrandNewSimEntity(SimRegion);
 
-	Entity->P = P;
-	Entity->R = DefaultEntityOrientation();
 	Entity->VisualType = VisualType;
+	MakeEntityNonSpacial(Entity);
+
+	return Entity;
+}
+
+	internal_function entity*
+AddEntity(sim_region* SimRegion, entity_visual_type VisualType, v3 P)
+{
+	entity* Entity = AddEntity(SimRegion, VisualType);
+
+	MakeEntitySpacial(Entity, P, DefaultEntityOrientation(), {});
 
 	return Entity;
 }
 
 	internal_function void
-AddHitPoints(stored_entity* Entity, u32 HitPointMax)
+AddHitPoints(entity* Entity, u32 HitPointMax)
 {
-	Assert(HitPointMax <= ArrayCount(Entity->Sim.HitPoints));
-	Entity->Sim.HitPointMax = HitPointMax;
+	Assert(HitPointMax <= ArrayCount(Entity->HitPoints));
+	Entity->HitPointMax = HitPointMax;
 	for(u32 HitPointIndex = 0;
-			HitPointIndex < Entity->Sim.HitPointMax;
+			HitPointIndex < Entity->HitPointMax;
 			HitPointIndex++)
 	{
-		Entity->Sim.HitPoints[HitPointIndex].FilledAmount = HIT_POINT_SUB_COUNT;
+		Entity->HitPoints[HitPointIndex].FilledAmount = HIT_POINT_SUB_COUNT;
 	}
 }
 
-	internal_function stored_entity*
-AddSword(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entities)
+	internal_function entity*
+AddSword(sim_region* SimRegion)
 {
-	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityVisualType_Sword);
+	entity* Entity = AddEntity(SimRegion, EntityVisualType_Sword);
 
-	Entity->Sim.Dim = v2{0.4f, 1.5f} * WorldMap->TileSideInMeters;
-	Entity->Sim.Mass = 8.0f;
+	Entity->Dim = v2{0.4f, 1.5f} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Mass = 8.0f;
 
-	Entity->Sim.MoveSpec = {};
-	Entity->Sim.Collides = false;
+	Entity->MoveSpec = {};
+	Entity->Collides = false;
 
-	Entity->Sim.TriggerDamage = 1;
+	Entity->TriggerDamage = 1;
 
 	return Entity;
 }
 
-	internal_function stored_entity*
-AddPlayer(memory_arena* WorldArena, world_map* WorldMap, 
-					stored_entities* Entities, world_map_position InitP)
+	internal_function entity*
+AddPlayer(sim_region* SimRegion, v3 InitP)
 {
-	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityVisualType_Player, InitP);
+	entity* Entity = AddEntity(SimRegion, EntityVisualType_Player, InitP);
 
-	Entity->Sim.Dim = v2{0.5f, 0.3f} * WorldMap->TileSideInMeters;
-	Entity->Sim.Collides = true;
+	Entity->Dim = v2{0.5f, 0.3f} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Collides = true;
 
 	//TODO(bjorn): Why does weight differences matter so much in the collision system.
-	Entity->Sim.Mass = 40.0f / 8.0f;
+	Entity->Mass = 40.0f / 8.0f;
 
-	Entity->Sim.MoveSpec.EnforceVerticalGravity = true;
-	Entity->Sim.MoveSpec.EnforceHorizontalMovement = true;
-	Entity->Sim.MoveSpec.Speed = 85.f;
-	Entity->Sim.MoveSpec.Drag = 0.24f * 30.0f;
+	Entity->MoveSpec.EnforceVerticalGravity = true;
+	Entity->MoveSpec.EnforceHorizontalMovement = true;
+	Entity->MoveSpec.Speed = 85.f;
+	Entity->MoveSpec.Drag = 0.24f * 30.0f;
 
 	AddHitPoints(Entity, 6);
-	stored_entity* Sword = AddSword(WorldArena, WorldMap, Entities);
-	Entity->Sim.Sword.Index = Sword->Sim.StorageIndex;
+	Entity->Sword.Ptr = AddSword(SimRegion);
 
 	return Entity;
 }
 
-	internal_function stored_entity*
-AddMonstar(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entities,
-					 world_map_position InitP)
+	internal_function entity*
+AddMonstar(sim_region* SimRegion, v3 InitP)
 {
-	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityVisualType_Monstar, InitP);
+	entity* Entity = AddEntity(SimRegion, EntityVisualType_Monstar, InitP);
 
-	Entity->Sim.Dim = v2{0.5f, 0.3f} * WorldMap->TileSideInMeters;
-	Entity->Sim.Collides = true;
+	Entity->Dim = v2{0.5f, 0.3f} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Collides = true;
 
-	Entity->Sim.Mass = 40.0f / 8.0f;
+	Entity->Mass = 40.0f / 8.0f;
 
-	Entity->Sim.MoveSpec.EnforceHorizontalMovement = true;
-	Entity->Sim.MoveSpec.Speed = 85.f * 0.75;
-	Entity->Sim.MoveSpec.Drag = 0.24f * 30.0f;
+	Entity->MoveSpec.EnforceHorizontalMovement = true;
+	Entity->MoveSpec.Speed = 85.f * 0.75;
+	Entity->MoveSpec.Drag = 0.24f * 30.0f;
 
 	AddHitPoints(Entity, 3);
 
 	for(u32 HitPointIndex = 0;
-			HitPointIndex < Entity->Sim.HitPointMax;
+			HitPointIndex < Entity->HitPointMax;
 			HitPointIndex++)
 	{
-		Entity->Sim.HitPoints[HitPointIndex].FilledAmount = (u8)(HIT_POINT_SUB_COUNT - HitPointIndex);
+		Entity->HitPoints[HitPointIndex].FilledAmount = (u8)(HIT_POINT_SUB_COUNT - HitPointIndex);
 	}
 
 	return Entity;
 }
 
-	internal_function stored_entity*
-AddFamiliar(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entities, 
-						world_map_position InitP)
+	internal_function entity*
+AddFamiliar(sim_region* SimRegion, v3 InitP)
 {
-	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, 
-																		EntityVisualType_Familiar, InitP);
+	entity* Entity = AddEntity(SimRegion, EntityVisualType_Familiar, InitP);
 
-	Entity->Sim.Dim = v2{0.5f, 0.3f} * WorldMap->TileSideInMeters;
-	Entity->Sim.Collides = true;
+	Entity->Dim = v2{0.5f, 0.3f} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Collides = true;
 
-	Entity->Sim.Mass = 40.0f / 8.0f;
+	Entity->Mass = 40.0f / 8.0f;
 
-	Entity->Sim.MoveSpec.EnforceHorizontalMovement = true;
-	Entity->Sim.MoveSpec.Speed = 85.f * 0.7f;
-	Entity->Sim.MoveSpec.Drag = 0.2f * 30.0f;
+	Entity->MoveSpec.EnforceHorizontalMovement = true;
+	Entity->MoveSpec.Speed = 85.f * 0.7f;
+	Entity->MoveSpec.Drag = 0.2f * 30.0f;
 
-	Entity->Sim.HunterSearchRadius = 6.0f;
+	Entity->HunterSearchRadius = 6.0f;
 
 	return Entity;
 }
@@ -286,12 +288,12 @@ AddCarFrame(game_state* GameState, world_map_position WorldPos)
 	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
 														EntityVisualType_CarFrame, &WorldPos);
 
-	Entity.Stored->Dim = v2{4, 6};
-	Entity.Stored->Collides = true;
+	Entity->Stored->Dim = v2{4, 6};
+	Entity->Stored->Collides = true;
 
-	Entity.Stored->MoveSpec = DefaultMoveSpec();
+	Entity->Stored->MoveSpec = DefaultMoveSpec();
 
-	Entity.Stored->Mass = 800.0f;
+	Entity->Stored->Mass = 800.0f;
 
 	return Entity;
 }
@@ -302,8 +304,8 @@ AddEngine(game_state* GameState, world_map_position WorldPos)
 	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
 														EntityVisualType_Engine, &WorldPos);
 
-	Entity.Stored->Dim = v2{3, 2};
-	Entity.Stored->MoveSpec = DefaultMoveSpec();
+	Entity->Stored->Dim = v2{3, 2};
+	Entity->Stored->MoveSpec = DefaultMoveSpec();
 
 	return Entity;
 }
@@ -314,8 +316,8 @@ AddWheel(game_state* GameState, world_map_position WorldPos)
 	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
 														EntityVisualType_Wheel, &WorldPos);
 
-	Entity.Stored->Dim = v2{0.6f, 1.5f};
-	Entity.Stored->MoveSpec = DefaultMoveSpec();
+	Entity->Stored->Dim = v2{0.6f, 1.5f};
+	Entity->Stored->MoveSpec = DefaultMoveSpec();
 
 	return Entity;
 }
@@ -326,14 +328,14 @@ MoveCarPartsToStartingPosition(memory_arena* WorldArena, world_map* WorldMap, en
 {
 	Assert(CarFrameIndex);
 	entity CarFrameEntity = GetEntityByLowIndex(Entities, CarFrameIndex);
-	Assert(CarFrameEntity.Low);
-	if(CarFrameEntity.Low)
+	Assert(CarFrameEntity->Low);
+	if(CarFrameEntity->Low)
 	{
-		entity EngineEntity = GetEntityByLowIndex(Entities, CarFrameEntity.Low->Engine);
-		if(EngineEntity.Low)
+		entity EngineEntity = GetEntityByLowIndex(Entities, CarFrameEntity->Low->Engine);
+		if(EngineEntity->Low)
 		{
 			ChangeEntityWorldLocationRelativeOther(WorldArena, WorldMap, &EngineEntity, 
-																						 CarFrameEntity.Low->WorldP, v3{0, 1.5f, 0});
+																						 CarFrameEntity->Low->WorldP, v3{0, 1.5f, 0});
 		}
 
 		for(s32 WheelIndex = 0;
@@ -341,18 +343,18 @@ MoveCarPartsToStartingPosition(memory_arena* WorldArena, world_map* WorldMap, en
 				WheelIndex++)
 		{
 			entity WheelEntity = 
-				GetEntityByLowIndex(Entities, CarFrameEntity.Low->Wheels[WheelIndex]);
-			if(WheelEntity.Low)
+				GetEntityByLowIndex(Entities, CarFrameEntity->Low->Wheels[WheelIndex]);
+			if(WheelEntity->Low)
 			{
 				f32 dX = ((WheelIndex % 2) - 0.5f) * 2.0f;
 				f32 dY = ((WheelIndex / 2) - 0.5f) * 2.0f;
 				v2 D = v2{dX, dY};
 
-				v2 O = (Hadamard(D, CarFrameEntity.Low->Dim.XY * 0.5f) - 
-								Hadamard(D, WheelEntity.Low->Dim.XY * 0.5f));
+				v2 O = (Hadamard(D, CarFrameEntity->Low->Dim.XY * 0.5f) - 
+								Hadamard(D, WheelEntity->Low->Dim.XY * 0.5f));
 
 				ChangeEntityWorldLocationRelativeOther(WorldArena, WorldMap, &WheelEntity, 
-																							 CarFrameEntity.Low->WorldP, (v3)O);
+																							 CarFrameEntity->Low->WorldP, (v3)O);
 			}
 		}
 	}
@@ -397,60 +399,57 @@ AddCar(game_state* GameState, world_map_position WorldPos)
 	entity CarFrameEntity = AddCarFrame(GameState, WorldPos);
 
 	entity EngineEntity = AddEngine(GameState, WorldPos);
-	CarFrameEntity.Low->Engine = EngineEntity.LowIndex;
-	EngineEntity.Low->Vehicle = CarFrameEntity.LowIndex;
-	EngineEntity.Low->Attached = true;
+	CarFrameEntity->Low->Engine = EngineEntity->LowIndex;
+	EngineEntity->Low->Vehicle = CarFrameEntity->LowIndex;
+	EngineEntity->Low->Attached = true;
 
 	for(s32 WheelIndex = 0;
 			WheelIndex < 4;
 			WheelIndex++)
 	{
 		entity WheelEntity = AddWheel(GameState, WorldPos);
-		CarFrameEntity.Low->Wheels[WheelIndex] = WheelEntity.LowIndex;
-		WheelEntity.Low->Vehicle = CarFrameEntity.LowIndex;
-		WheelEntity.Low->Attached = true;
+		CarFrameEntity->Low->Wheels[WheelIndex] = WheelEntity->LowIndex;
+		WheelEntity->Low->Vehicle = CarFrameEntity->LowIndex;
+		WheelEntity->Low->Attached = true;
 	}
 
 	MoveCarPartsToStartingPosition(&GameState->WorldArena, GameState->WorldMap, 
-																 &GameState->Entities, CarFrameEntity.LowIndex);
+																 &GameState->Entities, CarFrameEntity->LowIndex);
 
 	return CarFrameEntity;
 }
 #endif
 
-	internal_function stored_entity*
-AddGround(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entities, 
-					world_map_position WorldPos)
+	internal_function entity*
+AddGround(sim_region* SimRegion, v3 InitP)
 {
-	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities,
-																		EntityVisualType_Ground, WorldPos);
+	entity* Entity = AddEntity(SimRegion, EntityVisualType_Ground, InitP);
 
-	Entity->Sim.Dim = v2{1, 1} * WorldMap->TileSideInMeters;
-	Entity->Sim.Collides = false;
+	Entity->Dim = v2{1, 1} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Collides = false;
 
 	return Entity;
 }
 
-	internal_function stored_entity*
-AddWall(memory_arena* WorldArena, world_map* WorldMap, stored_entities* Entities, 
-				world_map_position WorldPos, f32 Mass = 1000.0f)
+	internal_function entity*
+AddWall(sim_region* SimRegion, v3 InitP, f32 Mass = 1000.0f)
 {
-	stored_entity* Entity = AddEntity(WorldArena, WorldMap, Entities, EntityVisualType_Wall, WorldPos);
+	entity* Entity = AddEntity(SimRegion, EntityVisualType_Wall, InitP);
 
-	Entity->Sim.Dim = v2{1, 1} * WorldMap->TileSideInMeters;
-	Entity->Sim.Collides = true;
+	Entity->Dim = v2{1, 1} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Collides = true;
 
-	Entity->Sim.Mass = Mass;
-	Entity->Sim.MoveSpec = DefaultMoveSpec();
+	Entity->Mass = Mass;
+	Entity->MoveSpec = DefaultMoveSpec();
 
 	return Entity;
 }
 
 #if 0
-	internal_function stored_entity*
+	internal_function entity*
 AddStair(game_state* GameState, world_map_position WorldPos, f32 dZ)
 {
-	stored_entity* Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, 
+	entity* Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, 
 																		&GameState->Entities,
 																		EntityVisualType_Stair, &WorldPos);
 

@@ -203,6 +203,8 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	v3s RoomOrigin = (v3s)RoundV2ToV2S((v2)v2u{RoomWidthInTiles, RoomHeightInTiles} / 2.0f);
 	GameState->CameraP = GetChunkPosFromAbsTile(WorldMap, RoomOrigin);
 
+//TODO IMPORTANT(bjorn): Update the initialization code and the adding of
+//entities!!! Figure out how to set the camera to reference the player.
 	{
 		v3 OffsetInTiles = GetChunkPosFromAbsTile(WorldMap, v3s{-2, 1, 0}).Offset_;
 		world_map_position InitP = OffsetWorldPos(WorldMap, GameState->CameraP, OffsetInTiles);

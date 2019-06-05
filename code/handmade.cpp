@@ -203,46 +203,37 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	v3s RoomOrigin = (v3s)RoundV2ToV2S((v2)v2u{RoomWidthInTiles, RoomHeightInTiles} / 2.0f);
 	GameState->CameraP = GetChunkPosFromAbsTile(WorldMap, RoomOrigin);
 
-//TODO IMPORTANT(bjorn): Update the initialization code and the adding of
-//entities!!! Figure out how to set the camera to reference the player.
+	rectangle3 CameraUpdateBounds = RectCenterDim(v3{0, 0, 0}, 
+																								v3{2, 2, 2} * WorldMap->ChunkSideInMeters);
+                                                                                                    
+	sim_region* SimRegion = BeginSim(&GameState->Entities, &(GameState->SimArena), WorldMap, 
+																	 GameState->CameraP, CameraUpdateBounds, 0);
 	{
-		v3 OffsetInTiles = GetChunkPosFromAbsTile(WorldMap, v3s{-2, 1, 0}).Offset_;
-		world_map_position InitP = OffsetWorldPos(WorldMap, GameState->CameraP, OffsetInTiles);
-		stored_entity* Player = AddPlayer(&GameState->WorldArena, WorldMap, 
-																			&GameState->Entities, InitP);
-		GameState->CameraFollowingPlayerIndex = Player->Sim.StorageIndex;
-		GameState->KeyboardSimulationRequests[0].PlayerStorageIndex = Player->Sim.StorageIndex;
+		entity* Player = AddPlayer(SimRegion, v3{-2, 1, 0} * WorldMap->TileSideInMeters);
+		GameState->CameraFollowingPlayerIndex = Player->StorageIndex;
+		GameState->KeyboardSimulationRequests[0].PlayerStorageIndex = Player->StorageIndex;
 
-		stored_entity* Familiar = AddFamiliar(&GameState->WorldArena, WorldMap, &GameState->Entities,
-																					GetChunkPosFromAbsTile(WorldMap, v3u{ 4, 5, 0}));
-		Familiar->Sim.Prey.Index = Player->Sim.StorageIndex;
+		entity* Familiar = AddFamiliar(SimRegion, v3{4, 5, 0} * WorldMap->TileSideInMeters);
+		Familiar->Prey.Ptr = Player;
 	}
-#if 0
-	AddCar(&GameState->WorldArena, WorldMap, &GameState->Entities,
-				 OffsetWorldPos(WorldMap, Player->Sim.WorldP, {3.0f, 7.0f, 0}));
-#endif
 
-	AddMonstar(&GameState->WorldArena, WorldMap, &GameState->Entities,
-						 GetChunkPosFromAbsTile(WorldMap, v3u{ 2, 5, 0}));
+	AddMonstar(SimRegion, v3{ 2, 5, 0} * WorldMap->TileSideInMeters);
 
-	stored_entity* A = AddWall(&GameState->WorldArena, WorldMap, &GameState->Entities,
-														 GetChunkPosFromAbsTile(WorldMap, v3u{2, 4, 0}), 10.0f);
-	stored_entity* B = AddWall(&GameState->WorldArena, WorldMap, &GameState->Entities,
-														 GetChunkPosFromAbsTile(WorldMap, v3u{5, 4, 0}),  5.0f);
+	entity* A = AddWall(SimRegion, v3{2, 4, 0} * WorldMap->TileSideInMeters, 10.0f);
+	entity* B = AddWall(SimRegion, v3{5, 4, 0} * WorldMap->TileSideInMeters,  5.0f);
 
-	A->Sim.dP = {1, 0, 0};
-	B->Sim.dP = {-1, 0, 0};
+	A->dP = {1, 0, 0};
+	B->dP = {-1, 0, 0};
 	//TODO(bjorn): Have an object stuck to the mouse.
 	//GameState->DEBUG_EntityBoundToMouse = AIndex;
 
-	stored_entity* E[6];
+	entity* E[6];
 	for(u32 i=0;
 			i < 6;
 			i++)
 	{
-		E[i] = AddWall(&GameState->WorldArena, WorldMap, &GameState->Entities,
-									 GetChunkPosFromAbsTile(WorldMap, v3u{2 + 2*i, 2, 0}), 10.0f + i);
-		E[i]->Sim.dP = {2.0f-i, -2.0f+i};
+		E[i] = AddWall(SimRegion, v3{2.0f + 2.0f*i, 2.0f, 0.0f} * WorldMap->TileSideInMeters, 10.0f + i);
+		E[i]->dP = {2.0f-i, -2.0f+i};
 	}
 
 	u32 ScreenX = 0;
@@ -279,14 +270,14 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 				TileValue = 2;
 			}
 
-			world_map_position WorldPos = GetChunkPosFromAbsTile(WorldMap, AbsTile);
 			if((TileY != RoomHeightInTiles && TileX != RoomWidthInTiles/2) && TileValue ==  2)
 			{
-				stored_entity* Wall = AddWall(&GameState->WorldArena, WorldMap, 
-																			&GameState->Entities, WorldPos);
+				entity* Wall = AddWall(SimRegion, (v3)AbsTile * WorldMap->TileSideInMeters);
 			}
 		}
 	}
+
+	EndSim(&GameState->Entities, &GameState->WorldArena, SimRegion);
 }
 
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
@@ -357,8 +348,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						v3 OffsetInTiles = GetChunkPosFromAbsTile(WorldMap, v3s{-2, 1, 0}).Offset_;
 						world_map_position InitP = OffsetWorldPos(WorldMap, GameState->CameraP, OffsetInTiles);
 
-						SimReq->PlayerStorageIndex = AddPlayer(WorldArena, WorldMap, 
-																									 Entities, InitP)->Sim.StorageIndex;
+						SimReq->PlayerStorageIndex = AddPlayer(SimRegion, InitP);
 					}
 				}
 			}
@@ -523,6 +513,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	// NOTE(bjorn): Update camera
 	//
+	//
+	//TODO IMPORTANT: Make the camera an entity and move this logic inside the update loop.
 	if(GameState->CameraFollowingPlayerIndex)
 	{
 		stored_entity* CameraTarget = GetStoredEntityByIndex(Entities, 
@@ -537,10 +529,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// NOTE(bjorn): Create sim region by camera
 	//
 	v3 HighFrequencyUpdateDim = v3{2.0f, 2.0f, 2.0f}*WorldMap->ChunkSideInMeters;
-	rectangle3 CameraUpdateBounds = RectCenterDim(v3{0,0,0}, HighFrequencyUpdateDim);
+	rectangle3 UpdateBounds = RectCenterDim(v3{0,0,0}, HighFrequencyUpdateDim);
                                                                                                     
 	sim_region* SimRegion = BeginSim(Entities, &(GameState->SimArena), WorldMap, 
-																	 GameState->CameraP, CameraUpdateBounds, SecondsToUpdate);
+																	 GameState->CameraP, UpdateBounds, SecondsToUpdate);
 
 	//
 	// NOTE(bjorn): Moving and Rendering

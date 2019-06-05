@@ -20,7 +20,6 @@
 // Make it so that I can visually step through a frame of collision.
 // generate world as you drive
 // car engine that is settable by mouse click and drag
-// collide with rocks
 // ai cars
 
 //STUDY TODO (bjorn): Excerpt from 
@@ -42,6 +41,7 @@ struct hero_bitmaps
 	loaded_bitmap Torso;
 };
 
+//TODO: Move this to the entity as a thing it either do or do not have.
 struct simulation_request
 {
 	u32 PlayerStorageIndex;
@@ -70,10 +70,6 @@ struct game_state
 	world_map* WorldMap;
 
 	memory_arena SimArena;
-
-	s32 RoomWidthInTiles;
-	s32 RoomHeightInTiles;
-	v3s RoomOrigin;
 
 	//TODO(bjorn): Should we allow split-screen?
 	u32 CameraFollowingPlayerIndex;
@@ -201,15 +197,11 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 
 	u32 RandomNumberIndex = 0;
 
-	GameState->RoomWidthInTiles = 17;
-	GameState->RoomHeightInTiles = 9;
+	u32 RoomWidthInTiles = 17;
+	u32 RoomHeightInTiles = 9;
 
-	u32 TilesPerWidth = GameState->RoomWidthInTiles;
-	u32 TilesPerHeight = GameState->RoomHeightInTiles;
-
-	GameState->RoomOrigin = (v3s)RoundV2ToV2S((v2)v2u{TilesPerWidth, TilesPerHeight} / 2.0f);
-
-	GameState->CameraP = GetChunkPosFromAbsTile(WorldMap, GameState->RoomOrigin);
+	v3s RoomOrigin = (v3s)RoundV2ToV2S((v2)v2u{RoomWidthInTiles, RoomHeightInTiles} / 2.0f);
+	GameState->CameraP = GetChunkPosFromAbsTile(WorldMap, RoomOrigin);
 
 	{
 		v3 OffsetInTiles = GetChunkPosFromAbsTile(WorldMap, v3s{-2, 1, 0}).Offset_;
@@ -255,16 +247,16 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	u32 ScreenY = 0;
 	u32 ScreenZ = 0;
 	for(u32 TileY = 0;
-			TileY < TilesPerHeight;
+			TileY < RoomHeightInTiles;
 			++TileY)
 	{
 		for(u32 TileX = 0;
-				TileX < TilesPerWidth;
+				TileX < RoomWidthInTiles;
 				++TileX)
 		{
 			v3u AbsTile = {
-									 ScreenX * TilesPerWidth + TileX, 
-									 ScreenY * TilesPerHeight + TileY, 
+									 ScreenX * RoomWidthInTiles + TileX, 
+									 ScreenY * RoomHeightInTiles + TileY, 
 									 ScreenZ};
 
 			u32 TileValue = 1;
@@ -272,7 +264,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 			{
 				TileValue = 2;
 			}
-			if((TileX == (TilesPerWidth-1)))
+			if((TileX == (RoomWidthInTiles-1)))
 			{
 				TileValue = 2;
 			}
@@ -280,13 +272,13 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 			{
 				TileValue = 2;
 			}
-			if((TileY == (TilesPerHeight-1)))
+			if((TileY == (RoomHeightInTiles-1)))
 			{
 				TileValue = 2;
 			}
 
 			world_map_position WorldPos = GetChunkPosFromAbsTile(WorldMap, AbsTile);
-			if((TileY != TilesPerHeight && TileX != TilesPerWidth/2) && TileValue ==  2)
+			if((TileY != RoomHeightInTiles && TileX != RoomWidthInTiles/2) && TileValue ==  2)
 			{
 				stored_entity* Wall = AddWall(&GameState->WorldArena, WorldMap, 
 																			&GameState->Entities, WorldPos);
@@ -544,7 +536,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	v3 HighFrequencyUpdateDim = v3{2.0f, 2.0f, 2.0f}*WorldMap->ChunkSideInMeters;
 	rectangle3 CameraUpdateBounds = RectCenterDim(v3{0,0,0}, HighFrequencyUpdateDim);
-
+                                                                                                    
 	sim_region* SimRegion = BeginSim(Entities, &(GameState->SimArena), WorldMap, 
 																	 GameState->CameraP, CameraUpdateBounds, SecondsToUpdate);
 

@@ -164,30 +164,18 @@ DefaultEntityOrientation()
 	return {0, 1, 0};
 }
 
-	internal_function stored_entity*
-AddEntity(memory_arena* WorldArena, world_map* WorldMap, stored_entities* StoredEntities, 
-					entity_visual_type VisualType, world_map_position WorldP = WorldMapNullPos())
+//TODO IMPORTANT(bjorn): Update the initialization code and the adding of
+//entities!!! Figure out how to set the camera to reference the player.
+	internal_function entity*
+AddEntity(sim_region* SimRegion, entity_visual_type VisualType, v3 P = {})
 {
-	stored_entity* Stored = {};
+	entity* Entity = AddBrandNewSimEntity(SimRegion);
 
-	StoredEntities->EntityCount++;
-	Assert(StoredEntities->EntityCount < ArrayCount(StoredEntities->Entities));
-	Stored = StoredEntities->Entities + StoredEntities->EntityCount;
+	Entity->P = P;
+	Entity->R = DefaultEntityOrientation();
+	Entity->VisualType = VisualType;
 
-	*Stored = {};
-	Stored->Sim.StorageIndex = StoredEntities->EntityCount;
-	Stored->Sim.R = DefaultEntityOrientation();
-	Stored->Sim.WorldP = WorldMapNullPos();
-	Stored->Sim.VisualType = VisualType;
-
-	if(IsValid(WorldP))
-	{
-		Assert(IsCanonical(WorldMap, WorldP.Offset_));
-	}
-
-	ChangeStoredEntityWorldLocation(WorldArena, WorldMap, Stored, WorldP);
-
-	return Stored;
+	return Entity;
 }
 
 	internal_function void

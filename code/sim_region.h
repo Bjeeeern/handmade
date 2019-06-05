@@ -65,19 +65,31 @@ struct stored_entities
 };
 
 	inline stored_entity*
-GetStoredEntityByIndex(stored_entities* Entities, u32 StorageIndex)
+GetStoredEntityByIndexRaw(stored_entities* Entities, u32 StorageIndex)
 {
 	stored_entity* Result = 0;
 
-	if(0 < StorageIndex && StorageIndex <= Entities->EntityCount)
+	Assert(0 < StorageIndex && StorageIndex <= ArrayCount(Entities->Entities));
+	Result = Entities->Entities + *StorageIndex;
+	Assert(Result->Sim.StorageIndex == StorageIndex);
+
+	return Result;
+}
+
+	inline stored_entity*
+GetStoredEntityByIndex(stored_entities* Entities, u32* StorageIndex)
+{
+	stored_entity* Result = 0;
+
+	if(!*StorageIndex)
 	{
-		Result = Entities->Entities + StorageIndex;
-		Assert(Result->Sim.StorageIndex == StorageIndex);
+		Entities->EntityCount++;
+		Assert(Entities->EntityCount < ArrayCount(Entities->Entities));
+		Result->Sim.StorageIndex = Entities->EntityCount;
+		*StorageIndex = Entities->EntityCount;
 	}
-	else
-	{
-		InvalidCodePath;
-	}
+
+	Result = GetStoredEntityByIndexRaw(Entities, *StorageIndex);
 
 	return Result;
 }
@@ -175,7 +187,7 @@ LoadEntityReference(stored_entities* StoredEntities, sim_region* SimRegion, enti
 	if(Ref->Index)
 	{
 		Ref->Ptr = AddSimEntity(StoredEntities, SimRegion, 
-														GetStoredEntityByIndex(StoredEntities, Ref->Index), 
+														GetStoredEntityByIndexRaw(StoredEntities, Ref->Index), 
 														Ref->Index, 0);
 	}
 }
@@ -183,8 +195,11 @@ LoadEntityReference(stored_entities* StoredEntities, sim_region* SimRegion, enti
 	internal_function void
 StoreEntityReference(entity_reference* Ref)
 {
-	if(Ref->Ptr != 0)
+	if(Ref->Ptr)
 	{
+		GetStoredEntityByIndex(Entities, &SimEntity->StorageIndex);
+		Assert(Ref->Ptr->StorageIndex);
+
 		Ref->Index = Ref->Ptr->StorageIndex;
 	}
 }
@@ -328,7 +343,7 @@ BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* Wor
 								Index++)
 						{
 							u32 StorageIndex = Block->EntityIndexes[Index];
-							stored_entity* StoredEntity = GetStoredEntityByIndex(StoredEntities, StorageIndex);
+							stored_entity* StoredEntity = GetStoredEntityByIndexRaw(StoredEntities, StorageIndex);
 							Assert(StoredEntity);
 							Assert(StoredEntity->Sim.IsSpacial);
 
@@ -355,7 +370,7 @@ EndSim(stored_entities* Entities, memory_arena* WorldArena, sim_region* SimRegio
 			EntityIndex < SimRegion->EntityCount;
 			EntityIndex++, SimEntity++)
 	{
-		stored_entity* Stored = GetStoredEntityByIndex(Entities, SimEntity->StorageIndex);
+		stored_entity* Stored = GetStoredEntityByIndex(Entities, &SimEntity->StorageIndex);
 		Assert(Stored);
 
 		Stored->Sim = *SimEntity;
@@ -382,6 +397,18 @@ EndSim(stored_entities* Entities, memory_arena* WorldArena, sim_region* SimRegio
 		}
 		ChangeStoredEntityWorldLocation(WorldArena, SimRegion->WorldMap, Stored, NewWorldP);
 	}
+}
+
+	internal_function entity*
+AddBrandNewSimEntity(sim_region* SimRegion)
+{
+	entity* Result = 0;
+
+	Assert(SimRegion->EntityCount < SimRegion->EntityMaxCount);
+	Result = SimRegion->Entities + SimRegion->EntityCount++;
+	*Result = {};
+
+	return Result;
 }
 
 #define SIM_REGION_H

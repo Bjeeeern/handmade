@@ -241,7 +241,7 @@ AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_enti
 		}
 	}
 
-	Result->EnityHasBeenProcessedAlready = false;
+	Result->EntityPairUpdateGenerationIndex = 0;
 	Result->Updates = !Result->IsSpacial || IsInRectangle(SimRegion->UpdateBounds, Result->P);
 
 	return Result;

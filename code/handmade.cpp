@@ -550,10 +550,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// https://www.youtube.com/watch?v=fdAOPHgW7qM
 	//TODO(bjorn): Add some asserts and some limits to velocities related to the
 	//delta time so that tunneling becomes virtually impossible.
-	s32 Steps = 8;
+	u32 Steps = 8;
+	u32 LastStep = Steps;
 	f32 dT = SecondsToUpdate / (f32)Steps;
-	for(s32 Step = 0;
-			Step < Steps;
+	for(u32 Step = 1;
+			Step <= LastStep;
 			Step++)
 	{
 		entity* Entity = SimRegion->Entities;
@@ -561,248 +562,250 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				EntityIndex < SimRegion->EntityCount;
 				EntityIndex++, Entity++)
 		{
-			if(!Entity->Updates) { continue; }
-			//TODO Do non-spacial entities ever do logic. Do they affect other entities then? 
+			Entity->EntityPairUpdateGenerationIndex = Step;
+			//TODO Do non-spacial entities ever do logic/Render? Do they affect other entities then? 
 			if(!Entity->IsSpacial) { continue; }
+
 			//
 			// NOTE(bjorn): Moving / Collision / Game Logic
 			//
-
-			//TODO(bjorn):
-			// Add negative gravity for penetration if relative velocity is >= 0.
-			// Get relevant contact point.
-			// Test with object on mouse.
-			entity* OtherEntity = SimRegion->Entities;
-			for(u32 OtherEntityIndex = 0;
-					OtherEntityIndex < SimRegion->EntityCount;
-					OtherEntityIndex++, OtherEntity++)
+			if(Entity->Updates)
 			{
-				if(Entity == OtherEntity) { continue; }
-				if(OtherEntity->EnityHasBeenProcessedAlready) { continue; }
-				if(!OtherEntity->IsSpacial) { continue; }
-
-				b32 Inside = true; 
-				f32 BestSquareDistanceToWall = positive_infinity32;
-				s32 RelevantNodeIndex = -1;
-				v2 P = Entity->P.XY;
-				polygon Sum = MinkowskiSum(OtherEntity, Entity);
-
-				for(s32 NodeIndex = 0; 
-						NodeIndex < Sum.NodeCount; 
-						NodeIndex++)
+				//TODO(bjorn):
+				// Add negative gravity for penetration if relative velocity is >= 0.
+				// Get relevant contact point.
+				// Test with object on mouse.
+				entity* OtherEntity = SimRegion->Entities;
+				for(u32 OtherEntityIndex = 0;
+						OtherEntityIndex < SimRegion->EntityCount;
+						OtherEntityIndex++, OtherEntity++)
 				{
-					v2 N0 = Sum.Nodes[NodeIndex];
-					v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
+					if(Entity == OtherEntity) { continue; }
+					if(OtherEntity->EntityPairUpdateGenerationIndex == Step) { continue; }
+					if(!OtherEntity->IsSpacial) { continue; }
 
-					f32 Det = Determinant(N1-N0, P-N0);
-					if(Inside && (Det >= 0.0f)) 
-					{ 
-						Inside = false; 
-					}
+					b32 Inside = true; 
+					f32 BestSquareDistanceToWall = positive_infinity32;
+					s32 RelevantNodeIndex = -1;
+					v2 P = Entity->P.XY;
+					polygon Sum = MinkowskiSum(OtherEntity, Entity);
 
-					f32 SquareDistanceToWall = SquareDistancePointToLineSegment(N0, N1, P);
-					if(SquareDistanceToWall < BestSquareDistanceToWall)
+					for(s32 NodeIndex = 0; 
+							NodeIndex < Sum.NodeCount; 
+							NodeIndex++)
 					{
-						BestSquareDistanceToWall = SquareDistanceToWall;
-						RelevantNodeIndex = NodeIndex;
-					}
-				}	
+						v2 N0 = Sum.Nodes[NodeIndex];
+						v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
 
-				if(Inside &&
-					 Entity->Collides && 
-					 OtherEntity->Collides)
-				{
-					Assert(RelevantNodeIndex >= 0);
+						f32 Det = Determinant(N1-N0, P-N0);
+						if(Inside && (Det >= 0.0f)) 
+						{ 
+							Inside = false; 
+						}
 
-					f32 Penetration;
-					v2 n, t, ImpactPoint;
+						f32 SquareDistanceToWall = SquareDistancePointToLineSegment(N0, N1, P);
+						if(SquareDistanceToWall < BestSquareDistanceToWall)
+						{
+							BestSquareDistanceToWall = SquareDistanceToWall;
+							RelevantNodeIndex = NodeIndex;
+						}
+					}	
+
+					if(Inside &&
+						 Entity->Collides && 
+						 OtherEntity->Collides)
 					{
-						Penetration	= SquareRoot(BestSquareDistanceToWall);
-						//Assert(Penetration <= (Lenght(Entity->Dim) + Lenght(OtherEntity->Dim)) * 0.5f);
+						Assert(RelevantNodeIndex >= 0);
 
-						v2 N0 = Sum.Nodes[RelevantNodeIndex];
-						v2 N1 = Sum.Nodes[(RelevantNodeIndex+1) % Sum.NodeCount];
-						v2 V0 = Sum.OriginalLineSeg[RelevantNodeIndex][0];
-						v2 V1 = Sum.OriginalLineSeg[RelevantNodeIndex][1];
+						f32 Penetration;
+						v2 n, t, ImpactPoint;
+						{
+							Penetration	= SquareRoot(BestSquareDistanceToWall);
+							//Assert(Penetration <= (Lenght(Entity->Dim) + Lenght(OtherEntity->Dim)) * 0.5f);
 
-						//TODO(bjorn): This normalization might not be needed.
-						t = Normalize(N1 - N0);
-						n = CCW90M22() * t;
+							v2 N0 = Sum.Nodes[RelevantNodeIndex];
+							v2 N1 = Sum.Nodes[(RelevantNodeIndex+1) % Sum.NodeCount];
+							v2 V0 = Sum.OriginalLineSeg[RelevantNodeIndex][0];
+							v2 V1 = Sum.OriginalLineSeg[RelevantNodeIndex][1];
 
-						closest_point_to_line_result ClosestPoint = GetClosestPointOnLineSegment(N0, N1, P);
+							//TODO(bjorn): This normalization might not be needed.
+							t = Normalize(N1 - N0);
+							n = CCW90M22() * t;
 
-						ImpactPoint = V0 + (V1-V0) * ClosestPoint.t;
-						v2 ImpactCorrection = n * Penetration * 0.5f;
-						ImpactCorrection *= Sum.Genus[RelevantNodeIndex] == MinkowskiGenus_Movable ? 1.0f:-1.0f;
-						ImpactPoint += ImpactCorrection;
-					}
+							closest_point_to_line_result ClosestPoint = GetClosestPointOnLineSegment(N0, N1, P);
 
-					//NOTE(bjorn): Normal always points away from other entity.
-					v2 AP = Entity->P.XY;
-					v2 BP = OtherEntity->P.XY;
-					v2 AIt = CW90M22() * (AP - ImpactPoint);
-					v2 BIt = CW90M22() * (BP - ImpactPoint);
-					v2 AdP = Entity->dP.XY      + Entity->dA      * AIt;
-					v2 BdP = OtherEntity->dP.XY + OtherEntity->dA * BIt;
-					v2 ABdP = AdP - BdP;
-					f32 ndotAB = Dot(n, ABdP);
+							ImpactPoint = V0 + (V1-V0) * ClosestPoint.t;
+							v2 ImpactCorrection = n * Penetration * 0.5f;
+							ImpactCorrection *= Sum.Genus[RelevantNodeIndex] == MinkowskiGenus_Movable ? 1.0f:-1.0f;
+							ImpactPoint += ImpactCorrection;
+						}
 
-					f32 AInvMass = SafeRatio0(1.0f, Entity->Mass);
-					f32 BInvMass = SafeRatio0(1.0f, OtherEntity->Mass);
-					//TODO(bjorn): Automize inertia calculation.
-					f32 AInvMoI  = AInvMass ? 0.08f:0.0f;//GetInverseOrZero(Entity->High->MoI);
-					f32 BInvMoI  = BInvMass ? 0.08f:0.0f;//GetInverseOrZero(OtherEntity->High->MoI);
+						//NOTE(bjorn): Normal always points away from other entity.
+						v2 AP = Entity->P.XY;
+						v2 BP = OtherEntity->P.XY;
+						v2 AIt = CW90M22() * (AP - ImpactPoint);
+						v2 BIt = CW90M22() * (BP - ImpactPoint);
+						v2 AdP = Entity->dP.XY      + Entity->dA      * AIt;
+						v2 BdP = OtherEntity->dP.XY + OtherEntity->dA * BIt;
+						v2 ABdP = AdP - BdP;
+						f32 ndotAB = Dot(n, ABdP);
 
-					f32 Impulse = 0;
-					f32 j = 0;
+						f32 AInvMass = SafeRatio0(1.0f, Entity->Mass);
+						f32 BInvMass = SafeRatio0(1.0f, OtherEntity->Mass);
+						//TODO(bjorn): Automize inertia calculation.
+						f32 AInvMoI  = AInvMass ? 0.08f:0.0f;//GetInverseOrZero(Entity->High->MoI);
+						f32 BInvMoI  = BInvMass ? 0.08f:0.0f;//GetInverseOrZero(OtherEntity->High->MoI);
 
-					if(ndotAB < 0)
-					{
-						f32 e = 0.0f;
-						j = ((-(1+e) * Dot(ABdP, n)) / 
-								 (/*Dot(n, n) * */(AInvMass + BInvMass) + 
-									Square(Dot(AIt, n))*AInvMoI + 
-									Square(Dot(BIt, n))*BInvMoI
-								 )
-								);
+						f32 Impulse = 0;
+						f32 j = 0;
 
-						Impulse = j;
-					}
+						if(ndotAB < 0)
+						{
+							f32 e = 0.0f;
+							j = ((-(1+e) * Dot(ABdP, n)) / 
+									 (/*Dot(n, n) * */(AInvMass + BInvMass) + 
+										Square(Dot(AIt, n))*AInvMoI + 
+										Square(Dot(BIt, n))*BInvMoI
+									 )
+									);
 
-					Entity->dP.XY      += (Impulse * AInvMass) * n;
-					OtherEntity->dP.XY -= (Impulse * BInvMass) * n;
-					Entity->dA         += Dot(AIt, Impulse * n) * AInvMoI;
-					OtherEntity->dA    -= Dot(BIt, Impulse * n) * BInvMoI;
+							Impulse = j;
+						}
 
-					Entity->P.XY       += n * Penetration * 0.5f;
-					OtherEntity->P.XY  -= n * Penetration * 0.5f;
-				} 
+						Entity->dP.XY      += (Impulse * AInvMass) * n;
+						OtherEntity->dP.XY -= (Impulse * BInvMass) * n;
+						Entity->dA         += Dot(AIt, Impulse * n) * AInvMoI;
+						OtherEntity->dA    -= Dot(BIt, Impulse * n) * BInvMoI;
 
-				trigger_state_result TriggerState = 
-					UpdateAndGetCurrentTriggerState(Entity, OtherEntity, dT, Inside);
+						Entity->P.XY       += n * Penetration * 0.5f;
+						OtherEntity->P.XY  -= n * Penetration * 0.5f;
+					} 
 
-				//TODO Is this a thing that we need to handle interactions?
+					trigger_state_result TriggerState = 
+						UpdateAndGetCurrentTriggerState(Entity, OtherEntity, dT, Inside);
+
+					//TODO Is this a thing that we need to handle interactions?
 #if 0
-				simulation_request* OtherPlayerSimReq = 
+					simulation_request* OtherPlayerSimReq = 
+						GetSimRequestForEntity(GameState->PlayerSimulationRequests, 
+																	 ArrayCount(GameState->PlayerSimulationRequests),
+																	 Entity->StorageIndex);
+#endif
+
+					entity* A = Entity;
+					entity* B = OtherEntity;
+					//TODO STUDY Doublecheck HMH 69 to see what this was for again.
+					if(Entity->StorageIndex > OtherEntity->StorageIndex)
+					{
+						Swap(A, B, entity*);
+					}
+
+					if(TriggerState.OnEnter)
+					{
+						ApplyDamage(Entity, OtherEntity);
+					}
+
+					if(TriggerState.OnLeave)
+					{
+						Bounce(Entity, OtherEntity);
+					}
+
+#if HANDMADE_INTERNAL
+					if(GameState->DEBUG_VisualiseMinkowskiSum)
+					{
+						v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
+						m22 GameSpaceToScreenSpace = 
+						{PixelsPerMeter, 0             ,
+							0             ,-PixelsPerMeter};
+
+						u32 Player1StorageIndex = GameState->KeyboardSimulationRequests[0].PlayerStorageIndex;
+						entity* Player = 0;
+						if(Entity->StorageIndex == Player1StorageIndex) { Player = Entity;}
+						if(OtherEntity->StorageIndex == Player1StorageIndex) { Player = OtherEntity;}
+
+						if(Player) 
+						{
+							entity* Target = Entity == Player ? OtherEntity : Entity;
+							DEBUGMinkowskiSum(Buffer, Target, Player, GameSpaceToScreenSpace, ScreenCenter);
+						}
+#if 0 
+						entity* CarFrame = GetEntityOfVisualType(EntityVisualType_CarFrame, Entity, OtherEntity);
+						if(CarFrame &&
+							 CarFrame->DriverSeat.Ptr &&
+							 CarFrame->DriverSeat.Ptr->StorageIndex == Player1StorageIndex)
+						{
+							entity* Target = GetRemainingEntity(CarFrame, Entity, OtherEntity);
+							DEBUGMinkowskiSum(Buffer, Target, CarFrame, GameSpaceToScreenSpace, ScreenCenter);
+						}
+#endif
+					}
+#endif
+				}
+
+				simulation_request* SimReq = 
 					GetSimRequestForEntity(GameState->PlayerSimulationRequests, 
 																 ArrayCount(GameState->PlayerSimulationRequests),
 																 Entity->StorageIndex);
-#endif
+				v3 OldP = Entity->P;
 
-				entity* A = Entity;
-				entity* B = OtherEntity;
-				//TODO STUDY Doublecheck HMH 69 to see what this was for again.
-				if(Entity->StorageIndex > OtherEntity->StorageIndex)
+				if(SimReq)
 				{
-					Swap(A, B, entity*);
-				}
-
-				if(TriggerState.OnEnter)
-				{
-					ApplyDamage(Entity, OtherEntity);
-				}
-
-				if(TriggerState.OnLeave)
-				{
-					Bounce(Entity, OtherEntity);
-				}
-
-#if HANDMADE_INTERNAL
-				if(GameState->DEBUG_VisualiseMinkowskiSum)
-				{
-					v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
-					m22 GameSpaceToScreenSpace = 
-					{PixelsPerMeter, 0             ,
-						0             ,-PixelsPerMeter};
-
-					u32 Player1StorageIndex = GameState->KeyboardSimulationRequests[0].PlayerStorageIndex;
-					entity* Player = 0;
-					if(Entity->StorageIndex == Player1StorageIndex) { Player = Entity;}
-					if(OtherEntity->StorageIndex == Player1StorageIndex) { Player = OtherEntity;}
-
-					if(Player) 
+					entity* Sword = Entity->Sword.Ptr;
+					if(Sword &&
+						 LenghtSquared(SimReq->FireSword))
 					{
-						entity* Target = Entity == Player ? OtherEntity : Entity;
-						DEBUGMinkowskiSum(Buffer, Target, Player, GameSpaceToScreenSpace, ScreenCenter);
+
+						MakeEntitySpacial(Sword, SimReq->FireSword,
+															(Sword->IsSpacial ? 
+															 Sword->P : 
+															 (Entity->P + SimReq->FireSword * Sword->Dim.Y)),
+															SimReq->FireSword * 8.0f);
+						Sword->DistanceRemaining = 20.0f;
 					}
-#if 0 
-					entity* CarFrame = GetEntityOfVisualType(EntityVisualType_CarFrame, Entity, OtherEntity);
-					if(CarFrame &&
-						 CarFrame->DriverSeat.Ptr &&
-						 CarFrame->DriverSeat.Ptr->StorageIndex == Player1StorageIndex)
-					{
-						entity* Target = GetRemainingEntity(CarFrame, Entity, OtherEntity);
-						DEBUGMinkowskiSum(Buffer, Target, CarFrame, GameSpaceToScreenSpace, ScreenCenter);
-					}
-#endif
-				}
-#endif
-			}
-			Entity->EnityHasBeenProcessedAlready = true;
 
-			simulation_request* SimReq = 
-				GetSimRequestForEntity(GameState->PlayerSimulationRequests, 
-															 ArrayCount(GameState->PlayerSimulationRequests),
-															 Entity->StorageIndex);
-			v3 OldP = Entity->P;
-
-			if(SimReq)
-			{
-				entity* Sword = Entity->Sword.Ptr;
-				if(Sword &&
-					 LenghtSquared(SimReq->FireSword))
-				{
-
-					MakeEntitySpacial(Sword, SimReq->FireSword,
-														(Sword->IsSpacial ? 
-														 Sword->P : 
-														 (Entity->P + SimReq->FireSword * Sword->Dim.Y)),
-														SimReq->FireSword * 8.0f);
-					Sword->DistanceRemaining = 20.0f;
+					Entity->MoveSpec.MovingDirection = SimReq->ddP;
 				}
 
-				Entity->MoveSpec.MovingDirection = SimReq->ddP;
-			}
+				HunterLogic(Entity);
 
-			HunterLogic(Entity);
-
-			MoveEntity(Entity, dT);
+				MoveEntity(Entity, dT);
 
 #if HANDMADE_SLOW
-			{
-				Assert(LenghtSquared(Entity->dP) <= Square(SimRegion->MaxEntityVelocity));
-				
-				f32 S1 = LenghtSquared(Entity->Dim * 0.5f);
-				f32 S2 = Square(SimRegion->MaxEntityRadius);
-				Assert(S1 <= S2);
-			}
+				{
+					Assert(LenghtSquared(Entity->dP) <= Square(SimRegion->MaxEntityVelocity));
+
+					f32 S1 = LenghtSquared(Entity->Dim * 0.5f);
+					f32 S2 = Square(SimRegion->MaxEntityRadius);
+					Assert(S1 <= S2);
+				}
 #endif
 
 
-			v3 NewP = Entity->P;
-			f32 dP = Lenght(NewP - OldP);
+				v3 NewP = Entity->P;
+				f32 dP = Lenght(NewP - OldP);
 
-			if(Entity->DistanceRemaining > 0)
-			{
-				Entity->DistanceRemaining -= dP;
-				if(Entity->DistanceRemaining <= 0)
+				if(Entity->DistanceRemaining > 0)
 				{
-					Entity->DistanceRemaining = 0;
+					Entity->DistanceRemaining -= dP;
+					if(Entity->DistanceRemaining <= 0)
+					{
+						Entity->DistanceRemaining = 0;
 
-					MakeEntityNonSpacial(Entity);
+						MakeEntityNonSpacial(Entity);
+					}
 				}
-			}
 
-			if(Entity->HunterSearchRadius)
-			{
-				Entity->BestDistanceToPreySquared = Square(Entity->HunterSearchRadius);
-				Entity->MoveSpec.MovingDirection = {};
+				if(Entity->HunterSearchRadius)
+				{
+					Entity->BestDistanceToPreySquared = Square(Entity->HunterSearchRadius);
+					Entity->MoveSpec.MovingDirection = {};
+				}
 			}
 
 			//
 			// NOTE(bjorn): Rendering
 			//
-			if(Step == (Steps-1))
+			if(Step == LastStep)
 			{
 				if(!Entity->IsSpacial) { continue; }
 

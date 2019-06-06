@@ -66,7 +66,6 @@ struct entity
 	u32 StorageIndex;
 	world_map_position WorldP;
 	b32 Updates : 1;
-	b32 EnityHasBeenProcessedAlready : 1;
 
 	b32 IsSpacial : 1;
 	b32 Collides : 1;
@@ -75,6 +74,7 @@ struct entity
 	//TODO(bjorn): Use this to move out the turning code to the cars update loop.
 	b32 AutoPilot : 1;
 
+	u32 EntityPairUpdateGenerationIndex;
 	//TODO(casey): Generation index so we know how "up to date" the entity is.
 
 	u32 OldestTrigStateIndex;

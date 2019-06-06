@@ -33,19 +33,18 @@ GetNewStoredEntity(stored_entities* Entities, entity* Entity)
 	stored_entity* Result = 0;
 
 	Assert(!Entity->StorageIndex);
-	{
-		Entities->EntityCount++;
-		Assert(Entities->EntityCount < ArrayCount(Entities->Entities));
 
-		Result = Entities->Entities + Entities->EntityCount;
-		Result->Sim.StorageIndex = Entities->EntityCount;
-		Entity->StorageIndex = Entities->EntityCount;
-	}
+	Entities->EntityCount++;
+	Assert(Entities->EntityCount < ArrayCount(Entities->Entities));
+
+	Result = Entities->Entities + Entities->EntityCount;
+	Result->Sim.StorageIndex = Entities->EntityCount;
+	Entity->StorageIndex = Entities->EntityCount;
 
 	return Result;
 }
 
-inline void
+	inline void
 ChangeStoredEntityWorldLocation(memory_arena* WorldArena, world_map* WorldMap, 
 																stored_entity* Stored, world_map_position NewWorldP)
 {
@@ -101,7 +100,7 @@ struct sim_region
 	//NOTE Must be a power of two.
 	entity_hash Hash[4096];
 
-	entity_reference MainCamera;
+	entity* MainCamera;
 };
 
 internal_function entity_hash* 
@@ -271,12 +270,6 @@ BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* Wor
 	Result->EntityCount = 0;
 	Result->Entities = PushArray(SimArena, Result->EntityMaxCount, entity);
 
-	if(MainCameraStorageIndex)
-	{
-		Result->MainCamera.Index = MainCameraStorageIndex;
-		LoadEntityReference(StoredEntities, Result, &Result->MainCamera);
-	}
-
 	world_map_position MinWorldP = OffsetWorldPos(WorldMap, RegionCenter, Result->OuterBounds.Min);
 	world_map_position MaxWorldP = OffsetWorldPos(WorldMap, RegionCenter, Result->OuterBounds.Max);
 
@@ -312,7 +305,9 @@ BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* Wor
 							v3 SimPos = GetWorldMapPosDifference(WorldMap, StoredEntity->Sim.WorldP, RegionCenter);
 							if(IsInRectangle(Result->OuterBounds, SimPos))
 							{
-								AddSimEntity(StoredEntities, Result, StoredEntity, StorageIndex, &SimPos);
+								entity* Entity = AddSimEntity(StoredEntities, Result, 
+																							StoredEntity, StorageIndex, &SimPos);
+								if(Entity->StorageIndex == MainCameraStorageIndex) { Result->MainCamera = Entity; }
 							}
 						}
 					}
@@ -332,11 +327,15 @@ EndSim(stored_entities* Entities, memory_arena* WorldArena, sim_region* SimRegio
 			EntityIndex < SimRegion->EntityCount;
 			EntityIndex++, SimEntity++)
 	{
-		b32 HasBeenStoredBefore = SimEntity->StorageIndex;
-
 		stored_entity* Stored = 0;
-		if(HasBeenStoredBefore) { Stored = GetStoredEntityByIndex(Entities, SimEntity->StorageIndex); }
-		else { Stored = GetNewStoredEntity(Entities, SimEntity); }
+		if(SimEntity->StorageIndex) 
+		{ 
+			Stored = GetStoredEntityByIndex(Entities, SimEntity->StorageIndex); 
+		}
+		else 
+		{ 
+			Stored = GetNewStoredEntity(Entities, SimEntity); 
+		}
 		Assert(Stored);
 
 		Stored->Sim = *SimEntity;
@@ -357,7 +356,7 @@ EndSim(stored_entities* Entities, memory_arena* WorldArena, sim_region* SimRegio
 		}
 
 		world_map_position NewWorldP = WorldMapNullPos();
-		if(SimEntity->IsSpacial && HasBeenStoredBefore)
+		if(SimEntity->IsSpacial)
 		{
 			NewWorldP = OffsetWorldPos(SimRegion->WorldMap, SimRegion->Origin, SimEntity->P);
 		}

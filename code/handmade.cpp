@@ -208,7 +208,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 																								v3{2, 2, 2} * WorldMap->ChunkSideInMeters);
                                                                                                     
 	sim_region* SimRegion = BeginSim(&GameState->Entities, &GameState->SimArena, WorldMap, 
-																	 GetChunkPosFromAbsTile(WorldMap, RoomOrigin), 
+																	 GetChunkPosFromAbsTile(WorldMap, v3s{0, 0, 0}), 
 																	 GameState->CameraUpdateBounds, 0);
 
 	entity* MainCamera = AddCamera(SimRegion, RoomOrigin);
@@ -217,7 +217,6 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 
 	entity* Player = AddPlayer(SimRegion, v3{-2, 1, 0} * WorldMap->TileSideInMeters);
 	MainCamera->CameraTarget.Ptr = Player;
-	GameState->KeyboardSimulationRequests[0].PlayerStorageIndex = Player->StorageIndex;
 
 	entity* Familiar = AddFamiliar(SimRegion, v3{4, 5, 0} * WorldMap->TileSideInMeters);
 	Familiar->Prey.Ptr = Player;
@@ -237,7 +236,8 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 			i < 6;
 			i++)
 	{
-		E[i] = AddWall(SimRegion, v3{2.0f + 2.0f*i, 2.0f, 0.0f} * WorldMap->TileSideInMeters, 10.0f + i);
+		E[i] = AddWall(SimRegion, v3{2.0f + 2.0f*i, 2.0f, 0.0f} * WorldMap->TileSideInMeters, 
+									 10.0f + i);
 		E[i]->dP = {2.0f-i, -2.0f+i};
 	}
 
@@ -283,6 +283,11 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	}
 
 	EndSim(&GameState->Entities, &GameState->WorldArena, SimRegion);
+
+	stored_entity* StoredMainCamera = 
+		GetStoredEntityByIndex(&GameState->Entities, GameState->MainCameraStorageIndex);
+	GameState->KeyboardSimulationRequests[0].PlayerStorageIndex = 
+		StoredMainCamera->Sim.CameraTarget.Index;
 }
 
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
@@ -534,10 +539,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	// NOTE(bjorn): Create sim region by camera
 	//
-	sim_region* SimRegion = 
-		BeginSim(Entities, &(GameState->SimArena), WorldMap, 
-						 GetStoredEntityByIndex(Entities, GameState->MainCameraStorageIndex)->Sim.WorldP, 
-						 GameState->CameraUpdateBounds, SecondsToUpdate, GameState->MainCameraStorageIndex);
+	stored_entity* StoredMainCamera = GetStoredEntityByIndex(Entities, 
+																														 GameState->MainCameraStorageIndex);
+	sim_region* SimRegion = BeginSim(Entities, &(GameState->SimArena), WorldMap, 
+																	 StoredMainCamera->Sim.WorldP, GameState->CameraUpdateBounds, 
+																	 SecondsToUpdate, GameState->MainCameraStorageIndex);
 
 
 	//TODO(bjorn): Implement step 2 in J.Blows framerate independence video.
@@ -612,7 +618,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					v2 n, t, ImpactPoint;
 					{
 						Penetration	= SquareRoot(BestSquareDistanceToWall);
-						Assert(Penetration <= (Lenght(Entity->Dim) + Lenght(OtherEntity->Dim)) * 0.5f);
+						//Assert(Penetration <= (Lenght(Entity->Dim) + Lenght(OtherEntity->Dim)) * 0.5f);
 
 						v2 N0 = Sum.Nodes[RelevantNodeIndex];
 						v2 N1 = Sum.Nodes[(RelevantNodeIndex+1) % Sum.NodeCount];
@@ -1026,10 +1032,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// NOTE(bjorn): Update camera
 	//
 	//
-	entity* MainCamera = SimRegion->MainCamera.Ptr;
-	if(MainCamera->CameraTarget.Ptr)
+	if(SimRegion->MainCamera->CameraTarget.Ptr)
 	{
-		MainCamera->P = MainCamera->CameraTarget.Ptr->P;
+		SimRegion->MainCamera->P = SimRegion->MainCamera->CameraTarget.Ptr->P;
 	}
 
 	EndSim(Entities, WorldArena, SimRegion);

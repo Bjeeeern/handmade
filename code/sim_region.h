@@ -2,55 +2,6 @@
 
 #include "types_and_defines.h"
 #include "world_map.h"
-
-struct move_spec
-{
-	b32 EnforceHorizontalMovement : 1;
-	b32 EnforceVerticalGravity : 1;
-	b32 AllowRotation : 1;
-
-	f32 Speed;
-	f32 Drag;
-	f32 AngularDrag;
-
-	v3 MovingDirection;
-};
-
-internal_function move_spec
-DefaultMoveSpec()
-{
-	move_spec Result = {};
-
-	Result.AllowRotation = true;
-
-	Result.EnforceHorizontalMovement = true;
-	Result.Drag = 0.4f * 30.0f;
-
-	return Result;
-}
-
-enum entity_visual_type
-{
-	EntityVisualType_Player,
-	EntityVisualType_Wall,
-	EntityVisualType_Stair,
-	EntityVisualType_Ground,
-	EntityVisualType_Wheel,
-	EntityVisualType_CarFrame,
-	EntityVisualType_Engine,
-	EntityVisualType_Monstar,
-	EntityVisualType_Familiar,
-	EntityVisualType_Sword,
-};
-
-#define HIT_POINT_SUB_COUNT 4
-struct hit_point
-{
-	//TODO(casey): Bake this down into one variable.
-	u8 Flags;
-	u8 FilledAmount;
-};
-
 #include "entity.h"
 
 struct stored_entity
@@ -149,6 +100,8 @@ struct sim_region
 	//TODO Is a hash here really the right way to go?
 	//NOTE Must be a power of two.
 	entity_hash Hash[4096];
+
+	entity_reference MainCamera;
 };
 
 internal_function entity_hash* 
@@ -297,7 +250,8 @@ AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_enti
 
 	internal_function sim_region*
 BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* WorldMap, 
-				 world_map_position RegionCenter, rectangle3 RegionBounds, f32 dT)
+				 world_map_position RegionCenter, rectangle3 RegionBounds, f32 dT, 
+				 u32 MainCameraStorageIndex = 0)
 {        
 	sim_region* Result = PushStruct(SimArena, sim_region);
 	ZeroArray(Result->Hash);
@@ -316,6 +270,12 @@ BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* Wor
 	Result->EntityMaxCount = 4096;
 	Result->EntityCount = 0;
 	Result->Entities = PushArray(SimArena, Result->EntityMaxCount, entity);
+
+	if(MainCameraStorageIndex)
+	{
+		Result->MainCamera.Index = MainCameraStorageIndex;
+		LoadEntityReference(StoredEntities, Result, &Result->MainCamera);
+	}
 
 	world_map_position MinWorldP = OffsetWorldPos(WorldMap, RegionCenter, Result->OuterBounds.Min);
 	world_map_position MaxWorldP = OffsetWorldPos(WorldMap, RegionCenter, Result->OuterBounds.Max);
@@ -344,6 +304,7 @@ BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* Wor
 								Index++)
 						{
 							u32 StorageIndex = Block->EntityIndexes[Index];
+
 							stored_entity* StoredEntity = GetStoredEntityByIndex(StoredEntities, StorageIndex);
 							Assert(StoredEntity);
 							Assert(StoredEntity->Sim.IsSpacial);

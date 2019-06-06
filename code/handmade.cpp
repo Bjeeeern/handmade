@@ -72,8 +72,10 @@ struct game_state
 	memory_arena SimArena;
 
 	//TODO(bjorn): Should we allow split-screen?
-	u32 CameraFollowingPlayerIndex;
-	world_map_position CameraP;
+	u32 MainCameraStorageIndex;
+	rectangle3 CameraUpdateBounds;
+	//u32 CameraFollowingPlayerIndex;
+	//world_map_position CameraP;
 
 	union
 	{
@@ -195,24 +197,26 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	WorldMap->TileSideInMeters = 1.4f;
 	WorldMap->ChunkSideInMeters = WorldMap->TileSideInMeters * TILES_PER_CHUNK;
 
-	u32 RandomNumberIndex = 0;
+	InitializeArena(&GameState->SimArena, Memory->TransientStorageSize >> 2, 
+									(u8*)Memory->TransientStorage);
 
 	u32 RoomWidthInTiles = 17;
 	u32 RoomHeightInTiles = 9;
 
 	v3s RoomOrigin = (v3s)RoundV2ToV2S((v2)v2u{RoomWidthInTiles, RoomHeightInTiles} / 2.0f);
-	GameState->CameraP = GetChunkPosFromAbsTile(WorldMap, RoomOrigin);
-
-	rectangle3 CameraUpdateBounds = RectCenterDim(v3{0, 0, 0}, 
+	GameState->CameraUpdateBounds = RectCenterDim(v3{0, 0, 0}, 
 																								v3{2, 2, 2} * WorldMap->ChunkSideInMeters);
                                                                                                     
-	InitializeArena(&GameState->SimArena, Memory->TransientStorageSize >> 2, 
-									(u8*)Memory->TransientStorage);
 	sim_region* SimRegion = BeginSim(&GameState->Entities, &GameState->SimArena, WorldMap, 
-																	 GameState->CameraP, CameraUpdateBounds, 0);
+																	 GetChunkPosFromAbsTile(WorldMap, RoomOrigin), 
+																	 GameState->CameraUpdateBounds, 0);
+
+	entity* MainCamera = AddCamera(SimRegion, RoomOrigin);
+	//TODO Is there a less cheesy (and safer!) way to do this assignment of the camera storage index?
+	GameState->MainCameraStorageIndex = 1;
 
 	entity* Player = AddPlayer(SimRegion, v3{-2, 1, 0} * WorldMap->TileSideInMeters);
-	GameState->CameraFollowingPlayerIndex = Player->StorageIndex;
+	MainCamera->CameraTarget.Ptr = Player;
 	GameState->KeyboardSimulationRequests[0].PlayerStorageIndex = Player->StorageIndex;
 
 	entity* Familiar = AddFamiliar(SimRegion, v3{4, 5, 0} * WorldMap->TileSideInMeters);
@@ -292,7 +296,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 	{
 		entity TestEntity = {};
-		s64 Amount = (&(TestEntity.Struct_Terminator) - &(TestEntity.EntityReferences[0]));
+		s64 Amount = (&(TestEntity.struct_terminator_) - &(TestEntity.EntityReferences[0]));
 		s64 Limit = ArrayCount(TestEntity.EntityReferences);
 		Assert(Amount <= Limit);
 	}
@@ -394,13 +398,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				if(Clicked(Keyboard, C))
 				{
-					if(GameState->CameraFollowingPlayerIndex)
+					//TODO IMPORTANT Move this to the player handling code.
+					stored_entity* MainCameraStored = 
+						GetStoredEntityByIndex(Entities, GameState->MainCameraStorageIndex); 
+					if(MainCameraStored->Sim.CameraTarget.Index)
 					{
-						GameState->CameraFollowingPlayerIndex = 0;
+						MainCameraStored->Sim.CameraTarget.Index = 0;
 					}
 					else
 					{
-						GameState->CameraFollowingPlayerIndex = SimReq->PlayerStorageIndex;
+						MainCameraStored->Sim.CameraTarget.Index = SimReq->PlayerStorageIndex;
 					}
 				}
 
@@ -458,8 +465,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					if(Clicked(Keyboard, Q) && LenghtSquared(ArrowKeysDirection))
 					{
 						SimReq->FireSword = ArrowKeysDirection;
-						//TODO send spawn arrow direction to game logic
-						//ControlledEntity->MovingDirection = InputDirection;
 					}
 					else
 					{
@@ -512,30 +517,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	}
 
 	//
-	// NOTE(bjorn): Create sim region by camera
-	//
-	v3 HighFrequencyUpdateDim = v3{2.0f, 2.0f, 2.0f}*WorldMap->ChunkSideInMeters;
-	rectangle3 UpdateBounds = RectCenterDim(v3{0,0,0}, HighFrequencyUpdateDim);
-                                                                                                    
-	sim_region* SimRegion = BeginSim(Entities, &(GameState->SimArena), WorldMap, 
-																	 GameState->CameraP, UpdateBounds, SecondsToUpdate);
-
-	//
-	// NOTE(bjorn): Update camera
-	//
-	//
-	//TODO IMPORTANT: Make the camera an entity and move this logic inside the update loop.
-	if(GameState->CameraFollowingPlayerIndex)
-	{
-		stored_entity* CameraTarget = GetStoredEntityByIndex(Entities, 
-																														GameState->CameraFollowingPlayerIndex);
-		Assert(CameraTarget);
-		world_map_position NewCameraP = CameraTarget->Sim.WorldP;
-		NewCameraP.Offset_.Z = 0;
-		GameState->CameraP = NewCameraP;
-	}
-
-	//
 	// NOTE(bjorn): Moving and Rendering
 	//
 	s32 TileSideInPixels = 60;
@@ -549,6 +530,15 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	DrawBitmap(Buffer, &GameState->Backdrop, {-40.0f, -40.0f}, 
 						 {(f32)GameState->Backdrop.Width, (f32)GameState->Backdrop.Height});
 #endif
+
+	//
+	// NOTE(bjorn): Create sim region by camera
+	//
+	sim_region* SimRegion = 
+		BeginSim(Entities, &(GameState->SimArena), WorldMap, 
+						 GetStoredEntityByIndex(Entities, GameState->MainCameraStorageIndex)->Sim.WorldP, 
+						 GameState->CameraUpdateBounds, SecondsToUpdate, GameState->MainCameraStorageIndex);
+
 
 	//TODO(bjorn): Implement step 2 in J.Blows framerate independence video.
 	// https://www.youtube.com/watch?v=fdAOPHgW7qM
@@ -809,7 +799,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			if(Step == (Steps-1))
 			{
 				if(!Entity->IsSpacial) { continue; }
-				if(Entity->WorldP.ChunkP.Z != GameState->CameraP.ChunkP.Z) { continue; }
 
 				v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
 
@@ -1032,6 +1021,17 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			}
 		}
 	}
+
+	//
+	// NOTE(bjorn): Update camera
+	//
+	//
+	entity* MainCamera = SimRegion->MainCamera.Ptr;
+	if(MainCamera->CameraTarget.Ptr)
+	{
+		MainCamera->P = MainCamera->CameraTarget.Ptr->P;
+	}
+
 	EndSim(Entities, WorldArena, SimRegion);
 }
 

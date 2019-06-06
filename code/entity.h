@@ -1,6 +1,56 @@
 #if !defined(ENTITY_H)
 
 #if !defined(ENTITY_H_FIRST_PASS)
+
+struct move_spec
+{
+	b32 EnforceHorizontalMovement : 1;
+	b32 EnforceVerticalGravity : 1;
+	b32 AllowRotation : 1;
+
+	f32 Speed;
+	f32 Drag;
+	f32 AngularDrag;
+
+	v3 MovingDirection;
+};
+
+internal_function move_spec
+DefaultMoveSpec()
+{
+	move_spec Result = {};
+
+	Result.AllowRotation = true;
+
+	Result.EnforceHorizontalMovement = true;
+	Result.Drag = 0.4f * 30.0f;
+
+	return Result;
+}
+
+enum entity_visual_type
+{
+	EntityVisualType_NotRendered,
+	EntityVisualType_Player,
+	EntityVisualType_Wall,
+	EntityVisualType_Stair,
+	EntityVisualType_Ground,
+	EntityVisualType_Wheel,
+	EntityVisualType_CarFrame,
+	EntityVisualType_Engine,
+	EntityVisualType_Monstar,
+	EntityVisualType_Familiar,
+	EntityVisualType_Sword,
+};
+
+#define HIT_POINT_SUB_COUNT 4
+struct hit_point
+{
+	//TODO(casey): Bake this down into one variable.
+	u8 Flags;
+	u8 FilledAmount;
+};
+
 struct entity;
 
 union entity_reference
@@ -78,13 +128,14 @@ struct entity
 
 				};
 			};
+			entity_reference CameraTarget;
 
 			//NOTE(bjorn): Player
 			entity_reference Sword;
 			entity_reference RidingVehicle;
 
 			entity_reference Prey;
-			entity_reference Struct_Terminator;
+			entity_reference struct_terminator_;
 		};
 	};
 
@@ -189,6 +240,14 @@ AddEntity(sim_region* SimRegion, entity_visual_type VisualType, v3 P)
 	return Entity;
 }
 
+	internal_function entity*
+AddCamera(sim_region* SimRegion, v3 InitP)
+{
+	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered, InitP);
+
+	return Entity;
+}
+
 	internal_function void
 AddHitPoints(entity* Entity, u32 HitPointMax)
 {
@@ -209,9 +268,6 @@ AddSword(sim_region* SimRegion)
 
 	Entity->Dim = v2{0.4f, 1.5f} * SimRegion->WorldMap->TileSideInMeters;
 	Entity->Mass = 8.0f;
-
-	Entity->MoveSpec = {};
-	Entity->Collides = false;
 
 	Entity->TriggerDamage = 1;
 

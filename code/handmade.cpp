@@ -206,16 +206,17 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	rectangle3 CameraUpdateBounds = RectCenterDim(v3{0, 0, 0}, 
 																								v3{2, 2, 2} * WorldMap->ChunkSideInMeters);
                                                                                                     
-	sim_region* SimRegion = BeginSim(&GameState->Entities, &(GameState->SimArena), WorldMap, 
+	InitializeArena(&GameState->SimArena, Memory->TransientStorageSize >> 2, 
+									(u8*)Memory->TransientStorage);
+	sim_region* SimRegion = BeginSim(&GameState->Entities, &GameState->SimArena, WorldMap, 
 																	 GameState->CameraP, CameraUpdateBounds, 0);
-	{
-		entity* Player = AddPlayer(SimRegion, v3{-2, 1, 0} * WorldMap->TileSideInMeters);
-		GameState->CameraFollowingPlayerIndex = Player->StorageIndex;
-		GameState->KeyboardSimulationRequests[0].PlayerStorageIndex = Player->StorageIndex;
 
-		entity* Familiar = AddFamiliar(SimRegion, v3{4, 5, 0} * WorldMap->TileSideInMeters);
-		Familiar->Prey.Ptr = Player;
-	}
+	entity* Player = AddPlayer(SimRegion, v3{-2, 1, 0} * WorldMap->TileSideInMeters);
+	GameState->CameraFollowingPlayerIndex = Player->StorageIndex;
+	GameState->KeyboardSimulationRequests[0].PlayerStorageIndex = Player->StorageIndex;
+
+	entity* Familiar = AddFamiliar(SimRegion, v3{4, 5, 0} * WorldMap->TileSideInMeters);
+	Familiar->Prey.Ptr = Player;
 
 	AddMonstar(SimRegion, v3{ 2, 5, 0} * WorldMap->TileSideInMeters);
 
@@ -345,10 +346,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				{
 					if(Clicked(Controller, Start))
 					{
-						v3 OffsetInTiles = GetChunkPosFromAbsTile(WorldMap, v3s{-2, 1, 0}).Offset_;
-						world_map_position InitP = OffsetWorldPos(WorldMap, GameState->CameraP, OffsetInTiles);
+						//v3 OffsetInTiles = GetChunkPosFromAbsTile(WorldMap, v3s{-2, 1, 0}).Offset_;
+						//world_map_position InitP = OffsetWorldPos(WorldMap, GameState->CameraP, OffsetInTiles);
 
-						SimReq->PlayerStorageIndex = AddPlayer(SimRegion, InitP);
+						//SimReq->PlayerStorageIndex = AddPlayer(SimRegion, InitP);
 					}
 				}
 			}
@@ -511,21 +512,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	}
 
 	//
-	// NOTE(bjorn): Update camera
-	//
-	//
-	//TODO IMPORTANT: Make the camera an entity and move this logic inside the update loop.
-	if(GameState->CameraFollowingPlayerIndex)
-	{
-		stored_entity* CameraTarget = GetStoredEntityByIndex(Entities, 
-																												 GameState->CameraFollowingPlayerIndex);
-		Assert(CameraTarget);
-		world_map_position NewCameraP = CameraTarget->Sim.WorldP;
-		NewCameraP.Offset_.Z = 0;
-		GameState->CameraP = NewCameraP;
-	}
-
-	//
 	// NOTE(bjorn): Create sim region by camera
 	//
 	v3 HighFrequencyUpdateDim = v3{2.0f, 2.0f, 2.0f}*WorldMap->ChunkSideInMeters;
@@ -533,6 +519,21 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                                                                                                     
 	sim_region* SimRegion = BeginSim(Entities, &(GameState->SimArena), WorldMap, 
 																	 GameState->CameraP, UpdateBounds, SecondsToUpdate);
+
+	//
+	// NOTE(bjorn): Update camera
+	//
+	//
+	//TODO IMPORTANT: Make the camera an entity and move this logic inside the update loop.
+	if(GameState->CameraFollowingPlayerIndex)
+	{
+		stored_entity* CameraTarget = GetStoredEntityByIndex(Entities, 
+																														GameState->CameraFollowingPlayerIndex);
+		Assert(CameraTarget);
+		world_map_position NewCameraP = CameraTarget->Sim.WorldP;
+		NewCameraP.Offset_.Z = 0;
+		GameState->CameraP = NewCameraP;
+	}
 
 	//
 	// NOTE(bjorn): Moving and Rendering

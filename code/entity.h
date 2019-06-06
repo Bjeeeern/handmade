@@ -167,8 +167,12 @@ DefaultEntityOrientation()
 	internal_function entity*
 AddEntity(sim_region* SimRegion, entity_visual_type VisualType)
 {
-	entity* Entity = AddBrandNewSimEntity(SimRegion);
+	Assert(SimRegion->EntityCount < SimRegion->EntityMaxCount);
 
+	entity* Entity = SimRegion->Entities + SimRegion->EntityCount++;
+	*Entity = {};
+
+	Entity->WorldP = WorldMapNullPos();
 	Entity->VisualType = VisualType;
 	MakeEntityNonSpacial(Entity);
 

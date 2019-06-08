@@ -149,8 +149,14 @@ struct entity
 
 #include "trigger.h"
 
+inline v3
+DefaultEntityOrientation()
+{
+	return {0, 1, 0};
+}
+
 	inline void
-MakeEntitySpacial(entity* Entity, v3 R, v3 P, v3 dP)
+MakeEntitySpacial(entity* Entity, v3 P, v3 dP = {}, v3 R = DefaultEntityOrientation())
 {
 	Entity->IsSpacial = true;
 	Entity->R = R;
@@ -209,12 +215,6 @@ GetEntityVertices(entity* Entity)
 	return Result;
 }
 
-inline v3
-DefaultEntityOrientation()
-{
-	return {0, 1, 0};
-}
-
 	internal_function entity*
 AddEntity(sim_region* SimRegion, entity_visual_type VisualType)
 {
@@ -235,7 +235,7 @@ AddEntity(sim_region* SimRegion, entity_visual_type VisualType, v3 P)
 {
 	entity* Entity = AddEntity(SimRegion, VisualType);
 
-	MakeEntitySpacial(Entity, P, DefaultEntityOrientation(), {});
+	MakeEntitySpacial(Entity, P);
 
 	return Entity;
 }

@@ -621,7 +621,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						v2 n, t, ImpactPoint;
 						{
 							Penetration	= SquareRoot(BestSquareDistanceToWall);
-							//Assert(Penetration <= (Lenght(Entity->Dim) + Lenght(OtherEntity->Dim)) * 0.5f);
+							Assert(Penetration <= (Lenght(Entity->Dim) + Lenght(OtherEntity->Dim)) * 0.5f);
 
 							v2 N0 = Sum.Nodes[RelevantNodeIndex];
 							v2 N1 = Sum.Nodes[(RelevantNodeIndex+1) % Sum.NodeCount];
@@ -636,7 +636,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 							ImpactPoint = V0 + (V1-V0) * ClosestPoint.t;
 							v2 ImpactCorrection = n * Penetration * 0.5f;
-							ImpactCorrection *= Sum.Genus[RelevantNodeIndex] == MinkowskiGenus_Movable ? 1.0f:-1.0f;
+							ImpactCorrection *= 
+								Sum.Genus[RelevantNodeIndex] == MinkowskiGenus_Movable ? 1.0f:-1.0f;
 							ImpactPoint += ImpactCorrection;
 						}
 
@@ -711,33 +712,37 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					}
 
 #if HANDMADE_INTERNAL
-					if(GameState->DEBUG_VisualiseMinkowskiSum)
+					if(Step == LastStep)
 					{
-						v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
-						m22 GameSpaceToScreenSpace = 
-						{PixelsPerMeter, 0             ,
-							0             ,-PixelsPerMeter};
-
-						u32 Player1StorageIndex = GameState->KeyboardSimulationRequests[0].PlayerStorageIndex;
-						entity* Player = 0;
-						if(Entity->StorageIndex == Player1StorageIndex) { Player = Entity;}
-						if(OtherEntity->StorageIndex == Player1StorageIndex) { Player = OtherEntity;}
-
-						if(Player) 
+						if(GameState->DEBUG_VisualiseMinkowskiSum)
 						{
-							entity* Target = Entity == Player ? OtherEntity : Entity;
-							DEBUGMinkowskiSum(Buffer, Target, Player, GameSpaceToScreenSpace, ScreenCenter);
-						}
+							v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
+							m22 GameSpaceToScreenSpace = 
+							{PixelsPerMeter, 0             ,
+								0             ,-PixelsPerMeter};
+
+							u32 Player1StorageIndex = GameState->KeyboardSimulationRequests[0].PlayerStorageIndex;
+							entity* Player = 0;
+							if(Entity->StorageIndex == Player1StorageIndex) { Player = Entity;}
+							if(OtherEntity->StorageIndex == Player1StorageIndex) { Player = OtherEntity;}
+
+							if(Player) 
+							{
+								entity* Target = Entity == Player ? OtherEntity : Entity;
+								DEBUGMinkowskiSum(Buffer, Target, Player, GameSpaceToScreenSpace, ScreenCenter);
+							}
 #if 0 
-						entity* CarFrame = GetEntityOfVisualType(EntityVisualType_CarFrame, Entity, OtherEntity);
-						if(CarFrame &&
-							 CarFrame->DriverSeat.Ptr &&
-							 CarFrame->DriverSeat.Ptr->StorageIndex == Player1StorageIndex)
-						{
-							entity* Target = GetRemainingEntity(CarFrame, Entity, OtherEntity);
-							DEBUGMinkowskiSum(Buffer, Target, CarFrame, GameSpaceToScreenSpace, ScreenCenter);
-						}
+							entity* CarFrame = GetEntityOfVisualType(EntityVisualType_CarFrame, 
+																											 Entity, OtherEntity);
+							if(CarFrame &&
+								 CarFrame->DriverSeat.Ptr &&
+								 CarFrame->DriverSeat.Ptr->StorageIndex == Player1StorageIndex)
+							{
+								entity* Target = GetRemainingEntity(CarFrame, Entity, OtherEntity);
+								DEBUGMinkowskiSum(Buffer, Target, CarFrame, GameSpaceToScreenSpace, ScreenCenter);
+							}
 #endif
+						}
 					}
 #endif
 				}
@@ -755,11 +760,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						 LenghtSquared(SimReq->FireSword))
 					{
 
-						MakeEntitySpacial(Sword, SimReq->FireSword,
+						MakeEntitySpacial(Sword,
 															(Sword->IsSpacial ? 
 															 Sword->P : 
 															 (Entity->P + SimReq->FireSword * Sword->Dim.Y)),
-															SimReq->FireSword * 8.0f);
+															SimReq->FireSword * 8.0f,
+															SimReq->FireSword);
 						Sword->DistanceRemaining = 20.0f;
 					}
 
@@ -779,7 +785,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					Assert(S1 <= S2);
 				}
 #endif
-
 
 				v3 NewP = Entity->P;
 				f32 dP = Lenght(NewP - OldP);
@@ -807,8 +812,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			//
 			if(Step == LastStep)
 			{
-				if(!Entity->IsSpacial) { continue; }
-
 				v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
 
 				v2 CollisionMarkerPixelDim = Hadamard(Entity->Dim.XY, {PixelsPerMeter, PixelsPerMeter});
@@ -851,7 +854,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				{
 #if 0
 					v3 LightYellow = {0.5f, 0.5f, 0.0f};
-					DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim * 0.9f), LightYellow);
+					DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim * 0.9f),
+												LightYellow);
 #endif
 					DrawBitmap(Buffer, &GameState->Rock, EntityPixelPos - GameState->Rock.Alignment, 
 										 (v2)GameState->Rock.Dim);

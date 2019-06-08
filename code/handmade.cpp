@@ -287,7 +287,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	stored_entity* StoredMainCamera = 
 		GetStoredEntityByIndex(&GameState->Entities, GameState->MainCameraStorageIndex);
 	GameState->KeyboardSimulationRequests[0].PlayerStorageIndex = 
-		StoredMainCamera->Sim.CameraTarget.Index;
+		StoredMainCamera->Sim.CameraTarget.Index_;
 }
 
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
@@ -401,23 +401,26 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					GameState->DEBUG_VisualiseCollisionBox = !GameState->DEBUG_VisualiseCollisionBox;
 				}
 
-				if(Clicked(Keyboard, C))
-				{
-					//TODO IMPORTANT Move this to the player handling code.
-					stored_entity* MainCameraStored = 
-						GetStoredEntityByIndex(Entities, GameState->MainCameraStorageIndex); 
-					if(MainCameraStored->Sim.CameraTarget.Index)
-					{
-						MainCameraStored->Sim.CameraTarget.Index = 0;
-					}
-					else
-					{
-						MainCameraStored->Sim.CameraTarget.Index = SimReq->PlayerStorageIndex;
-					}
-				}
-
 				if(SimReq->PlayerStorageIndex)
 				{
+
+					if(Clicked(Keyboard, C))
+					{
+						//TODO IMPORTANT Move this to the player handling code.
+						stored_entity* MainCameraStored = 
+							GetStoredEntityByIndex(Entities, GameState->MainCameraStorageIndex); 
+						if(MainCameraStored->Sim.CameraTarget.Index_)
+						{
+							//NOTE This only clears half of the bytes, so Ptr has to be set instead.
+							//MainCameraStored->Sim.CameraTarget.Index_ = 0;
+							MainCameraStored->Sim.CameraTarget.Ptr = 0;
+						}
+						else
+						{
+							MainCameraStored->Sim.CameraTarget.Index_ = SimReq->PlayerStorageIndex;
+						}
+					}
+
 					v3 InputDirection = {};
 
 					if(Held(Keyboard, S))

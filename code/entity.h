@@ -55,7 +55,7 @@ struct entity;
 
 union entity_reference
 {
-	u32 Index;
+	u32 Index_;
 	entity* Ptr;
 };
 

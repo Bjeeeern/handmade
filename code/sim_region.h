@@ -136,11 +136,11 @@ AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_enti
 	internal_function void
 LoadEntityReference(stored_entities* StoredEntities, sim_region* SimRegion, entity_reference* Ref)
 {
-	if(Ref->Index)
+	if(Ref->Index_)
 	{
 		Ref->Ptr = AddSimEntity(StoredEntities, SimRegion, 
-														GetStoredEntityByIndex(StoredEntities, Ref->Index), 
-														Ref->Index, 0);
+														GetStoredEntityByIndex(StoredEntities, Ref->Index_), 
+														Ref->Index_, 0);
 	}
 }
 
@@ -153,7 +153,7 @@ StoreEntityReference(stored_entities* StoredEntities, entity_reference* Ref)
 		Assert(Ref->Ptr->StorageIndex);
 		Assert(GetStoredEntityByIndex(StoredEntities, Ref->Ptr->StorageIndex));
 
-		Ref->Index = Ref->Ptr->StorageIndex;
+		Ref->Index_ = Ref->Ptr->StorageIndex;
 	}
 }
 

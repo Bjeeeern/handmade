@@ -17,10 +17,15 @@
 
 // QUICK TODO
 //
-// Make it so that I can visually step through a frame of collision.
-// generate world as you drive
-// car engine that is settable by mouse click and drag
-// ai cars
+// * Use hunt concept for the camera.
+// * C - to switch between an invisible entity and the player for controll and
+// to switch camera hunt target
+
+// TODO
+// * Make it so that I can visually step through a frame of collision.
+// * generate world as you drive
+// * car engine that is settable by mouse click and drag
+// * ai cars
 
 //STUDY TODO (bjorn): Excerpt from 
 // [https://www.toptal.com/game/video-game-physics-part-iii-constrained-rigid-body-simulation]
@@ -293,9 +298,9 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
 	{
-		s64 Amount = (&GetController(Input, 0)->Struct_Terminator - 
-									&GetController(Input, 0)->Buttons[0]);
-		s64 Limit = ArrayCount(GetController(Input, 0)->Buttons);
+		s64 Amount = (&GetController(Input, 1)->Struct_Terminator - 
+									&GetController(Input, 1)->Buttons[0]);
+		s64 Limit = ArrayCount(GetController(Input, 1)->Buttons);
 		Assert(Amount == Limit);
 	}
 
@@ -327,8 +332,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	{
 		simulation_request* SimReq = GameState->ControllerSimulationRequests;
-		for(s32 ControllerIndex = 0;
-				ControllerIndex < ArrayCount(Input->Controllers);
+		for(s32 ControllerIndex = 1;
+				ControllerIndex <= ArrayCount(Input->Controllers);
 				ControllerIndex++, SimReq++)
 		{
 			game_controller* Controller = GetController(Input, ControllerIndex);
@@ -365,8 +370,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		}
 
 		SimReq = GameState->KeyboardSimulationRequests;
-		for(s32 KeyboardIndex = 0;
-				KeyboardIndex < ArrayCount(Input->Keyboards);
+		for(s32 KeyboardIndex = 1;
+				KeyboardIndex <= ArrayCount(Input->Keyboards);
 				KeyboardIndex++, SimReq++)
 		{
 			game_keyboard* Keyboard = GetKeyboard(Input, KeyboardIndex);

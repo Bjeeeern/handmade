@@ -59,6 +59,24 @@ union entity_reference
 	entity* Ptr;
 };
 
+union controller_reference
+{
+	u32 Index_;
+	game_controller* Ptr;
+};
+
+union keyboard_reference
+{
+	u32 Index_;
+	game_keyboard* Ptr;
+};
+
+union mouse_reference
+{
+	u32 Index_;
+	game_mouse* Ptr;
+};
+
 #include "trigger.h"
 
 struct entity
@@ -82,6 +100,10 @@ struct entity
 	trigger_state TrigStates[8];
 
 	entity_visual_type VisualType;
+
+	controller_reference Controller;
+	keyboard_reference Keyboard;
+	mouse_reference Mouse;
 
 	v3 R;
 	f32 A;

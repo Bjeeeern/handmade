@@ -77,7 +77,7 @@ struct game_state
 	memory_arena SimArena;
 
 	//TODO(bjorn): Should we allow split-screen?
-	u32 MainCameraStorageIndex;
+	u64 MainCameraStorageIndex;
 	rectangle3 CameraUpdateBounds;
 	//u32 CameraFollowingPlayerIndex;
 	//world_map_position CameraP;
@@ -221,7 +221,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	GameState->MainCameraStorageIndex = 1;
 
 	entity* Player = AddPlayer(SimRegion, v3{-2, 1, 0} * WorldMap->TileSideInMeters);
-	MainCamera->CameraTarget = Player;
+	MainCamera->Prey = Player;
 
 	entity* Familiar = AddFamiliar(SimRegion, v3{4, 5, 0} * WorldMap->TileSideInMeters);
 	Familiar->Prey = Player;
@@ -293,7 +293,7 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	stored_entity* StoredMainCamera = GetStoredEntityByIndex(&GameState->Entities, 
 																													 GameState->MainCameraStorageIndex);
 	GameState->KeyboardSimulationRequests[0].PlayerStorageIndex = 
-		(u64)StoredMainCamera->Sim.CameraTarget;
+		(u64)StoredMainCamera->Sim.Prey;
 }
 
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
@@ -415,15 +415,15 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						//TODO IMPORTANT Move this to the player handling code. Inside a simulated region.
 						stored_entity* MainCameraStored = 
 							GetStoredEntityByIndex(Entities, GameState->MainCameraStorageIndex); 
-						if(MainCameraStored->Sim.CameraTarget)
+						if(MainCameraStored->Sim.Prey)
 						{
 							//NOTE This only clears half of the bytes, so Ptr has to be set instead.
 							//MainCameraStored->Sim.CameraTarget.Index_ = 0;
-							MainCameraStored->Sim.CameraTarget = 0;
+							MainCameraStored->Sim.Prey = 0;
 						}
 						else
 						{
-							MainCameraStored->Sim.CameraTarget = (entity*)SimReq->PlayerStorageIndex;
+							MainCameraStored->Sim.Prey = (entity*)SimReq->PlayerStorageIndex;
 						}
 					}
 
@@ -1042,15 +1042,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #endif
 			}
 		}
-	}
-
-	//
-	// NOTE(bjorn): Update camera
-	//
-	//
-	if(SimRegion->MainCamera->CameraTarget)
-	{
-		SimRegion->MainCamera->P = SimRegion->MainCamera->CameraTarget->P;
 	}
 
 	EndSim(Entities, WorldArena, SimRegion);

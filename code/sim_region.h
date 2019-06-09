@@ -251,7 +251,7 @@ AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_enti
 	internal_function sim_region*
 BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* WorldMap, 
 				 world_map_position RegionCenter, rectangle3 RegionBounds, f32 dT, 
-				 u32 MainCameraStorageIndex = 0)
+				 u64 MainCameraStorageIndex = 0)
 {        
 	sim_region* Result = PushStruct(SimArena, sim_region);
 	ZeroArray(Result->Hash);

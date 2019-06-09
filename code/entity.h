@@ -147,8 +147,6 @@ struct entity
 
 				};
 			};
-			entity_reference CameraTarget;
-
 			//NOTE(bjorn): Player
 			entity_reference Sword;
 			entity_reference RidingVehicle;
@@ -162,8 +160,10 @@ struct entity
 	f32 DistanceRemaining;
 
 	//NOTE(bjorn): Familiar
+	b32 StickToPrey;
 	f32 HunterSearchRadius;
 	f32 BestDistanceToPreySquared;
+	f32 MinimumHuntRangeSquared;
 };
 
 #include "trigger.h"
@@ -264,6 +264,14 @@ AddCamera(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered, InitP);
 
+	Entity->MoveSpec.EnforceHorizontalMovement = true;
+	Entity->MoveSpec.Speed = 85.f;
+	Entity->MoveSpec.Drag = 0.24f * 30.0f;
+
+	Entity->StickToPrey = true;
+	Entity->HunterSearchRadius = positive_infinity32;
+	Entity->MinimumHuntRangeSquared = Square(0.2f);
+
 	return Entity;
 }
 
@@ -356,6 +364,7 @@ AddFamiliar(sim_region* SimRegion, v3 InitP)
 	Entity->MoveSpec.Drag = 0.2f * 30.0f;
 
 	Entity->HunterSearchRadius = 6.0f;
+	Entity->MinimumHuntRangeSquared = Square(2.0f);
 
 	return Entity;
 }
@@ -624,10 +633,16 @@ HunterLogic(entity* Hunter)
 		f32 DistanceToPreySquared = LenghtSquared(DistanceToPrey);
 
 		if(DistanceToPreySquared < Hunter->BestDistanceToPreySquared &&
-			 DistanceToPreySquared > Square(2.0f))
+			 DistanceToPreySquared > Hunter->MinimumHuntRangeSquared)
 		{
 			Hunter->BestDistanceToPreySquared = DistanceToPreySquared;
 			Hunter->MoveSpec.MovingDirection = Normalize(DistanceToPrey).XY;
+		}
+
+		if(Hunter->StickToPrey &&
+			 DistanceToPreySquared <= Hunter->MinimumHuntRangeSquared)
+		{
+			Hunter->P = Prey->P;
 		}
 	}
 }

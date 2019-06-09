@@ -6,7 +6,7 @@
 struct entity_block
 {
 	u32 EntityIndexCount;
-	u32 EntityIndexes[16];
+	u64 EntityIndexes[16];
 
 	entity_block* Next;
 };
@@ -224,7 +224,7 @@ AreInSameChunk(world_map* WorldMap, world_map_position* A, world_map_position* B
 //TODO(bjorn): Should hashmap chunks that contains no blocks in the hashmap be
 //recycled like blocks are?
 inline void
-UpdateStoredEntityChunkLocation(memory_arena* Arena, world_map* WorldMap, u32 StoredEntityIndex,
+UpdateStoredEntityChunkLocation(memory_arena* Arena, world_map* WorldMap, u64 StoredEntityIndex,
 																world_map_position* OldP, world_map_position* NewP)
 {
 	Assert(!OldP || IsValid(*OldP));
@@ -255,7 +255,7 @@ UpdateStoredEntityChunkLocation(memory_arena* Arena, world_map* WorldMap, u32 St
 						{
 							Assert(FirstBlock->EntityIndexCount > 0);
 
-							u32 TopEntityIndex = FirstBlock->EntityIndexes[--FirstBlock->EntityIndexCount];
+							u64 TopEntityIndex = FirstBlock->EntityIndexes[--FirstBlock->EntityIndexCount];
 
 							Assert(TopEntityIndex);
 

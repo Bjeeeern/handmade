@@ -18,7 +18,7 @@
 // QUICK TODO
 //
 // * Use hunt concept for the camera.
-// * C - to switch between an invisible entity and the player for controll and
+// * C - to switch between an invisible entity and the player for control and
 // to switch camera hunt target
 
 // TODO
@@ -49,13 +49,13 @@ struct hero_bitmaps
 //TODO: Move this to the entity as a thing it either do or do not have.
 struct simulation_request
 {
-	u32 PlayerStorageIndex;
+	u64 PlayerStorageIndex;
 	v3 ddP;
 	v2 FireSword;
 };
 
 internal_function simulation_request*
-GetSimRequestForEntity(simulation_request* SimReq, u32 SimReqCount, u32 StorageIndex)
+GetSimRequestForEntity(simulation_request* SimReq, u32 SimReqCount, u64 StorageIndex)
 {
 	simulation_request* Result = 0;
 
@@ -221,10 +221,10 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	GameState->MainCameraStorageIndex = 1;
 
 	entity* Player = AddPlayer(SimRegion, v3{-2, 1, 0} * WorldMap->TileSideInMeters);
-	MainCamera->CameraTarget.Ptr = Player;
+	MainCamera->CameraTarget = Player;
 
 	entity* Familiar = AddFamiliar(SimRegion, v3{4, 5, 0} * WorldMap->TileSideInMeters);
-	Familiar->Prey.Ptr = Player;
+	Familiar->Prey = Player;
 
 	AddMonstar(SimRegion, v3{ 2, 5, 0} * WorldMap->TileSideInMeters);
 
@@ -289,10 +289,11 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 
 	EndSim(&GameState->Entities, &GameState->WorldArena, SimRegion);
 
-	stored_entity* StoredMainCamera = 
-		GetStoredEntityByIndex(&GameState->Entities, GameState->MainCameraStorageIndex);
+	//TODO(bjorn): This is not super clean. But I dont know how to do it in a better way right now.
+	stored_entity* StoredMainCamera = GetStoredEntityByIndex(&GameState->Entities, 
+																													 GameState->MainCameraStorageIndex);
 	GameState->KeyboardSimulationRequests[0].PlayerStorageIndex = 
-		StoredMainCamera->Sim.CameraTarget.Index_;
+		(u64)StoredMainCamera->Sim.CameraTarget;
 }
 
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
@@ -411,18 +412,18 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 					if(Clicked(Keyboard, C))
 					{
-						//TODO IMPORTANT Move this to the player handling code.
+						//TODO IMPORTANT Move this to the player handling code. Inside a simulated region.
 						stored_entity* MainCameraStored = 
 							GetStoredEntityByIndex(Entities, GameState->MainCameraStorageIndex); 
-						if(MainCameraStored->Sim.CameraTarget.Index_)
+						if(MainCameraStored->Sim.CameraTarget)
 						{
 							//NOTE This only clears half of the bytes, so Ptr has to be set instead.
 							//MainCameraStored->Sim.CameraTarget.Index_ = 0;
-							MainCameraStored->Sim.CameraTarget.Ptr = 0;
+							MainCameraStored->Sim.CameraTarget = 0;
 						}
 						else
 						{
-							MainCameraStored->Sim.CameraTarget.Index_ = SimReq->PlayerStorageIndex;
+							MainCameraStored->Sim.CameraTarget = (entity*)SimReq->PlayerStorageIndex;
 						}
 					}
 
@@ -729,7 +730,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							{PixelsPerMeter, 0             ,
 								0             ,-PixelsPerMeter};
 
-							u32 Player1StorageIndex = GameState->KeyboardSimulationRequests[0].PlayerStorageIndex;
+							u64 Player1StorageIndex = GameState->KeyboardSimulationRequests[0].PlayerStorageIndex;
 							entity* Player = 0;
 							if(Entity->StorageIndex == Player1StorageIndex) { Player = Entity;}
 							if(OtherEntity->StorageIndex == Player1StorageIndex) { Player = OtherEntity;}
@@ -743,8 +744,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							entity* CarFrame = GetEntityOfVisualType(EntityVisualType_CarFrame, 
 																											 Entity, OtherEntity);
 							if(CarFrame &&
-								 CarFrame->DriverSeat.Ptr &&
-								 CarFrame->DriverSeat.Ptr->StorageIndex == Player1StorageIndex)
+								 CarFrame->DriverSeat &&
+								 CarFrame->DriverSeat->StorageIndex == Player1StorageIndex)
 							{
 								entity* Target = GetRemainingEntity(CarFrame, Entity, OtherEntity);
 								DEBUGMinkowskiSum(Buffer, Target, CarFrame, GameSpaceToScreenSpace, ScreenCenter);
@@ -763,7 +764,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				if(SimReq)
 				{
-					entity* Sword = Entity->Sword.Ptr;
+					entity* Sword = Entity->Sword;
 					if(Sword &&
 						 LenghtSquared(SimReq->FireSword))
 					{
@@ -1047,9 +1048,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// NOTE(bjorn): Update camera
 	//
 	//
-	if(SimRegion->MainCamera->CameraTarget.Ptr)
+	if(SimRegion->MainCamera->CameraTarget)
 	{
-		SimRegion->MainCamera->P = SimRegion->MainCamera->CameraTarget.Ptr->P;
+		SimRegion->MainCamera->P = SimRegion->MainCamera->CameraTarget->P;
 	}
 
 	EndSim(Entities, WorldArena, SimRegion);

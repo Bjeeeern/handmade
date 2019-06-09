@@ -16,7 +16,7 @@ struct stored_entities
 };
 
 	inline stored_entity*
-GetStoredEntityByIndex(stored_entities* Entities, u32 StorageIndex)
+GetStoredEntityByIndex(stored_entities* Entities, u64 StorageIndex)
 {
 	stored_entity* Result = 0;
 
@@ -78,7 +78,7 @@ ChangeStoredEntityWorldLocation(memory_arena* WorldArena, world_map* WorldMap,
 
 struct entity_hash
 {
-	u32 Index;
+	u64 Index;
 	entity* Ptr;
 };
 
@@ -104,13 +104,13 @@ struct sim_region
 };
 
 internal_function entity_hash* 
-GetSimEntityHashSlotFromStorageIndex(sim_region* SimRegion, u32 StorageIndex)
+GetSimEntityHashSlotFromStorageIndex(sim_region* SimRegion, u64 StorageIndex)
 {
 	Assert(StorageIndex);
 
 	entity_hash* Result = 0;
 
-	u32 HashValue = StorageIndex;
+	u64 HashValue = StorageIndex;
 	for(s32 Offset = 0;
 			Offset < ArrayCount(SimRegion->Hash);
 			Offset++)
@@ -131,35 +131,36 @@ GetSimEntityHashSlotFromStorageIndex(sim_region* SimRegion, u32 StorageIndex)
 
 	internal_function entity*
 AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
-						 u32 StorageIndex, v3* SimP);
+						 u64 StorageIndex, v3* SimP);
 
 	internal_function void
 LoadEntityReference(stored_entities* StoredEntities, sim_region* SimRegion, entity_reference* Ref)
 {
-	if(Ref->Index_)
+	u64 StorageIndex = (u64)(*Ref);
+	if(StorageIndex)
 	{
-		Ref->Ptr = AddSimEntity(StoredEntities, SimRegion, 
-														GetStoredEntityByIndex(StoredEntities, Ref->Index_), 
-														Ref->Index_, 0);
+		*Ref = AddSimEntity(StoredEntities, SimRegion, 
+												GetStoredEntityByIndex(StoredEntities, StorageIndex), StorageIndex, 0);
 	}
 }
 
 	internal_function void
 StoreEntityReference(stored_entities* StoredEntities, entity_reference* Ref)
 {
-	if(Ref->Ptr)
+	entity* Entity = *Ref;
+	if(Entity)
 	{
-		if(!Ref->Ptr->StorageIndex) { GetNewStoredEntity(StoredEntities, Ref->Ptr); }
-		Assert(Ref->Ptr->StorageIndex);
-		Assert(GetStoredEntityByIndex(StoredEntities, Ref->Ptr->StorageIndex));
+		if(!Entity->StorageIndex) { GetNewStoredEntity(StoredEntities, Entity); }
+		Assert(Entity->StorageIndex);
+		Assert(GetStoredEntityByIndex(StoredEntities, Entity->StorageIndex));
 
-		Ref->Index_ = Ref->Ptr->StorageIndex;
+		*Ref = (entity_reference)Entity->StorageIndex;
 	}
 }
 
 	internal_function entity*
 AddSimEntityRaw(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
-								u32 StorageIndex)
+								u64 StorageIndex)
 {
 	Assert(StorageIndex);
 	entity* Entity = 0;
@@ -218,7 +219,7 @@ AddSimEntityRaw(stored_entities* StoredEntities, sim_region* SimRegion, stored_e
 
 	internal_function entity*
 AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
-						 u32 StorageIndex, v3* SimP)
+						 u64 StorageIndex, v3* SimP)
 {
 	entity* Result = AddSimEntityRaw(StoredEntities, SimRegion, Source, StorageIndex);
 	Assert(Result);
@@ -296,7 +297,7 @@ BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* Wor
 								Index < Block->EntityIndexCount;
 								Index++)
 						{
-							u32 StorageIndex = Block->EntityIndexes[Index];
+							u64 StorageIndex = Block->EntityIndexes[Index];
 
 							stored_entity* StoredEntity = GetStoredEntityByIndex(StoredEntities, StorageIndex);
 							Assert(StoredEntity);

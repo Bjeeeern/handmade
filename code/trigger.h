@@ -27,7 +27,7 @@ SetTriggerStateRaw(trigger_state* TrigState, trigger_state* Ref)
 		TrigState->WasTriggerd = Ref->WasTriggerd;
 		TrigState->TimePassed = Ref->TimePassed;
 		TrigState->WasTriggerd = Ref->WasTriggerd;
-		if(!Ref->Buddy.Ptr) { TrigState->Buddy.Ptr = 0; }
+		if(!Ref->Buddy) { TrigState->Buddy = 0; }
 	}
 }
 
@@ -44,7 +44,7 @@ GetTriggerStateRaw(entity* Entity, entity* Buddy)
 			TrigStateIndex < ArrayCount(Entity->TrigStates);
 			TrigStateIndex++, TrigState++)
 	{
-		if(TrigState->Buddy.Ptr == Buddy)
+		if(TrigState->Buddy == Buddy)
 		{
 			Result = TrigState;
 		}
@@ -92,7 +92,7 @@ UpdateAndGetCurrentTriggerState(entity* A, entity* B,
 			 )
 			)
 		{
-			TrigState->Buddy.Ptr = 0;
+			TrigState->Buddy = 0;
 		}
 
 		if(Exited)
@@ -111,13 +111,13 @@ UpdateAndGetCurrentTriggerState(entity* A, entity* B,
 		Assert(EmptyASlot);
 		EmptyASlot->WasTriggerd = true;
 		EmptyASlot->TimePassed = TimeUntilRetrigger;
-		EmptyASlot->Buddy.Ptr = B;
+		EmptyASlot->Buddy = B;
 
 		trigger_state* EmptyBSlot = GetTriggerStateSlotForOverwrite(B);
 		Assert(EmptyBSlot);
 		EmptyBSlot->TimePassed = TimeUntilRetrigger;
 		EmptyBSlot->WasTriggerd = true;
-		EmptyBSlot->Buddy.Ptr = A;
+		EmptyBSlot->Buddy = A;
 	}
 
 	return Result;

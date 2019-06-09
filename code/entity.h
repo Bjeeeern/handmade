@@ -53,11 +53,7 @@ struct hit_point
 
 struct entity;
 
-union entity_reference
-{
-	u32 Index_;
-	entity* Ptr;
-};
+typedef entity* entity_reference;
 
 union controller_reference
 {
@@ -81,7 +77,8 @@ union mouse_reference
 
 struct entity
 {
-	u32 StorageIndex;
+	//TODO(bjorn): Minimize this to a 32-bit index when actually storing the entity.
+	u64 StorageIndex;
 	world_map_position WorldP;
 	b32 Updates : 1;
 
@@ -313,7 +310,7 @@ AddPlayer(sim_region* SimRegion, v3 InitP)
 	Entity->MoveSpec.Drag = 0.24f * 30.0f;
 
 	AddHitPoints(Entity, 6);
-	Entity->Sword.Ptr = AddSword(SimRegion);
+	Entity->Sword = AddSword(SimRegion);
 
 	return Entity;
 }
@@ -619,9 +616,9 @@ MoveEntity(entity* Entity, f32 dT)
 	internal_function void
 HunterLogic(entity* Hunter)
 {
-	if(Hunter->Prey.Ptr)
+	if(Hunter->Prey)
 	{
-		entity* Prey = Hunter->Prey.Ptr;
+		entity* Prey = Hunter->Prey;
 
 		v3 DistanceToPrey = Prey->P - Hunter->P;
 		f32 DistanceToPreySquared = LenghtSquared(DistanceToPrey);

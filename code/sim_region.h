@@ -130,17 +130,19 @@ GetSimEntityHashSlotFromStorageIndex(sim_region* SimRegion, u64 StorageIndex)
 }
 
 	internal_function entity*
-AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
-						 u64 StorageIndex, v3* SimP);
+AddSimEntity(game_input* Input, stored_entities* StoredEntities, sim_region* SimRegion, 
+						 stored_entity* Source, u64 StorageIndex, v3* SimP);
 
 	internal_function void
-LoadEntityReference(stored_entities* StoredEntities, sim_region* SimRegion, entity_reference* Ref)
+LoadEntityReference(game_input* Input, stored_entities* StoredEntities, sim_region* SimRegion, 
+										entity_reference* Ref)
 {
 	u64 StorageIndex = (u64)(*Ref);
 	if(StorageIndex)
 	{
-		*Ref = AddSimEntity(StoredEntities, SimRegion, 
-												GetStoredEntityByIndex(StoredEntities, StorageIndex), StorageIndex, 0);
+		*Ref = AddSimEntity(Input, StoredEntities, SimRegion, 
+												GetStoredEntityByIndex(StoredEntities, StorageIndex), 
+												StorageIndex, 0);
 	}
 }
 
@@ -158,9 +160,47 @@ StoreEntityReference(stored_entities* StoredEntities, entity_reference* Ref)
 	}
 }
 
+	internal_function void
+LoadInputReference(game_input* Input, keyboard_reference* Ref)
+{
+	u64 StorageIndex = (u64)(*Ref);
+	if(StorageIndex) { *Ref = GetKeyboard(Input, StorageIndex); }
+}
+	internal_function void
+LoadInputReference(game_input* Input, controller_reference* Ref)
+{
+	u64 StorageIndex = (u64)(*Ref);
+	if(StorageIndex) { *Ref = GetController(Input, StorageIndex); }
+}
+	internal_function void
+LoadInputReference(game_input* Input, mouse_reference* Ref)
+{
+	u64 StorageIndex = (u64)(*Ref);
+	if(StorageIndex) { *Ref = GetMouse(Input, StorageIndex); }
+}
+
+	internal_function void
+StoreInputReference(game_input* Input, keyboard_reference* Ref)
+{
+	game_keyboard* Keyboard = *Ref;
+	if(Keyboard) { *Ref = (keyboard_reference)GetKeyboardIndex(Input, Keyboard); }
+}
+	internal_function void
+StoreInputReference(game_input* Input, controller_reference* Ref)
+{
+	game_controller* Controller = *Ref;
+	if(Controller) { *Ref = (controller_reference)GetControllerIndex(Input, Controller); }
+}
+	internal_function void
+StoreInputReference(game_input* Input, mouse_reference* Ref)
+{
+	game_mouse* Mouse = *Ref;
+	if(Mouse) { *Ref = (mouse_reference)GetMouseIndex(Input, Mouse); }
+}
+
 	internal_function entity*
-AddSimEntityRaw(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
-								u64 StorageIndex)
+AddSimEntityRaw(game_input* Input, stored_entities* StoredEntities, sim_region*
+								SimRegion, stored_entity* Source, u64 StorageIndex)
 {
 	Assert(StorageIndex);
 	entity* Entity = 0;
@@ -195,15 +235,20 @@ AddSimEntityRaw(stored_entities* StoredEntities, sim_region* SimRegion, stored_e
 				EntityRefIndex < ArrayCount(Entity->EntityReferences);
 				EntityRefIndex++, EntityRef++)
 		{
-			LoadEntityReference(StoredEntities, SimRegion, EntityRef);
+			LoadEntityReference(Input, StoredEntities, SimRegion, EntityRef);
 		}
+
 		trigger_state* TrigState = Entity->TrigStates;
 		for(u32 TrigStateIndex = 0;
 				TrigStateIndex < ArrayCount(Entity->TrigStates);
 				TrigStateIndex++, TrigState++)
 		{
-			LoadEntityReference(StoredEntities, SimRegion, &TrigState->Buddy);
+			LoadEntityReference(Input, StoredEntities, SimRegion, &TrigState->Buddy);
 		}
+
+		LoadInputReference(Input, &(Entity->Keyboard));
+		LoadInputReference(Input, &(Entity->Controller));
+		LoadInputReference(Input, &(Entity->Mouse));
 	}
 	else
 	{
@@ -218,10 +263,10 @@ AddSimEntityRaw(stored_entities* StoredEntities, sim_region* SimRegion, stored_e
 }
 
 	internal_function entity*
-AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_entity* Source, 
-						 u64 StorageIndex, v3* SimP)
+AddSimEntity(game_input* Input, stored_entities* StoredEntities, sim_region*
+						 SimRegion, stored_entity* Source, u64 StorageIndex, v3* SimP)
 {
-	entity* Result = AddSimEntityRaw(StoredEntities, SimRegion, Source, StorageIndex);
+	entity* Result = AddSimEntityRaw(Input, StoredEntities, SimRegion, Source, StorageIndex);
 	Assert(Result);
 
 	//TODO(bjorn): The pos should be set to an invalid one here if the entitiy is non-spatial.
@@ -249,9 +294,8 @@ AddSimEntity(stored_entities* StoredEntities, sim_region* SimRegion, stored_enti
 }
 
 	internal_function sim_region*
-BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* WorldMap, 
-				 world_map_position RegionCenter, rectangle3 RegionBounds, f32 dT, 
-				 u64 MainCameraStorageIndex = 0)
+BeginSim(game_input* Input, stored_entities* StoredEntities, memory_arena* SimArena, 
+				 world_map* WorldMap, world_map_position RegionCenter, rectangle3 RegionBounds, f32 dT)
 {        
 	sim_region* Result = PushStruct(SimArena, sim_region);
 	ZeroArray(Result->Hash);
@@ -259,7 +303,7 @@ BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* Wor
 	//TODO: Tradeoff with not having huge single entites. But Huge entities
 	//should maybe be made-up out of smaller constituents anyways.
 	Result->MaxEntityRadius = 5.0f;
-	Result->MaxEntityVelocity = 30.0f;
+	Result->MaxEntityVelocity = 60.0f;
 	f32 SafetyUpdateMargin = Result->MaxEntityRadius + Result->MaxEntityVelocity * dT;
 
 	Result->WorldMap = WorldMap;
@@ -306,9 +350,8 @@ BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* Wor
 							v3 SimPos = GetWorldMapPosDifference(WorldMap, StoredEntity->Sim.WorldP, RegionCenter);
 							if(IsInRectangle(Result->OuterBounds, SimPos))
 							{
-								entity* Entity = AddSimEntity(StoredEntities, Result, 
-																							StoredEntity, StorageIndex, &SimPos);
-								if(Entity->StorageIndex == MainCameraStorageIndex) { Result->MainCamera = Entity; }
+								entity* Entity = AddSimEntity(Input, StoredEntities, Result, StoredEntity, 
+																							StorageIndex, &SimPos);
 							}
 						}
 					}
@@ -321,7 +364,7 @@ BeginSim(stored_entities* StoredEntities, memory_arena* SimArena, world_map* Wor
 }
 
 	internal_function void
-EndSim(stored_entities* Entities, memory_arena* WorldArena, sim_region* SimRegion)
+EndSim(game_input* Input, stored_entities* Entities, memory_arena* WorldArena, sim_region* SimRegion)
 {
 	entity* SimEntity = SimRegion->Entities;
 	for(u32 EntityIndex = 0;
@@ -355,6 +398,10 @@ EndSim(stored_entities* Entities, memory_arena* WorldArena, sim_region* SimRegio
 		{
 			StoreEntityReference(Entities, &TrigState->Buddy);
 		}
+
+		StoreInputReference(Input, &(Stored->Sim.Keyboard));
+		StoreInputReference(Input, &(Stored->Sim.Controller));
+		StoreInputReference(Input, &(Stored->Sim.Mouse));
 
 		world_map_position NewWorldP = WorldMapNullPos();
 		if(SimEntity->IsSpacial)

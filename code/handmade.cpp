@@ -17,7 +17,7 @@
 
 // QUICK TODO
 //
-// * Use hunt concept for the camera.
+// * IMPORTANT Maybe have a global reference struct that gets set up by the sim_region?
 // * C - to switch between an invisible entity and the player for control and
 // to switch camera hunt target
 
@@ -46,29 +46,6 @@ struct hero_bitmaps
 	loaded_bitmap Torso;
 };
 
-//TODO: Move this to the entity as a thing it either do or do not have.
-struct simulation_request
-{
-	u64 PlayerStorageIndex;
-	v3 ddP;
-	v2 FireSword;
-};
-
-internal_function simulation_request*
-GetSimRequestForEntity(simulation_request* SimReq, u32 SimReqCount, u64 StorageIndex)
-{
-	simulation_request* Result = 0;
-
-	for(u32 SimReqIndex = 0;
-			SimReqIndex < SimReqCount;
-			SimReqIndex++, SimReq++)
-	{
-		if(SimReq->PlayerStorageIndex == StorageIndex) { Result = SimReq; }
-	}
-
-	return Result;
-}
-
 struct game_state
 {
 	memory_arena WorldArena;
@@ -79,19 +56,6 @@ struct game_state
 	//TODO(bjorn): Should we allow split-screen?
 	u64 MainCameraStorageIndex;
 	rectangle3 CameraUpdateBounds;
-	//u32 CameraFollowingPlayerIndex;
-	//world_map_position CameraP;
-
-	union
-	{
-		simulation_request PlayerSimulationRequests[(ArrayCount(((game_input*)0)->Keyboards) + 
-																								 ArrayCount(((game_input*)0)->Controllers))];
-		struct
-		{
-			simulation_request KeyboardSimulationRequests[ArrayCount(((game_input*)0)->Keyboards)]; 
-			simulation_request ControllerSimulationRequests[ArrayCount(((game_input*)0)->Controllers)]; 
-		};
-	};
 
 	stored_entities Entities;
 
@@ -124,7 +88,7 @@ struct game_state
 };
 
 	internal_function void
-InitializeGame(game_memory *Memory, game_state *GameState)
+InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 {
 	GameState->GroundStaticFriction = 2.1f; 
 	GameState->GroundDynamicFriction = 2.0f; 
@@ -212,16 +176,22 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 	GameState->CameraUpdateBounds = RectCenterDim(v3{0, 0, 0}, 
 																								v3{2, 2, 2} * WorldMap->ChunkSideInMeters);
                                                                                                     
-	sim_region* SimRegion = BeginSim(&GameState->Entities, &GameState->SimArena, WorldMap, 
-																	 GetChunkPosFromAbsTile(WorldMap, v3s{0, 0, 0}), 
+	sim_region* SimRegion = BeginSim(Input, &GameState->Entities, &GameState->SimArena, WorldMap, 
+																	 GetChunkPosFromAbsTile(WorldMap, RoomOrigin), 
 																	 GameState->CameraUpdateBounds, 0);
 
-	entity* MainCamera = AddCamera(SimRegion, RoomOrigin);
+	entity* MainCamera = AddCamera(SimRegion, v3{0, 0, 0});
 	//TODO Is there a less cheesy (and safer!) way to do this assignment of the camera storage index?
 	GameState->MainCameraStorageIndex = 1;
+	MainCamera->Keyboard = GetKeyboard(Input, 1);
 
 	entity* Player = AddPlayer(SimRegion, v3{-2, 1, 0} * WorldMap->TileSideInMeters);
+	Player->Keyboard = GetKeyboard(Input, 1);
+
 	MainCamera->Prey = Player;
+	MainCamera->Player = Player;
+	MainCamera->FreeMover = AddInvisibleControllable(SimRegion);
+	MainCamera->FreeMover->Keyboard = GetKeyboard(Input, 1);
 
 	entity* Familiar = AddFamiliar(SimRegion, v3{4, 5, 0} * WorldMap->TileSideInMeters);
 	Familiar->Prey = Player;
@@ -287,17 +257,12 @@ InitializeGame(game_memory *Memory, game_state *GameState)
 		}
 	}
 
-	EndSim(&GameState->Entities, &GameState->WorldArena, SimRegion);
-
-	//TODO(bjorn): This is not super clean. But I dont know how to do it in a better way right now.
-	stored_entity* StoredMainCamera = GetStoredEntityByIndex(&GameState->Entities, 
-																													 GameState->MainCameraStorageIndex);
-	GameState->KeyboardSimulationRequests[0].PlayerStorageIndex = 
-		(u64)StoredMainCamera->Sim.Prey;
+	EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 }
 
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
+#if HANDMADE_SLOW
 	{
 		s64 Amount = (&GetController(Input, 1)->Struct_Terminator - 
 									&GetController(Input, 1)->Buttons[0]);
@@ -307,17 +272,25 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 	{
 		entity TestEntity = {};
-		s64 Amount = (&(TestEntity.struct_terminator_) - &(TestEntity.EntityReferences[0]));
+		s64 Amount = (&(TestEntity.struct_terminator1_) - &(TestEntity.EntityReferences[0]));
 		s64 Limit = ArrayCount(TestEntity.EntityReferences);
 		Assert(Amount <= Limit);
 	}
+
+	{
+		entity TestEntity = {};
+		s64 Amount = (&(TestEntity.struct_terminator0_) - &(TestEntity.Attatchments[0]));
+		s64 Limit = ArrayCount(TestEntity.Attatchments);
+		Assert(Amount <= Limit);
+	}
+#endif
 
 	Assert(sizeof(game_state) <= Memory->PermanentStorageSize);
 	game_state *GameState = (game_state *)Memory->PermanentStorage;
 
 	if(!Memory->IsInitialized)
 	{
-		InitializeGame(Memory, GameState);
+		InitializeGame(Memory, GameState, Input);
 		Memory->IsInitialized = true;
 	}
 
@@ -332,17 +305,15 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//NOTE(bjorn): Gather input for this frame.
 	//
 	{
-		simulation_request* SimReq = GameState->ControllerSimulationRequests;
 		for(s32 ControllerIndex = 1;
 				ControllerIndex <= ArrayCount(Input->Controllers);
-				ControllerIndex++, SimReq++)
+				ControllerIndex++)
 		{
 			game_controller* Controller = GetController(Input, ControllerIndex);
 			if(Controller->IsConnected)
 			{
-				if(SimReq->PlayerStorageIndex)
 				{
-					SimReq->ddP = Controller->LeftStick.End;
+					//SimReq->ddP = Controller->LeftStick.End;
 
 #if 0
 					//TODO IMPORTANT Collect the relevant interpretation of the input and
@@ -357,7 +328,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						//GameState->PlayerIndexForController[ControllerIndex] = 0;
 					}
 				}
-				else
+				//else
 				{
 					if(Clicked(Controller, Start))
 					{
@@ -370,10 +341,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			}
 		}
 
-		SimReq = GameState->KeyboardSimulationRequests;
 		for(s32 KeyboardIndex = 1;
 				KeyboardIndex <= ArrayCount(Input->Keyboards);
-				KeyboardIndex++, SimReq++)
+				KeyboardIndex++)
 		{
 			game_keyboard* Keyboard = GetKeyboard(Input, KeyboardIndex);
 			if(Keyboard->IsConnected)
@@ -385,7 +355,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					GameState->NoteDuration = 0.05f;
 					GameState->NoteSecondsPassed = 0.0f;
 
-					//TODO(bjorn): Just setting the flag is not working anymore.
+					//TODO STUDY(bjorn): Just setting the flag is not working anymore.
 					//Memory->IsInitialized = false;
 
 					GameState->DEBUG_StepThroughTheCollisionLoop = 
@@ -405,126 +375,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				{
 					GameState->DEBUG_VisualiseMinkowskiSum = !GameState->DEBUG_VisualiseMinkowskiSum;
 					GameState->DEBUG_VisualiseCollisionBox = !GameState->DEBUG_VisualiseCollisionBox;
-				}
-
-				if(SimReq->PlayerStorageIndex)
-				{
-
-					if(Clicked(Keyboard, C))
-					{
-						//TODO IMPORTANT Move this to the player handling code. Inside a simulated region.
-						stored_entity* MainCameraStored = 
-							GetStoredEntityByIndex(Entities, GameState->MainCameraStorageIndex); 
-						if(MainCameraStored->Sim.Prey)
-						{
-							//NOTE This only clears half of the bytes, so Ptr has to be set instead.
-							//MainCameraStored->Sim.CameraTarget.Index_ = 0;
-							MainCameraStored->Sim.Prey = 0;
-						}
-						else
-						{
-							MainCameraStored->Sim.Prey = (entity*)SimReq->PlayerStorageIndex;
-						}
-					}
-
-					v3 InputDirection = {};
-
-					if(Held(Keyboard, S))
-					{
-						InputDirection.Y += -1;
-					}
-					if(Held(Keyboard, A))
-					{
-						InputDirection.X += -1;
-					}
-					if(Held(Keyboard, W))
-					{
-						InputDirection.Y += 1;
-					}
-					if(Held(Keyboard, D))
-					{
-						InputDirection.X += 1;
-					}
-					if(Held(Keyboard, Space))
-					{
-						InputDirection.Z += 1;
-					}
-
-					if(InputDirection.X && InputDirection.Y)
-					{
-						InputDirection *= inv_root2;
-					}
-
-					SimReq->ddP = InputDirection;
-
-					v2 ArrowKeysDirection = {};
-
-					if(Held(Keyboard, Down))
-					{
-						ArrowKeysDirection.Y += -1;
-					}
-					if(Held(Keyboard, Left))
-					{
-						ArrowKeysDirection.X += -1;
-					}
-					if(Held(Keyboard, Up))
-					{
-						ArrowKeysDirection.Y += 1;
-					}
-					if(Held(Keyboard, Right))
-					{
-						ArrowKeysDirection.X += 1;
-					}
-
-					if(Clicked(Keyboard, Q) && LenghtSquared(ArrowKeysDirection))
-					{
-						SimReq->FireSword = ArrowKeysDirection;
-					}
-					else
-					{
-						SimReq->FireSword = {};
-					}
-
-#if 0
-					if(Clicked(Keyboard, E))
-					{
-						//if(ControlledEntity->RidingVehicle)
-						{
-							//entity Vehicle = GetEntityByLowIndex(Entities, 
-							//																		 ControlledEntity->RidingVehicle);
-							//DismountEntityFromCar(WorldArena, WorldMap, &ControlledEntity, &Vehicle);
-						}
-						{
-							{
-								//if(Entity->VisualType == EntityVisualType_CarFrame && 
-								//	 Distance(Entity->P, ControlledEntity->P) < 4.0f)
-								{
-									//MountEntityOnCar(WorldArena, WorldMap, &ControlledEntity, &Entity);
-									//break;
-								}
-							}
-						}
-					}
-					{
-						//entity CarFrame = GetEntityByLowIndex(Entities, ControlledEntity->RidingVehicle);
-						//Assert(CarFrame->VisualType == EntityVisualType_CarFrame);
-
-						if(InputDirection.X)
-						{ 
-							//TurnWheels(Entities, &CarFrame, InputDirection.XY, SecondsToUpdate); 
-						}
-						else
-						{ 
-							//AlignWheelsForward(Entities, &CarFrame, SecondsToUpdate); 
-						}
-
-						//if(Clicked(Keyboard, One))   { CarFrame->ddP = CarFrame->R * -3.0f; }
-						//if(Clicked(Keyboard, Two))   { CarFrame->ddP = CarFrame->R *  0.0f; }
-						//if(Clicked(Keyboard, Three)) { CarFrame->ddP = CarFrame->R *  3.0f; }
-						//if(Clicked(Keyboard, Four))  { CarFrame->ddP = CarFrame->R *  6.0f; }
-						//if(Clicked(Keyboard, Five))  { CarFrame->ddP = CarFrame->R *  9.0f; }
-					}
-#endif
 				}
 			}
 		}
@@ -550,9 +400,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	stored_entity* StoredMainCamera = GetStoredEntityByIndex(Entities, 
 																														 GameState->MainCameraStorageIndex);
-	sim_region* SimRegion = BeginSim(Entities, &(GameState->SimArena), WorldMap, 
+	sim_region* SimRegion = BeginSim(Input, Entities, &(GameState->SimArena), WorldMap, 
 																	 StoredMainCamera->Sim.WorldP, GameState->CameraUpdateBounds, 
-																	 SecondsToUpdate, GameState->MainCameraStorageIndex);
+																	 SecondsToUpdate);
 
 
 	//TODO(bjorn): Implement step 2 in J.Blows framerate independence video.
@@ -694,14 +544,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					trigger_state_result TriggerState = 
 						UpdateAndGetCurrentTriggerState(Entity, OtherEntity, dT, Inside);
 
-					//TODO Is this a thing that we need to handle interactions?
-#if 0
-					simulation_request* OtherPlayerSimReq = 
-						GetSimRequestForEntity(GameState->PlayerSimulationRequests, 
-																	 ArrayCount(GameState->PlayerSimulationRequests),
-																	 Entity->StorageIndex);
-#endif
-
 					entity* A = Entity;
 					entity* B = OtherEntity;
 					//TODO STUDY Doublecheck HMH 69 to see what this was for again.
@@ -730,7 +572,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							{PixelsPerMeter, 0             ,
 								0             ,-PixelsPerMeter};
 
-							u64 Player1StorageIndex = GameState->KeyboardSimulationRequests[0].PlayerStorageIndex;
+							u64 Player1StorageIndex = 2;
 							entity* Player = 0;
 							if(Entity->StorageIndex == Player1StorageIndex) { Player = Entity;}
 							if(OtherEntity->StorageIndex == Player1StorageIndex) { Player = OtherEntity;}
@@ -756,29 +598,93 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #endif
 				}
 
-				simulation_request* SimReq = 
-					GetSimRequestForEntity(GameState->PlayerSimulationRequests, 
-																 ArrayCount(GameState->PlayerSimulationRequests),
-																 Entity->StorageIndex);
 				v3 OldP = Entity->P;
 
-				if(SimReq)
+				if(Step == LastStep && //TODO(bjorn): This is easy to forget. Conceptualize?
+					 Entity->Keyboard && 
+					 Entity->Keyboard->IsConnected)
 				{
-					entity* Sword = Entity->Sword;
-					if(Sword &&
-						 LenghtSquared(SimReq->FireSword))
+					if(Clicked(Entity->Keyboard, C) &&
+						 Entity->FreeMover && 
+						 Entity->Player)
 					{
+						if(Entity->Prey == Entity->Player)
+						{
+							MakeEntitySpacial(Entity->FreeMover, Entity->P);
+							Entity->Player->MoveSpec.MoveByInput = false;
+							Entity->Prey = Entity->FreeMover;
+						}
+						else if(Entity->Prey == Entity->FreeMover)
+						{
+							MakeEntityNonSpacial(Entity->FreeMover);
+							Entity->Player->MoveSpec.MoveByInput = true;
+							Entity->Prey = Entity->Player;
+						}
+					}
+
+					v3 WASDKeysDirection = {};
+
+					if(Held(Entity->Keyboard, S))
+					{
+						WASDKeysDirection.Y += -1;
+					}
+					if(Held(Entity->Keyboard, A))
+					{
+						WASDKeysDirection.X += -1;
+					}
+					if(Held(Entity->Keyboard, W))
+					{
+						WASDKeysDirection.Y += 1;
+					}
+					if(Held(Entity->Keyboard, D))
+					{
+						WASDKeysDirection.X += 1;
+					}
+					if(Held(Entity->Keyboard, Space))
+					{
+						WASDKeysDirection.Z += 1;
+					}
+
+					if(WASDKeysDirection.X && WASDKeysDirection.Y)
+					{
+						WASDKeysDirection *= inv_root2;
+					}
+
+					Entity->MoveSpec.MovingDirection = Entity->MoveSpec.MoveByInput ? WASDKeysDirection : v3{};
+
+					v2 ArrowKeysDirection = {};
+
+					if(Held(Entity->Keyboard, Down))
+					{
+						ArrowKeysDirection.Y += -1;
+					}
+					if(Held(Entity->Keyboard, Left))
+					{
+						ArrowKeysDirection.X += -1;
+					}
+					if(Held(Entity->Keyboard, Up))
+					{
+						ArrowKeysDirection.Y += 1;
+					}
+					if(Held(Entity->Keyboard, Right))
+					{
+						ArrowKeysDirection.X += 1;
+					}
+
+					if(Clicked(Entity->Keyboard, Q) &&
+						 Entity->Sword)
+					{
+						entity* Sword = Entity->Sword;
+
+						if(!Sword->IsSpacial) { Sword->DistanceRemaining = 20.0f; }
 
 						MakeEntitySpacial(Sword,
 															(Sword->IsSpacial ? 
 															 Sword->P : 
-															 (Entity->P + SimReq->FireSword * Sword->Dim.Y)),
-															SimReq->FireSword * 8.0f,
-															SimReq->FireSword);
-						Sword->DistanceRemaining = 20.0f;
+															 (Entity->P + ArrowKeysDirection * Sword->Dim.Y)),
+															ArrowKeysDirection * 8.0f,
+															ArrowKeysDirection);
 					}
-
-					Entity->MoveSpec.MovingDirection = SimReq->ddP;
 				}
 
 				HunterLogic(Entity);
@@ -1044,7 +950,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		}
 	}
 
-	EndSim(Entities, WorldArena, SimRegion);
+	EndSim(Input, Entities, WorldArena, SimRegion);
 }
 
 	internal_function void

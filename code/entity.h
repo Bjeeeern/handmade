@@ -7,11 +7,13 @@ struct move_spec
 	b32 EnforceHorizontalMovement : 1;
 	b32 EnforceVerticalGravity : 1;
 	b32 AllowRotation : 1;
+	b32 MoveByInput : 1;
 
 	f32 Speed;
 	f32 Drag;
 	f32 AngularDrag;
 
+	//TODO(bjorn): Could this just be ddP?
 	v3 MovingDirection;
 };
 
@@ -55,23 +57,9 @@ struct entity;
 
 typedef entity* entity_reference;
 
-union controller_reference
-{
-	u32 Index_;
-	game_controller* Ptr;
-};
-
-union keyboard_reference
-{
-	u32 Index_;
-	game_keyboard* Ptr;
-};
-
-union mouse_reference
-{
-	u32 Index_;
-	game_mouse* Ptr;
-};
+typedef game_controller* controller_reference;
+typedef game_keyboard* keyboard_reference;
+typedef game_mouse* mouse_reference;
 
 #include "trigger.h"
 
@@ -139,20 +127,23 @@ struct entity
 				struct
 				{
 					//NOTE(bjorn): Car-parts
-					entity_reference Vehicle;
+					//entity_reference Vehicle;
 					//NOTE(bjorn): CarFrame
-					entity_reference Wheels[4];
-					entity_reference DriverSeat;
-					entity_reference Engine;
-
+					//entity_reference Wheels[4];
+					//entity_reference DriverSeat;
+					//entity_reference Engine;
+					entity_reference struct_terminator0_;
 				};
 			};
+			//NOTE(bjorn): Camera
+			entity_reference Player;
+			entity_reference FreeMover;
 			//NOTE(bjorn): Player
 			entity_reference Sword;
-			entity_reference RidingVehicle;
+			//entity_reference RidingVehicle;
 
 			entity_reference Prey;
-			entity_reference struct_terminator_;
+			entity_reference struct_terminator1_;
 		};
 	};
 
@@ -289,6 +280,19 @@ AddHitPoints(entity* Entity, u32 HitPointMax)
 }
 
 	internal_function entity*
+AddInvisibleControllable(sim_region* SimRegion)
+{
+	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered);
+
+	Entity->MoveSpec.MoveByInput = true;
+	Entity->MoveSpec.EnforceHorizontalMovement = true;
+	Entity->MoveSpec.Speed = 80.f * 2.0f;
+	Entity->MoveSpec.Drag = 0.24f * 20.0f;
+
+	return Entity;
+}
+
+	internal_function entity*
 AddSword(sim_region* SimRegion)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Sword);
@@ -312,6 +316,7 @@ AddPlayer(sim_region* SimRegion, v3 InitP)
 	//TODO(bjorn): Why does weight differences matter so much in the collision system.
 	Entity->Mass = 40.0f / 8.0f;
 
+	Entity->MoveSpec.MoveByInput = true;
 	Entity->MoveSpec.EnforceVerticalGravity = true;
 	Entity->MoveSpec.EnforceHorizontalMovement = true;
 	Entity->MoveSpec.Speed = 85.f;

@@ -17,11 +17,9 @@
 
 // QUICK TODO
 //
-// * IMPORTANT Maybe have a global reference struct that gets set up by the sim_region?
-// * C - to switch between an invisible entity and the player for control and
-// to switch camera hunt target
 
 // TODO
+// * Create a perspective camera that is rotatable.
 // * Make it so that I can visually step through a frame of collision.
 // * generate world as you drive
 // * car engine that is settable by mouse click and drag
@@ -302,80 +300,77 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	stored_entities* Entities = &GameState->Entities;
 
 	//
-	//NOTE(bjorn): Gather input for this frame.
+	//NOTE(bjorn): General input logic unrelated to individual entities.
 	//
+	for(s32 ControllerIndex = 1;
+			ControllerIndex <= ArrayCount(Input->Controllers);
+			ControllerIndex++)
 	{
-		for(s32 ControllerIndex = 1;
-				ControllerIndex <= ArrayCount(Input->Controllers);
-				ControllerIndex++)
+		game_controller* Controller = GetController(Input, ControllerIndex);
+		if(Controller->IsConnected)
 		{
-			game_controller* Controller = GetController(Input, ControllerIndex);
-			if(Controller->IsConnected)
 			{
-				{
-					//SimReq->ddP = Controller->LeftStick.End;
+				//SimReq->ddP = Controller->LeftStick.End;
 
 #if 0
-					//TODO IMPORTANT Collect the relevant interpretation of the input and
-					//pass it on to the game logic.
-					ControlledEntity->ddP = InputDirection * 85.0f;
+				//TODO IMPORTANT Collect the relevant interpretation of the input and
+				//pass it on to the game logic.
+				ControlledEntity->ddP = InputDirection * 85.0f;
 #endif
 
-					if(Clicked(Controller, Start))
-					{
-						//TODO(bjorn) Implement RemoveEntity();
-						//GameState->EntityResidencies[ControlledEntityIndex] = EntityResidence_Nonexistent;
-						//GameState->PlayerIndexForController[ControllerIndex] = 0;
-					}
-				}
-				//else
+				if(Clicked(Controller, Start))
 				{
-					if(Clicked(Controller, Start))
-					{
-						//v3 OffsetInTiles = GetChunkPosFromAbsTile(WorldMap, v3s{-2, 1, 0}).Offset_;
-						//world_map_position InitP = OffsetWorldPos(WorldMap, GameState->CameraP, OffsetInTiles);
+					//TODO(bjorn) Implement RemoveEntity();
+					//GameState->EntityResidencies[ControlledEntityIndex] = EntityResidence_Nonexistent;
+					//GameState->PlayerIndexForController[ControllerIndex] = 0;
+				}
+			}
+			//else
+			{
+				if(Clicked(Controller, Start))
+				{
+					//v3 OffsetInTiles = GetChunkPosFromAbsTile(WorldMap, v3s{-2, 1, 0}).Offset_;
+					//world_map_position InitP = OffsetWorldPos(WorldMap, GameState->CameraP, OffsetInTiles);
 
-						//SimReq->PlayerStorageIndex = AddPlayer(SimRegion, InitP);
-					}
+					//SimReq->PlayerStorageIndex = AddPlayer(SimRegion, InitP);
 				}
 			}
 		}
+	}
 
-		for(s32 KeyboardIndex = 1;
-				KeyboardIndex <= ArrayCount(Input->Keyboards);
-				KeyboardIndex++)
+	for(s32 KeyboardIndex = 1;
+			KeyboardIndex <= ArrayCount(Input->Keyboards);
+			KeyboardIndex++)
+	{
+		game_keyboard* Keyboard = GetKeyboard(Input, KeyboardIndex);
+		if(Keyboard->IsConnected)
 		{
-			game_keyboard* Keyboard = GetKeyboard(Input, KeyboardIndex);
-			if(Keyboard->IsConnected)
-			{
 #if HANDMADE_INTERNAL
-				if(Clicked(Keyboard, Q))
-				{
-					GameState->NoteTone = 500.0f;
-					GameState->NoteDuration = 0.05f;
-					GameState->NoteSecondsPassed = 0.0f;
+			if(Clicked(Keyboard, Q))
+			{
+				GameState->NoteTone = 500.0f;
+				GameState->NoteDuration = 0.05f;
+				GameState->NoteSecondsPassed = 0.0f;
 
-					//TODO STUDY(bjorn): Just setting the flag is not working anymore.
-					//Memory->IsInitialized = false;
+				//TODO STUDY(bjorn): Just setting the flag is not working anymore.
+				//Memory->IsInitialized = false;
 
-					GameState->DEBUG_StepThroughTheCollisionLoop = 
-						!GameState->DEBUG_StepThroughTheCollisionLoop;
-					GameState->DEBUG_CollisionLoopEntity = 0;
-					GameState->DEBUG_CollisionLoopStepIndex = 0;
-				}
+				GameState->DEBUG_StepThroughTheCollisionLoop = !GameState->DEBUG_StepThroughTheCollisionLoop;
+				GameState->DEBUG_CollisionLoopEntity = 0;
+				GameState->DEBUG_CollisionLoopStepIndex = 0;
+			}
 
-				if(GameState->DEBUG_StepThroughTheCollisionLoop && Clicked(Keyboard, Space))
-				{
-					GameState->DEBUG_CollisionLoopAdvance = true;
-					GameState->DEBUG_CollisionLoopAdvance = true;
-				}
+			if(GameState->DEBUG_StepThroughTheCollisionLoop && Clicked(Keyboard, Space))
+			{
+				GameState->DEBUG_CollisionLoopAdvance = true;
+				GameState->DEBUG_CollisionLoopAdvance = true;
+			}
 #endif
 
-				if(Clicked(Keyboard, M))
-				{
-					GameState->DEBUG_VisualiseMinkowskiSum = !GameState->DEBUG_VisualiseMinkowskiSum;
-					GameState->DEBUG_VisualiseCollisionBox = !GameState->DEBUG_VisualiseCollisionBox;
-				}
+			if(Clicked(Keyboard, M))
+			{
+				GameState->DEBUG_VisualiseMinkowskiSum = !GameState->DEBUG_VisualiseMinkowskiSum;
+				GameState->DEBUG_VisualiseCollisionBox = !GameState->DEBUG_VisualiseCollisionBox;
 			}
 		}
 	}
@@ -398,18 +393,24 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	// NOTE(bjorn): Create sim region by camera
 	//
-	stored_entity* StoredMainCamera = GetStoredEntityByIndex(Entities, 
-																														 GameState->MainCameraStorageIndex);
-	sim_region* SimRegion = BeginSim(Input, Entities, &(GameState->SimArena), WorldMap, 
-																	 StoredMainCamera->Sim.WorldP, GameState->CameraUpdateBounds, 
-																	 SecondsToUpdate);
 
+	sim_region* SimRegion = 0;
+	{
+		stored_entity* StoredMainCamera = GetStoredEntityByIndex(Entities, 
+																														 GameState->MainCameraStorageIndex);
+		SimRegion = BeginSim(Input, Entities, &(GameState->SimArena), WorldMap, 
+												 StoredMainCamera->Sim.WorldP, GameState->CameraUpdateBounds, 
+												 SecondsToUpdate);
+	}
 
 	//TODO(bjorn): Implement step 2 in J.Blows framerate independence video.
 	// https://www.youtube.com/watch?v=fdAOPHgW7qM
 	//TODO(bjorn): Add some asserts and some limits to velocities related to the
 	//delta time so that tunneling becomes virtually impossible.
-	u32 Steps = 8;
+	u32 Steps = 8; 
+	//NOTE(bjorn): Asserts at least one iteration to find the main camera entity pointer.
+	Assert(Steps > 1);
+	entity* MainCamera = 0;
 	u32 LastStep = Steps;
 	f32 dT = SecondsToUpdate / (f32)Steps;
 	for(u32 Step = 1;
@@ -425,6 +426,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			//TODO Do non-spacial entities ever do logic/Render? Do they affect other entities then? 
 			if(!Entity->IsSpacial) { continue; }
 
+			if(!MainCamera && Entity->Player && Entity->FreeMover) { MainCamera = Entity; }
 			//
 			// NOTE(bjorn): Moving / Collision / Game Logic
 			//
@@ -600,7 +602,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				v3 OldP = Entity->P;
 
-				if(Step == LastStep && //TODO(bjorn): This is easy to forget. Conceptualize?
+				if(Step == 1 && //TODO(bjorn): This is easy to forget. Conceptualize?
 					 Entity->Keyboard && 
 					 Entity->Keyboard->IsConnected)
 				{
@@ -613,17 +615,20 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							MakeEntitySpacial(Entity->FreeMover, Entity->P);
 							Entity->Player->MoveSpec.MoveByInput = false;
 							Entity->Prey = Entity->FreeMover;
+							Entity->MoveSpec.Speed = Entity->FreeMover->MoveSpec.Speed;
+							Entity->MoveSpec.Drag = Entity->FreeMover->MoveSpec.Drag;
 						}
 						else if(Entity->Prey == Entity->FreeMover)
 						{
 							MakeEntityNonSpacial(Entity->FreeMover);
 							Entity->Player->MoveSpec.MoveByInput = true;
 							Entity->Prey = Entity->Player;
+							Entity->MoveSpec.Speed = Entity->Player->MoveSpec.Speed;
+							Entity->MoveSpec.Drag = Entity->Player->MoveSpec.Drag;
 						}
 					}
 
 					v3 WASDKeysDirection = {};
-
 					if(Held(Entity->Keyboard, S))
 					{
 						WASDKeysDirection.Y += -1;
@@ -653,7 +658,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					Entity->MoveSpec.MovingDirection = Entity->MoveSpec.MoveByInput ? WASDKeysDirection : v3{};
 
 					v2 ArrowKeysDirection = {};
-
 					if(Held(Entity->Keyboard, Down))
 					{
 						ArrowKeysDirection.Y += -1;
@@ -678,12 +682,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 						if(!Sword->IsSpacial) { Sword->DistanceRemaining = 20.0f; }
 
-						MakeEntitySpacial(Sword,
-															(Sword->IsSpacial ? 
-															 Sword->P : 
-															 (Entity->P + ArrowKeysDirection * Sword->Dim.Y)),
-															ArrowKeysDirection * 8.0f,
-															ArrowKeysDirection);
+						v3 P = (Sword->IsSpacial ?  Sword->P : (Entity->P + ArrowKeysDirection * Sword->Dim.Y));
+						MakeEntitySpacial(Sword, P, ArrowKeysDirection * 8.0f, ArrowKeysDirection);
 					}
 				}
 
@@ -727,12 +727,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			//
 			if(Step == LastStep)
 			{
+				Assert(MainCamera);
+
 				v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
 
 				v2 CollisionMarkerPixelDim = Hadamard(Entity->Dim.XY, {PixelsPerMeter, PixelsPerMeter});
 				m22 GameSpaceToScreenSpace = 
 				{PixelsPerMeter, 0             ,
-					0             ,-PixelsPerMeter};
+					0            ,-PixelsPerMeter};
 
 				v2 EntityCameraPixelDelta = GameSpaceToScreenSpace * Entity->P.XY;
 				v2 EntityPixelPos = ScreenCenter + EntityCameraPixelDelta;

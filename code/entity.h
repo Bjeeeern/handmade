@@ -211,8 +211,7 @@ GetEntityVertices(entity* Entity)
 													{ 0.5f, -0.5f}, 
 													{-0.5f, -0.5f}};
 	
-	m22 Transform = M22(CW90M22() * Entity->R.XY, 
-											Entity->R.XY);
+	m22 Transform = M22ByCol(CW90M22() * Entity->R.XY, Entity->R.XY);
 	for(u32 VertexIndex = 0; 
 			VertexIndex < Result.Count; 
 			VertexIndex++)
@@ -596,14 +595,8 @@ MoveEntity(entity* Entity, f32 dT)
 
 	A += 0.5f * ddA * Square(dT) + dA * dT;
 	dA += ddA * dT;
-	if(A > tau32)
-	{
-		A -= FloorF32ToS32(A / tau32) * tau32;
-	}
-	else if(A < 0)
-	{
-		A += RoofF32ToS32(Absolute(A) / tau32) * tau32;
-	}
+	A = Modulate0(A, tau32);
+
 	R.XY = CCWM22(A) * DefaultEntityOrientation().XY;
 	R = Normalize(R);
 

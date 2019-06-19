@@ -209,8 +209,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 			i < 6;
 			i++)
 	{
-		E[i] = AddWall(SimRegion, v3{2.0f + 2.0f*i, 2.0f, 0.0f} * WorldMap->TileSideInMeters, 
-									 10.0f + i);
+		E[i] = AddWall(SimRegion, v3{2.0f + 2.0f*i, 2.0f, 0.0f} * WorldMap->TileSideInMeters, 10.0f + i);
 		E[i]->dP = {2.0f-i, -2.0f+i};
 	}
 

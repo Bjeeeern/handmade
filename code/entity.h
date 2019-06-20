@@ -101,6 +101,11 @@ struct entity
 
 	v3 Dim;
 
+	v2 CamRot;
+	v2 dCamRot;
+	v2 ddCamRot;
+	v2 TargetCamRot;
+
 	f32 Mass;
 	move_spec MoveSpec;
 	f32 GroundFriction;

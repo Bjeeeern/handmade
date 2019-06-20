@@ -409,7 +409,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	u32 Steps = 8; 
 	//NOTE(bjorn): Asserts at least one iteration to find the main camera entity pointer.
 	Assert(Steps > 1);
+
 	entity* MainCamera = 0;
+	m33 RotMat = M33Identity();
+
 	u32 LastStep = Steps;
 	f32 dT = SecondsToUpdate / (f32)Steps;
 	for(u32 Step = 1;
@@ -425,7 +428,15 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			//TODO Do non-spacial entities ever do logic/Render? Do they affect other entities then? 
 			if(!Entity->IsSpacial) { continue; }
 
-			if(!MainCamera && Entity->Player && Entity->FreeMover) { MainCamera = Entity; }
+			if(!MainCamera && Entity->Player && Entity->FreeMover) 
+			{ 
+				MainCamera = Entity; 
+
+				//TODO(bjorn): Remove this hack as soon as I have full 3D rotations
+				//going on for all entites!!!
+				RotMat = ZRotationMatrix(MainCamera->CamRot.X) * XRotationMatrix(MainCamera->CamRot.Y);
+			}
+
 			//
 			// NOTE(bjorn): Moving / Collision / Game Logic
 			//
@@ -605,28 +616,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					 Entity->Keyboard && 
 					 Entity->Keyboard->IsConnected)
 				{
-					if(Clicked(Entity->Keyboard, C) &&
-						 Entity->FreeMover && 
-						 Entity->Player)
-					{
-						if(Entity->Prey == Entity->Player)
-						{
-							MakeEntitySpacial(Entity->FreeMover, Entity->P);
-							Entity->Player->MoveSpec.MoveByInput = false;
-							Entity->Prey = Entity->FreeMover;
-							Entity->MoveSpec.Speed = Entity->FreeMover->MoveSpec.Speed;
-							Entity->MoveSpec.Drag = Entity->FreeMover->MoveSpec.Drag;
-						}
-						else if(Entity->Prey == Entity->FreeMover)
-						{
-							MakeEntityNonSpacial(Entity->FreeMover);
-							Entity->Player->MoveSpec.MoveByInput = true;
-							Entity->Prey = Entity->Player;
-							Entity->MoveSpec.Speed = Entity->Player->MoveSpec.Speed;
-							Entity->MoveSpec.Drag = Entity->Player->MoveSpec.Drag;
-						}
-					}
-
 					v3 WASDKeysDirection = {};
 					if(Held(Entity->Keyboard, S))
 					{
@@ -648,7 +637,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					{
 						WASDKeysDirection.Z += 1;
 					}
-
 					if(WASDKeysDirection.X && WASDKeysDirection.Y)
 					{
 						WASDKeysDirection *= inv_root2;
@@ -673,6 +661,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					{
 						ArrowKeysDirection.X += 1;
 					}
+					if(ArrowKeysDirection.X && ArrowKeysDirection.Y)
+					{
+						ArrowKeysDirection *= inv_root2;
+					}
 
 					if(Clicked(Entity->Keyboard, Q) &&
 						 Entity->Sword)
@@ -683,6 +675,42 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 						v3 P = (Sword->IsSpacial ?  Sword->P : (Entity->P + ArrowKeysDirection * Sword->Dim.Y));
 						MakeEntitySpacial(Sword, P, ArrowKeysDirection * 8.0f, ArrowKeysDirection);
+					}
+
+					if(Entity->FreeMover && 
+						 Entity->Player)
+					{
+						if(Clicked(Entity->Keyboard, C))
+						{
+							if(Entity->Prey == Entity->Player)
+							{
+								MakeEntitySpacial(Entity->FreeMover, Entity->P);
+								Entity->Player->MoveSpec.MoveByInput = false;
+								Entity->Prey = Entity->FreeMover;
+								Entity->MoveSpec.Speed = Entity->FreeMover->MoveSpec.Speed;
+								Entity->MoveSpec.Drag = Entity->FreeMover->MoveSpec.Drag;
+							}
+							else if(Entity->Prey == Entity->FreeMover)
+							{
+								MakeEntityNonSpacial(Entity->FreeMover);
+								Entity->Player->MoveSpec.MoveByInput = true;
+								Entity->Prey = Entity->Player;
+								Entity->MoveSpec.Speed = Entity->Player->MoveSpec.Speed;
+								Entity->MoveSpec.Drag = Entity->Player->MoveSpec.Drag;
+							}
+						}
+
+						//TODO(bjorn): Remove this hack as soon as I have full 3D rotations
+						//going on for all entites!!!
+						f32 RotSpeed = tau32 * SecondsToUpdate * 0.1f;
+
+						//TODO Smoother rotation.
+#if 0
+						f32 MinimumHuntRangeSquared = Square(0.1f);
+						Entity->TargetCamRot += Modulate0(ArrowKeysDirection * RotSpeed, tau32);
+#endif
+						Entity->dCamRot = ArrowKeysDirection * RotSpeed;
+						Entity->CamRot = Modulate0(Entity->CamRot + Entity->dCamRot, tau32);
 					}
 				}
 
@@ -730,14 +758,24 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
 
-				v2 CollisionMarkerPixelDim = Hadamard(Entity->Dim.XY, {PixelsPerMeter, PixelsPerMeter});
+				v3 CamP = RotMat * v3{1,0,0};
+
+				v3 P = RotMat * (Entity->P - CamP);
+				f32 de = 4.2f;
+				f32 dp = 1.0f;
+				f32 s = -P.Z + (de+dp);
+				if(s < de*0.1) { continue; }
+				f32 f = de/s;
+				P.XY *= f;
+
+				v2 CollisionMarkerPixelDim = Hadamard(Entity->Dim.XY * f, {PixelsPerMeter, PixelsPerMeter});
 				m22 GameSpaceToScreenSpace = 
 				{PixelsPerMeter, 0             ,
 					0            ,-PixelsPerMeter};
 
-				v2 EntityCameraPixelDelta = GameSpaceToScreenSpace * Entity->P.XY;
+				v2 EntityCameraPixelDelta = GameSpaceToScreenSpace * P.XY;
 				v2 EntityPixelPos = ScreenCenter + EntityCameraPixelDelta;
-				f32 ZPixelOffset = PixelsPerMeter * -Entity->P.Z;
+				f32 ZPixelOffset = 0;//PixelsPerMeter * -Entity->P.Z;
 
 				if(LenghtSquared(Entity->dP) != 0.0f)
 				{
@@ -774,7 +812,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 												LightYellow);
 #endif
 					DrawBitmap(Buffer, &GameState->Rock, EntityPixelPos - GameState->Rock.Alignment, 
-										 (v2)GameState->Rock.Dim);
+										 (v2)GameState->Rock.Dim * f);
 				}
 				if(Entity->VisualType == EntityVisualType_Ground)
 				{
@@ -863,7 +901,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							HitPointIndex++)
 					{
 						v2 HitPointDim = {0.15f, 0.3f};
-						v2 HitPointPos = Entity->P.XY;
+						v2 HitPointPos = P.XY;
 						HitPointPos.Y -= 0.3f;
 						HitPointPos.X += ((HitPointIndex - (Entity->HitPointMax-1) * 0.5f) * 
 															HitPointDim.X * 1.5f);

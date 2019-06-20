@@ -17,6 +17,8 @@
 
 // QUICK TODO
 //
+// * Solve weird entity storage artefact when jumping to the next level.
+// * Rendering artefact making player not center in screen.
 
 // TODO
 // * Create a perspective camera that is rotatable.
@@ -434,7 +436,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				//TODO(bjorn): Remove this hack as soon as I have full 3D rotations
 				//going on for all entites!!!
-				RotMat = ZRotationMatrix(MainCamera->CamRot.X) * XRotationMatrix(MainCamera->CamRot.Y);
+				m33 XRot = XRotationMatrix(MainCamera->CamRot.Y);
+				RotMat = AxisRotationMatrix(MainCamera->CamRot.X, GetMatCol(XRot, 2)) * XRot;
 			}
 
 			//
@@ -702,14 +705,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 						//TODO(bjorn): Remove this hack as soon as I have full 3D rotations
 						//going on for all entites!!!
-						f32 RotSpeed = tau32 * SecondsToUpdate * 0.1f;
+						v2 RotSpeed = v2{-1, 1} * (tau32 * SecondsToUpdate * 0.2f);
 
 						//TODO Smoother rotation.
 #if 0
 						f32 MinimumHuntRangeSquared = Square(0.1f);
 						Entity->TargetCamRot += Modulate0(ArrowKeysDirection * RotSpeed, tau32);
 #endif
-						Entity->dCamRot = ArrowKeysDirection * RotSpeed;
+						Entity->dCamRot = Hadamard(ArrowKeysDirection, RotSpeed);
 						Entity->CamRot = Modulate0(Entity->CamRot + Entity->dCamRot, tau32);
 					}
 				}
@@ -761,7 +764,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				v3 CamP = RotMat * v3{1,0,0};
 
 				v3 P = RotMat * (Entity->P - CamP);
-				f32 de = 4.2f;
+				f32 de = 20.0f;
 				f32 dp = 1.0f;
 				f32 s = -P.Z + (de+dp);
 				if(s < de*0.1) { continue; }

@@ -2,7 +2,7 @@
 #include "memory.h"
 #include "world_map.h"
 #include "random.h"
-#include "renderer.h"
+#include "render_group.h"
 #include "resource.h"
 #include "sim_region.h"
 #include "entity.h"
@@ -167,7 +167,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	WorldMap->TileSideInMeters = 1.4f;
 	WorldMap->ChunkSideInMeters = WorldMap->TileSideInMeters * TILES_PER_CHUNK;
 
-	InitializeArena(&GameState->TransientArena, Memory->TransientStorageSize >> 2, 
+	InitializeArena(&GameState->TransientArena, Memory->TransientStorageSize, 
 									(u8*)Memory->TransientStorage);
 
 	u32 RoomWidthInTiles = 17;
@@ -212,7 +212,8 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 			i < 6;
 			i++)
 	{
-		E[i] = AddWall(SimRegion, v3{2.0f + 2.0f*i, 2.0f, 0.0f} * WorldMap->TileSideInMeters, 10.0f + i);
+		E[i] = AddWall(SimRegion, v3{2.0f + 2.0f*i, 2.0f, 0.0f} * WorldMap->TileSideInMeters, 
+									 10.0f + i);
 		E[i]->dP = {2.0f-i, -2.0f+i};
 	}
 
@@ -397,12 +398,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	temporary_memory TempMem = BeginTemporaryMemory(TransientArena);
 	sim_region* SimRegion = 0;
 	{
-		stored_entity* StoredMainCamera = GetStoredEntityByIndex(Entities, 
-																														 GameState->MainCameraStorageIndex);
+		u64 MainCamIndex = GameState->MainCameraStorageIndex;
+		stored_entity* StoredMainCamera = GetStoredEntityByIndex(Entities, MainCamIndex);
 		SimRegion = BeginSim(Input, Entities, TransientArena, WorldMap, 
 												 StoredMainCamera->Sim.WorldP, GameState->CameraUpdateBounds, 
 												 SecondsToUpdate);
 	}
+
+	render_group* RenderGroup = AllocateRenderGroup(TransientArena);
 
 	//TODO(bjorn): Implement step 2 in J.Blows framerate independence video.
 	// https://www.youtube.com/watch?v=fdAOPHgW7qM
@@ -413,7 +416,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	Assert(Steps > 1);
 
 	entity* MainCamera = 0;
-	m33 RotMat = M33Identity();
 
 	u32 LastStep = Steps;
 	f32 dT = SecondsToUpdate / (f32)Steps;
@@ -433,11 +435,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			if(!MainCamera && Entity->Player && Entity->FreeMover) 
 			{ 
 				MainCamera = Entity; 
-
-				//TODO(bjorn): Remove this hack as soon as I have full 3D rotations
-				//going on for all entites!!!
-				m33 XRot = XRotationMatrix(MainCamera->CamRot.Y);
-				RotMat = AxisRotationMatrix(MainCamera->CamRot.X, GetMatCol(XRot, 2)) * XRot;
 			}
 
 			//
@@ -582,6 +579,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					{
 						if(GameState->DEBUG_VisualiseMinkowskiSum)
 						{
+#if 0 
 							v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
 							m22 GameSpaceToScreenSpace = 
 							{PixelsPerMeter, 0             ,
@@ -596,16 +594,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							{
 								entity* Target = Entity == Player ? OtherEntity : Entity;
 								DEBUGMinkowskiSum(Buffer, Target, Player, GameSpaceToScreenSpace, ScreenCenter);
-							}
-#if 0 
-							entity* CarFrame = GetEntityOfVisualType(EntityVisualType_CarFrame, 
-																											 Entity, OtherEntity);
-							if(CarFrame &&
-								 CarFrame->DriverSeat &&
-								 CarFrame->DriverSeat->StorageIndex == Player1StorageIndex)
-							{
-								entity* Target = GetRemainingEntity(CarFrame, Entity, OtherEntity);
-								DEBUGMinkowskiSum(Buffer, Target, CarFrame, GameSpaceToScreenSpace, ScreenCenter);
 							}
 #endif
 						}
@@ -712,8 +700,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						f32 MinimumHuntRangeSquared = Square(0.1f);
 						Entity->TargetCamRot += Modulate0(ArrowKeysDirection * RotSpeed, tau32);
 #endif
-						Entity->dCamRot = Hadamard(ArrowKeysDirection, RotSpeed);
-						Entity->CamRot = Modulate0(Entity->CamRot + Entity->dCamRot, tau32);
+						v2 dCamRot = Hadamard(ArrowKeysDirection, RotSpeed);
+						Entity->CamRot = Modulate0(Entity->CamRot + dCamRot, tau32);
 					}
 				}
 
@@ -753,33 +741,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			}
 
 			//
-			// NOTE(bjorn): Rendering
+			// NOTE(bjorn): Push to render buffer
 			//
 			if(Step == LastStep)
 			{
-				Assert(MainCamera);
-
-				v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
-
-				v3 CamP = RotMat * v3{1,0,0};
-
-				v3 P = RotMat * (Entity->P - CamP);
-				f32 de = 20.0f;
-				f32 dp = 1.0f;
-				f32 s = -P.Z + (de+dp);
-				if(s < de*0.1) { continue; }
-				f32 f = de/s;
-				P.XY *= f;
-
-				v2 CollisionMarkerPixelDim = Hadamard(Entity->Dim.XY * f, {PixelsPerMeter, PixelsPerMeter});
-				m22 GameSpaceToScreenSpace = 
-				{PixelsPerMeter, 0             ,
-					0            ,-PixelsPerMeter};
-
-				v2 EntityCameraPixelDelta = GameSpaceToScreenSpace * P.XY;
-				v2 EntityPixelPos = ScreenCenter + EntityCameraPixelDelta;
-				f32 ZPixelOffset = 0;//PixelsPerMeter * -Entity->P.Z;
-
 				if(LenghtSquared(Entity->dP) != 0.0f)
 				{
 					if(Absolute(Entity->dP.X) > Absolute(Entity->dP.Y))
@@ -792,108 +757,40 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					}
 				}
 
-				if(Entity->VisualType == EntityVisualType_Stair)
-				{
-					v3 StairColor = {};
-					if(Entity->dZ == 1)
-					{
-						v3 LightGreen = {0.5f, 1, 0.5f};
-						StairColor = LightGreen;
-					}
-					if(Entity->dZ == -1)
-					{
-						v3 LightRed = {1, 0.5f, 0.5f};
-						StairColor = LightRed;
-					}
-					DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), StairColor);
-				}
 				if(Entity->VisualType == EntityVisualType_Wall)
 				{
-#if 0
-					v3 LightYellow = {0.5f, 0.5f, 0.0f};
-					DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim * 0.9f),
-												LightYellow);
-#endif
-					DrawBitmap(Buffer, &GameState->Rock, EntityPixelPos - GameState->Rock.Alignment, 
-										 (v2)GameState->Rock.Dim * f);
-				}
-				if(Entity->VisualType == EntityVisualType_Ground)
-				{
-#if 1
-					DrawBitmap(Buffer, &GameState->Dirt, EntityPixelPos - GameState->Dirt.Alignment, 
-										 (v2)GameState->Dirt.Dim * 1.2f);
-#else
-					v3 LightBrown = {0.55f, 0.45f, 0.33f};
-					DrawRectangle(Buffer, 
-												RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim * 0.9f), LightBrown);
-#endif
-				}
-				if(Entity->VisualType == EntityVisualType_Wheel ||
-					 Entity->VisualType == EntityVisualType_CarFrame ||
-					 Entity->VisualType == EntityVisualType_Engine)
-				{
-					v3 Color = {1, 1, 1};
-					if(Entity->VisualType == EntityVisualType_Engine) { Color = {0, 1, 0}; }
-					if(Entity->VisualType == EntityVisualType_Wheel) { Color = {0.2f, 0.2f, 0.2f}; }
-
-					DrawFrame(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), 
-										Entity->R.XY, Color);
-					DrawLine(Buffer, EntityPixelPos, EntityPixelPos + 
-									 Hadamard(Entity->R.XY, v2{1, -1}) * 40.0f, {1, 0, 0});
-#if 0
-					DrawBitmap(Buffer, &GameState->Dirt, EntityPixelPos - GameState->Dirt.Alignment, 
-										 (v2)GameState->Dirt.Dim * 1.2f);
-#endif
+					PushRenderPiece(RenderGroup, Entity->P, &GameState->Rock);
 				}
 
-				f32 ZAlpha = Clamp01(1.0f - (Entity->P.Z / 2.0f));
 				if(Entity->VisualType == EntityVisualType_Player)
 				{
-					v3 Yellow = {1.0f, 1.0f, 0.0f};
-					//DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), Yellow);
-
 					hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
 
-					DrawBitmap(Buffer, &GameState->Shadow, EntityPixelPos - GameState->Shadow.Alignment, 
-										 (v2)GameState->Shadow.Dim, ZAlpha);
-					DrawBitmap(Buffer, &Hero->Torso, 
-										 EntityPixelPos + v2{0, ZPixelOffset} - Hero->Torso.Alignment, 
-										 (v2)Hero->Torso.Dim);
-					DrawBitmap(Buffer, &Hero->Cape, 
-										 EntityPixelPos + v2{0, ZPixelOffset} - Hero->Cape.Alignment, 
-										 (v2)Hero->Cape.Dim);
-					DrawBitmap(Buffer, &Hero->Head, 
-										 EntityPixelPos + v2{0, ZPixelOffset} - Hero->Head.Alignment, 
-										 (v2)Hero->Head.Dim);
+					f32 ZAlpha = Clamp01(1.0f - (Entity->P.Z / 2.0f));
+					PushRenderPiece(RenderGroup, Entity->P, &GameState->Shadow, {1, 1, 1, ZAlpha});
+					PushRenderPiece(RenderGroup, Entity->P, &Hero->Torso);
+					PushRenderPiece(RenderGroup, Entity->P, &Hero->Cape);
+					PushRenderPiece(RenderGroup, Entity->P, &Hero->Head);
 				}
 				if(Entity->VisualType == EntityVisualType_Monstar)
 				{
-					v3 Yellow = {1.0f, 1.0f, 0.0f};
-					//DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), Yellow);
-
 					hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
 
-					DrawBitmap(Buffer, &GameState->Shadow, EntityPixelPos - GameState->Shadow.Alignment, 
-										 (v2)GameState->Shadow.Dim, ZAlpha);
-					DrawBitmap(Buffer, &Hero->Torso, EntityPixelPos - Hero->Torso.Alignment, 
-										 (v2)Hero->Torso.Dim);
+					f32 ZAlpha = Clamp01(1.0f - (Entity->P.Z / 2.0f));
+					PushRenderPiece(RenderGroup, Entity->P, &GameState->Shadow, {1, 1, 1, ZAlpha});
+					PushRenderPiece(RenderGroup, Entity->P, &Hero->Torso);
 				}
 				if(Entity->VisualType == EntityVisualType_Familiar)
 				{
-					v3 Yellow = {1.0f, 1.0f, 0.0f};
-					//DrawRectangle(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), Yellow);
-
 					hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
 
-					DrawBitmap(Buffer, &GameState->Shadow, EntityPixelPos - GameState->Shadow.Alignment, 
-										 (v2)GameState->Shadow.Dim, 0.2f);
-					DrawBitmap(Buffer, &Hero->Head, EntityPixelPos - Hero->Head.Alignment, 
-										 (v2)Hero->Head.Dim);
+					f32 ZAlpha = Clamp01(1.0f - ((Entity->P.Z + 1.4f) / 2.0f));
+					PushRenderPiece(RenderGroup, Entity->P, &GameState->Shadow, {1, 1, 1, ZAlpha});
+					PushRenderPiece(RenderGroup, Entity->P, &Hero->Head);
 				}
 				if(Entity->VisualType == EntityVisualType_Sword)
 				{
-					DrawBitmap(Buffer, &GameState->Sword, EntityPixelPos - GameState->Sword.Alignment, 
-										 (v2)GameState->Sword.Dim, 1.0f);
+					PushRenderPiece(RenderGroup, Entity->P, &GameState->Sword);
 				}
 
 				if(Entity->VisualType == EntityVisualType_Monstar ||
@@ -904,22 +801,17 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							HitPointIndex++)
 					{
 						v2 HitPointDim = {0.15f, 0.3f};
-						v2 HitPointPos = P.XY;
+						v2 HitPointPos = Entity->P.XY;
 						HitPointPos.Y -= 0.3f;
 						HitPointPos.X += ((HitPointIndex - (Entity->HitPointMax-1) * 0.5f) * 
 															HitPointDim.X * 1.5f);
-
-						v2 HitPointPixelPos = ScreenCenter + (GameSpaceToScreenSpace * HitPointPos);
-						v2 HitPointPixelDim = Hadamard(HitPointDim, {PixelsPerMeter, PixelsPerMeter});
 
 						hit_point HP = Entity->HitPoints[HitPointIndex];
 						if(HP.FilledAmount == HIT_POINT_SUB_COUNT)
 						{
 							v3 Green = {0.0f, 1.0f, 0.0f};
 
-							rectangle2 GreenRect = RectCenterDim(HitPointPixelPos, HitPointPixelDim);
-
-							DrawRectangle(Buffer, GreenRect, Green);
+							PushRenderPiece(RenderGroup, HitPointPos, HitPointDim, V4(Green, 1.0f));
 						}
 						else if(HP.FilledAmount < HIT_POINT_SUB_COUNT &&
 										HP.FilledAmount > 0)
@@ -927,23 +819,15 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							v3 Green = {0.0f, 1.0f, 0.0f};
 							v3 Red = {1.0f, 0.0f, 0.0f};
 
-							rectangle2 RedRect = RectCenterDim(HitPointPixelPos, HitPointPixelDim);
-							v2 GreenRectMax = HitPointPixelPos + HitPointPixelDim * 0.5f;
-							v2 GreenRectMin = HitPointPixelPos - HitPointPixelDim * 0.5f;
-							GreenRectMin.Y += ((HitPointPixelDim.Y/HIT_POINT_SUB_COUNT) * 
-																 (HIT_POINT_SUB_COUNT - HP.FilledAmount));
-							rectangle2 GreenRect = RectMinMax(GreenRectMin, GreenRectMax);
-
-							DrawRectangle(Buffer, RedRect, Red);
-							DrawRectangle(Buffer, GreenRect, Green);
+							//TODO(bjorn): How to push this relative to the screen?
+							//PushRenderPiece(RenderGroup, HitPointPos, HitPointDim, (v4)Red);
+							//PushRenderPiece(RenderGroup, HitPointPos, HitPointDim, (v4)Green);
 						}
 						else
 						{
 							v3 Red = {1.0f, 0.0f, 0.0f};
 
-							rectangle2 RedRect = RectCenterDim(HitPointPixelPos, HitPointPixelDim);
-
-							DrawRectangle(Buffer, RedRect, Red);
+							PushRenderPiece(RenderGroup, HitPointPos, HitPointDim, V4(Red, 1.0f));
 						}
 					}
 				}
@@ -951,48 +835,79 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #if HANDMADE_INTERNAL
 				if(GameState->DEBUG_VisualiseCollisionBox)
 				{
-					vertices Verts = GetEntityVertices(Entity);
-					for(u32 VertIndex = 0; VertIndex < Verts.Count; VertIndex++)
-					{
-						v2 V0 = Verts.Verts[VertIndex].XY;
-						v2 V1 = Verts.Verts[(VertIndex+1) % Verts.Count].XY;
-						DrawLine(Buffer, 
-										 ScreenCenter + GameSpaceToScreenSpace * V0, 
-										 ScreenCenter + GameSpaceToScreenSpace * V1, 
-										 {0, 0, 1});
-
-						v2 WallNormal = Normalize(CCW90M22() * (V1 - V0));
-						v3 NormalColor = {1, 0, 1};
-
-						DrawLine(Buffer, 
-										 ScreenCenter + GameSpaceToScreenSpace * (V0 + V1) * 0.5f, 
-										 ScreenCenter + GameSpaceToScreenSpace * 
-										 ((V0 + V1) * 0.5f + WallNormal * 0.2f), 
-										 NormalColor);
-					}
-				}
-
-				if(GameState->DEBUG_StepThroughTheCollisionLoop)
-				{
-					if(Entity == GameState->DEBUG_CollisionLoopEntity) 
-					{
-						DrawFrame(Buffer, RectCenterDim(EntityPixelPos, CollisionMarkerPixelDim), 
-											Entity->R.XY, {1.0f, 0.0f, 0.0f});
-
-						EntityCameraPixelDelta = 
-							GameSpaceToScreenSpace * GameState->DEBUG_CollisionLoopEstimatedPos.XY;
-
-						v2 NextEntityPixelPos = ScreenCenter + EntityCameraPixelDelta;
-						DrawFrame(Buffer, RectCenterDim(NextEntityPixelPos, CollisionMarkerPixelDim), 
-											Entity->R.XY, {0.0f, 0.0f, 1.0f});
-					}
+					PushRenderPiece(RenderGroup, Entity->P, Entity->Dim);
 				}
 #endif
 			}
 		}
 	}
-
 	EndSim(Input, Entities, WorldArena, SimRegion);
+
+	//
+	// NOTE(bjorn): Rendering
+	//
+	{
+		//TODO(bjorn): Remove this hack as soon as I have full 3D rotations
+		//going on for all entites!!!
+		Assert(MainCamera);
+		m33 XRot = XRotationMatrix(MainCamera->CamRot.Y);
+		m33 RotMat = AxisRotationMatrix(MainCamera->CamRot.X, GetMatCol(XRot, 2)) * XRot;
+
+		v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
+
+		m22 GameSpaceToScreenSpace = 
+		{PixelsPerMeter, 0             ,
+			0            ,-PixelsPerMeter};
+
+		render_piece* RenderPiece = RenderGroup->RenderPieces;
+		for(u32 RenderPieceIndex = 0;
+				RenderPieceIndex < RenderGroup->PieceCount;
+				RenderPiece++, RenderPieceIndex++)
+		{
+			if(RenderPiece->Type == RenderPieceType_Quad)
+			{
+
+				transform_result Tran = TransformPoint(RotMat, RenderPiece->P);
+				f32 f = Tran.f;
+				v2 Pos = Tran.P;
+
+				v2 PixelPos = ScreenCenter + (GameSpaceToScreenSpace * Pos) * f;
+				v2 PixelDim = RenderPiece->Dim.XY * (PixelsPerMeter * f);
+
+				if(RenderPiece->BMP)
+				{
+					DrawBitmap(Buffer, RenderPiece->BMP, 
+										 PixelPos - RenderPiece->BMP->Alignment * f, 
+										 PixelDim, 1.0f);//RenderPiece->Color.A);
+				}
+				else
+				{
+					rectangle2 Rect = RectCenterDim(PixelPos, PixelDim);
+					DrawRectangle(Buffer, Rect, RenderPiece->Color.RGB);
+				}
+			}
+			else if(RenderPiece->Type == RenderPieceType_DimCube)
+			{
+				vertices Verts = GetEntityVerticesRaw(DefaultEntityOrientation(), 
+																							 RenderPiece->P, RenderPiece->Dim);
+
+				for(int VertIndex = 0; 
+						VertIndex < 4; 
+						VertIndex++)
+				{
+					v2 V0 = Verts.Verts[(VertIndex+0)%4].XY;
+					v2 V1 = Verts.Verts[(VertIndex+1)%4].XY;
+					transform_result Tran0 = TransformPoint(RotMat, V0);
+					transform_result Tran1 = TransformPoint(RotMat, V1);
+
+					v2 PixelV0 = ScreenCenter + (GameSpaceToScreenSpace * Tran0.P) * Tran0.f;
+					v2 PixelV1 = ScreenCenter + (GameSpaceToScreenSpace * Tran1.P) * Tran1.f;
+					DrawLine(Buffer, PixelV0, PixelV1, RenderPiece->Color.RGB);
+				}
+			}
+		}
+	}
+
 	EndTemporaryMemory(TempMem);
 	CheckMemoryArena(TransientArena);
 }

@@ -102,9 +102,6 @@ struct entity
 	v3 Dim;
 
 	v2 CamRot;
-	v2 dCamRot;
-	v2 ddCamRot;
-	v2 TargetCamRot;
 
 	f32 Mass;
 	move_spec MoveSpec;
@@ -206,7 +203,7 @@ struct vertices
 };
 
 internal_function vertices
-GetEntityVertices(entity* Entity)
+GetEntityVerticesRaw(v3 R, v3 P, v3 Dim)
 {
 	vertices Result = {};
 	Result.Count = 4;
@@ -216,17 +213,20 @@ GetEntityVertices(entity* Entity)
 													{ 0.5f, -0.5f}, 
 													{-0.5f, -0.5f}};
 	
-	m22 Transform = M22ByCol(CW90M22() * Entity->R.XY, Entity->R.XY);
+	m22 Transform = M22ByCol(CW90M22() * R.XY, R.XY);
 	for(u32 VertexIndex = 0; 
 			VertexIndex < Result.Count; 
 			VertexIndex++)
 	{
-		Result.Verts[VertexIndex] = (Transform * 
-																 Hadamard(OrderOfCorners[VertexIndex], Entity->Dim.XY) + 
-																 Entity->P);
+		Result.Verts[VertexIndex] = (Transform * Hadamard(OrderOfCorners[VertexIndex], Dim.XY) + P);
 	}
 
 	return Result;
+}
+internal_function vertices
+GetEntityVertices(entity* Entity)
+{
+	return GetEntityVerticesRaw(Entity->R, Entity->P, Entity->Dim);
 }
 
 	internal_function entity*

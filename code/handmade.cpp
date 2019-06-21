@@ -1,6 +1,5 @@
 #include "platform.h"
 #include "memory.h"
-#include "intrinsics.h"
 #include "world_map.h"
 #include "random.h"
 #include "renderer.h"

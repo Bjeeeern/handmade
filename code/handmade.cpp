@@ -50,7 +50,7 @@ struct game_state
 	memory_arena WorldArena;
 	world_map* WorldMap;
 
-	memory_arena SimArena;
+	memory_arena TransientArena;
 
 	//TODO(bjorn): Should we allow split-screen?
 	u64 MainCameraStorageIndex;
@@ -157,6 +157,8 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 
 	InitializeArena(&GameState->WorldArena, Memory->PermanentStorageSize - sizeof(game_state),
 									(u8*)Memory->PermanentStorage + sizeof(game_state));
+	InitializeArena(&GameState->TransientArena, Memory->TransientStorageSize, 
+									(u8*)Memory->TransientStorage);
 
 	GameState->WorldMap = PushStruct(&GameState->WorldArena, world_map);
 
@@ -165,7 +167,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	WorldMap->TileSideInMeters = 1.4f;
 	WorldMap->ChunkSideInMeters = WorldMap->TileSideInMeters * TILES_PER_CHUNK;
 
-	InitializeArena(&GameState->SimArena, Memory->TransientStorageSize >> 2, 
+	InitializeArena(&GameState->TransientArena, Memory->TransientStorageSize >> 2, 
 									(u8*)Memory->TransientStorage);
 
 	u32 RoomWidthInTiles = 17;
@@ -175,8 +177,8 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	GameState->CameraUpdateBounds = RectCenterDim(v3{0, 0, 0}, 
 																								v3{2, 2, 2} * WorldMap->ChunkSideInMeters);
                                                                                                     
-	sim_region* SimRegion = BeginSim(Input, &GameState->Entities, &GameState->SimArena, WorldMap, 
-																	 GetChunkPosFromAbsTile(WorldMap, RoomOrigin), 
+	sim_region* SimRegion = BeginSim(Input, &GameState->Entities, &GameState->TransientArena,
+																	 WorldMap, GetChunkPosFromAbsTile(WorldMap, RoomOrigin), 
 																	 GameState->CameraUpdateBounds, 0);
 
 	entity* MainCamera = AddCamera(SimRegion, v3{0, 0, 0});
@@ -292,12 +294,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		Memory->IsInitialized = true;
 	}
 
-	InitializeArena(&GameState->SimArena, Memory->TransientStorageSize >> 2, 
-									(u8*)Memory->TransientStorage);
-
 	memory_arena* WorldArena = &GameState->WorldArena;
 	world_map* WorldMap = GameState->WorldMap;
 	stored_entities* Entities = &GameState->Entities;
+	memory_arena* TransientArena = &GameState->WorldArena;
 
 	//
 	//NOTE(bjorn): General input logic unrelated to individual entities.
@@ -394,11 +394,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// NOTE(bjorn): Create sim region by camera
 	//
 
+	temporary_memory TempMem = BeginTemporaryMemory(TransientArena);
 	sim_region* SimRegion = 0;
 	{
 		stored_entity* StoredMainCamera = GetStoredEntityByIndex(Entities, 
 																														 GameState->MainCameraStorageIndex);
-		SimRegion = BeginSim(Input, Entities, &(GameState->SimArena), WorldMap, 
+		SimRegion = BeginSim(Input, Entities, TransientArena, WorldMap, 
 												 StoredMainCamera->Sim.WorldP, GameState->CameraUpdateBounds, 
 												 SecondsToUpdate);
 	}
@@ -992,6 +993,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	}
 
 	EndSim(Input, Entities, WorldArena, SimRegion);
+	EndTemporaryMemory(TempMem);
+	CheckMemoryArena(TransientArena);
 }
 
 	internal_function void

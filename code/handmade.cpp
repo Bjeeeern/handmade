@@ -17,10 +17,8 @@
 // QUICK TODO
 //
 // * Solve weird entity storage artefact when jumping to the next level.
-// * Rendering artefact making player not center in screen.
 
 // TODO
-// * Create a perspective camera that is rotatable.
 // * Make it so that I can visually step through a frame of collision.
 // * generate world as you drive
 // * car engine that is settable by mouse click and drag
@@ -691,16 +689,26 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							}
 						}
 
+						//TODO Smoother rotation.
 						//TODO(bjorn): Remove this hack as soon as I have full 3D rotations
 						//going on for all entites!!!
 						v2 RotSpeed = v2{-1, 1} * (tau32 * SecondsToUpdate * 0.2f);
+						f32 ZoomSpeed = (SecondsToUpdate * 10.0f);
 
-						//TODO Smoother rotation.
-#if 0
-						f32 MinimumHuntRangeSquared = Square(0.1f);
-						Entity->TargetCamRot += Modulate0(ArrowKeysDirection * RotSpeed, tau32);
-#endif
 						v2 dCamRot = Hadamard(ArrowKeysDirection, RotSpeed);
+
+						b32 ZoomIn = (Held(Entity->Keyboard, Shift) &&
+													Held(Entity->Keyboard, Up));
+						b32 ZoomOut = (Held(Entity->Keyboard, Shift) &&
+													 Held(Entity->Keyboard, Down));
+						f32 dZoom = 0;
+						if(ZoomIn || ZoomOut)
+						{
+							dCamRot = {};
+							dZoom = ZoomIn ? -1.0f : 1.0f;
+						}
+
+						Entity->CamZoom = Entity->CamZoom + dZoom * ZoomSpeed;
 						Entity->CamRot = Modulate0(Entity->CamRot + dCamRot, tau32);
 					}
 				}
@@ -759,7 +767,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				if(Entity->VisualType == EntityVisualType_Wall)
 				{
-					PushRenderPiece(RenderGroup, Entity->P, &GameState->Rock);
+					PushRenderPieceQuad(RenderGroup, Entity->P, &GameState->Rock);
 				}
 
 				if(Entity->VisualType == EntityVisualType_Player)
@@ -767,30 +775,30 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
 
 					f32 ZAlpha = Clamp01(1.0f - (Entity->P.Z / 2.0f));
-					PushRenderPiece(RenderGroup, Entity->P, &GameState->Shadow, {1, 1, 1, ZAlpha});
-					PushRenderPiece(RenderGroup, Entity->P, &Hero->Torso);
-					PushRenderPiece(RenderGroup, Entity->P, &Hero->Cape);
-					PushRenderPiece(RenderGroup, Entity->P, &Hero->Head);
+					PushRenderPieceQuad(RenderGroup, Entity->P, &GameState->Shadow, {1, 1, 1, ZAlpha});
+					PushRenderPieceQuad(RenderGroup, Entity->P, &Hero->Torso);
+					PushRenderPieceQuad(RenderGroup, Entity->P, &Hero->Cape);
+					PushRenderPieceQuad(RenderGroup, Entity->P, &Hero->Head);
 				}
 				if(Entity->VisualType == EntityVisualType_Monstar)
 				{
 					hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
 
 					f32 ZAlpha = Clamp01(1.0f - (Entity->P.Z / 2.0f));
-					PushRenderPiece(RenderGroup, Entity->P, &GameState->Shadow, {1, 1, 1, ZAlpha});
-					PushRenderPiece(RenderGroup, Entity->P, &Hero->Torso);
+					PushRenderPieceQuad(RenderGroup, Entity->P, &GameState->Shadow, {1, 1, 1, ZAlpha});
+					PushRenderPieceQuad(RenderGroup, Entity->P, &Hero->Torso);
 				}
 				if(Entity->VisualType == EntityVisualType_Familiar)
 				{
 					hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
 
 					f32 ZAlpha = Clamp01(1.0f - ((Entity->P.Z + 1.4f) / 2.0f));
-					PushRenderPiece(RenderGroup, Entity->P, &GameState->Shadow, {1, 1, 1, ZAlpha});
-					PushRenderPiece(RenderGroup, Entity->P, &Hero->Head);
+					PushRenderPieceQuad(RenderGroup, Entity->P, &GameState->Shadow, {1, 1, 1, ZAlpha});
+					PushRenderPieceQuad(RenderGroup, Entity->P, &Hero->Head);
 				}
 				if(Entity->VisualType == EntityVisualType_Sword)
 				{
-					PushRenderPiece(RenderGroup, Entity->P, &GameState->Sword);
+					PushRenderPieceQuad(RenderGroup, Entity->P, &GameState->Sword);
 				}
 
 				if(Entity->VisualType == EntityVisualType_Monstar ||
@@ -811,7 +819,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						{
 							v3 Green = {0.0f, 1.0f, 0.0f};
 
-							PushRenderPiece(RenderGroup, HitPointPos, HitPointDim, V4(Green, 1.0f));
+							PushRenderPieceQuad(RenderGroup, HitPointPos, HitPointDim, V4(Green, 1.0f));
 						}
 						else if(HP.FilledAmount < HIT_POINT_SUB_COUNT &&
 										HP.FilledAmount > 0)
@@ -827,7 +835,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						{
 							v3 Red = {1.0f, 0.0f, 0.0f};
 
-							PushRenderPiece(RenderGroup, HitPointPos, HitPointDim, V4(Red, 1.0f));
+							PushRenderPieceQuad(RenderGroup, HitPointPos, HitPointDim, V4(Red, 1.0f));
 						}
 					}
 				}
@@ -835,7 +843,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #if HANDMADE_INTERNAL
 				if(GameState->DEBUG_VisualiseCollisionBox)
 				{
-					PushRenderPiece(RenderGroup, Entity->P, Entity->Dim);
+					PushRenderPieceWireFrame(RenderGroup, Entity->P, Entity->Dim);
 				}
 #endif
 			}
@@ -867,22 +875,25 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			if(RenderPiece->Type == RenderPieceType_Quad)
 			{
 
-				transform_result Tran = TransformPoint(RotMat, RenderPiece->P);
+				transform_result Tran = TransformPoint(MainCamera->CamZoom, RotMat, RenderPiece->P);
+				if(!Tran.Valid) { continue; }
+
 				f32 f = Tran.f;
 				v2 Pos = Tran.P;
 
 				v2 PixelPos = ScreenCenter + (GameSpaceToScreenSpace * Pos) * f;
-				v2 PixelDim = RenderPiece->Dim.XY * (PixelsPerMeter * f);
 
 				if(RenderPiece->BMP)
 				{
 					DrawBitmap(Buffer, RenderPiece->BMP, 
 										 PixelPos - RenderPiece->BMP->Alignment * f, 
-										 PixelDim, 1.0f);//RenderPiece->Color.A);
+										 RenderPiece->BMP->Dim * f, RenderPiece->Color.A);
 				}
 				else
 				{
+					v2 PixelDim = RenderPiece->Dim.XY * (PixelsPerMeter * f);
 					rectangle2 Rect = RectCenterDim(PixelPos, PixelDim);
+
 					DrawRectangle(Buffer, Rect, RenderPiece->Color.RGB);
 				}
 			}
@@ -897,8 +908,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				{
 					v2 V0 = Verts.Verts[(VertIndex+0)%4].XY;
 					v2 V1 = Verts.Verts[(VertIndex+1)%4].XY;
-					transform_result Tran0 = TransformPoint(RotMat, V0);
-					transform_result Tran1 = TransformPoint(RotMat, V1);
+					transform_result Tran0 = TransformPoint(MainCamera->CamZoom, RotMat, V0);
+					transform_result Tran1 = TransformPoint(MainCamera->CamZoom, RotMat, V1);
+
+					if(!Tran0.Valid || !Tran1.Valid) { continue; }
 
 					v2 PixelV0 = ScreenCenter + (GameSpaceToScreenSpace * Tran0.P) * Tran0.f;
 					v2 PixelV1 = ScreenCenter + (GameSpaceToScreenSpace * Tran1.P) * Tran1.f;

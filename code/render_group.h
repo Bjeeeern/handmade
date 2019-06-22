@@ -44,31 +44,34 @@ PushRenderPieceRaw(render_group* RenderGroup, v3 P)
 	Assert(RenderGroup->PieceCount < ArrayCount(RenderGroup->RenderPieces));
 	render_piece* Result = RenderGroup->RenderPieces + RenderGroup->PieceCount++;
 
+	*Result = {};
 	Result->P = P;
 
 	return Result;
 }
 
 internal_function void
-PushRenderPiece(render_group* RenderGroup, v3 P, v4 Color)
+PushRenderPieceQuad(render_group* RenderGroup, v3 P, v3 Dim, v4 Color)
 {
 	render_piece* RenderPiece = PushRenderPieceRaw(RenderGroup, P);
 	RenderPiece->Type = RenderPieceType_Quad;
 	RenderPiece->BMP = 0;
+	RenderPiece->Dim = Dim;
 	RenderPiece->Color = Color;
 }
 
 internal_function void
-PushRenderPiece(render_group* RenderGroup, v3 P, loaded_bitmap* BMP, v4 Color = {1,1,1,1})
+PushRenderPieceQuad(render_group* RenderGroup, v3 P, loaded_bitmap* BMP, v4 Color = {1,1,1,1})
 {
 	render_piece* RenderPiece = PushRenderPieceRaw(RenderGroup, P);
 	RenderPiece->Type = RenderPieceType_Quad;
+	Assert(BMP);
 	RenderPiece->BMP = BMP;
 	RenderPiece->Color = Color;
 }
 
 internal_function void
-PushRenderPiece(render_group* RenderGroup, v3 P, v3 Dim, v4 Color = {0,0,1,1})
+PushRenderPieceWireFrame(render_group* RenderGroup, v3 P, v3 Dim, v4 Color = {0,0,1,1})
 {
 	render_piece* RenderPiece = PushRenderPieceRaw(RenderGroup, P);
 	RenderPiece->Type = RenderPieceType_DimCube;
@@ -84,19 +87,16 @@ struct transform_result
 };
 
 internal_function transform_result
-TransformPoint(m33 RotMat, v3 P)
+TransformPoint(f32 dp, m33 RotMat, v3 P)
 {
 	transform_result Result = {};
 
-	f32 dp = 1.0f;
+	v3 Pos = (RotMat * P);
 	f32 de = 20.0f;
-	v3 CamP = RotMat * v3{1,0,0} * dp;
-	v3 Pos = RotMat * (P - CamP);
-
 	f32 s = -Pos.Z + (de+dp);
 
 	Result.P = Pos.XY;
-	Result.Valid = s >= de*0.1f;
+	Result.Valid = s >= 0;
 	Result.f = de/s;
 
 	return Result;

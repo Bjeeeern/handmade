@@ -102,6 +102,7 @@ struct entity
 	v3 Dim;
 
 	v2 CamRot;
+	f32 CamZoom;
 
 	f32 Mass;
 	move_spec MoveSpec;
@@ -266,6 +267,8 @@ AddCamera(sim_region* SimRegion, v3 InitP)
 	Entity->StickToPrey = true;
 	Entity->HunterSearchRadius = positive_infinity32;
 	Entity->MinimumHuntRangeSquared = Square(0.2f);
+
+	Entity->CamZoom = 1.0f;
 
 	return Entity;
 }

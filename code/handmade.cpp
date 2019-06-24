@@ -16,7 +16,7 @@
 
 // QUICK TODO
 //
-// * Solve weird entity storage artefact when jumping to the next level.
+// * Solve weird entity visual artefact when jumping.
 
 // TODO
 // * Make it so that I can visually step through a frame of collision.

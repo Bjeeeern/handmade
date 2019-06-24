@@ -1,6 +1,13 @@
 #if !defined(TRIGGER_H)
 
 #if !defined(TRIGGER_H_FIRST_PASS)
+
+//TODO(bjorn): As it is right now(2019-06-24) trigger handling is a shared
+//effort between entities which is fine for small-small and big-many-small
+//overlap but not good for big-big where potetially different AoE
+//inter-trigger. (Maybe three types of storm share and generate new effects
+//only while they overlap and then return to their previous state when they
+//move away.)
 struct trigger_state
 {
 	f32 TimePassed;

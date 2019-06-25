@@ -169,6 +169,8 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	InitializeArena(&GameState->TransientArena, Memory->TransientStorageSize, 
 									(u8*)Memory->TransientStorage);
 
+	temporary_memory TempMem = BeginTemporaryMemory(&GameState->TransientArena);
+
 	u32 RoomWidthInTiles = 17;
 	u32 RoomHeightInTiles = 9;
 
@@ -259,6 +261,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	}
 
 	EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
+	EndTemporaryMemory(TempMem);
 }
 
 internal_function void
@@ -314,7 +317,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	memory_arena* WorldArena = &GameState->WorldArena;
 	world_map* WorldMap = GameState->WorldMap;
 	stored_entities* Entities = &GameState->Entities;
-	memory_arena* TransientArena = &GameState->WorldArena;
+	memory_arena* TransientArena = &GameState->TransientArena;
+
+	temporary_memory TempMem = BeginTemporaryMemory(TransientArena);
 
 	//
 	//NOTE(bjorn): General input logic unrelated to individual entities.
@@ -372,7 +377,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				//TODO STUDY(bjorn): Just setting the flag is not working anymore.
 				//Memory->IsInitialized = false;
 
-				GameState->DEBUG_StepThroughTheCollisionLoop = !GameState->DEBUG_StepThroughTheCollisionLoop;
+				GameState->DEBUG_StepThroughTheCollisionLoop = 
+					!GameState->DEBUG_StepThroughTheCollisionLoop;
 				GameState->DEBUG_CollisionLoopEntity = 0;
 				GameState->DEBUG_CollisionLoopStepIndex = 0;
 			}
@@ -387,6 +393,46 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			if(Clicked(Keyboard, M))
 			{
 				GameState->DEBUG_VisualiseCollisionBox = !GameState->DEBUG_VisualiseCollisionBox;
+			}
+
+			for(s32 NumKeyIndex = 0;
+					NumKeyIndex < ArrayCount(Keyboard->Numbers);
+					NumKeyIndex++)
+			{
+				if(Held(Keyboard, Shift) &&
+					 Clicked(Keyboard, Numbers[NumKeyIndex]))
+				{
+					world_map_position WorldP = WorldMapNullPos();
+					WorldP.Offset_ = {};
+					WorldP.ChunkP = {NumKeyIndex * 2, 0, 0};
+					sim_region* SimRegion = BeginSim(Input, Entities, TransientArena, WorldMap, 
+															 WorldP, GameState->CameraUpdateBounds, SecondsToUpdate);
+
+					entity* Entity = AddEntityToSimRegionManually(Input, Entities, SimRegion, 
+																												GameState->MainCameraStorageIndex);
+					Assert(Entity);
+					Assert(Entity->IsSpacial);
+					Entity->P = {0,0,0};
+					if(Entity->Prey == Entity->Player)
+					{
+						MakeEntitySpacial(Entity->FreeMover, Entity->P);
+						Entity->Player->MoveSpec.MoveByInput = false;
+						Entity->Prey = Entity->FreeMover;
+						Entity->MoveSpec.Speed = Entity->FreeMover->MoveSpec.Speed;
+						Entity->MoveSpec.Drag = Entity->FreeMover->MoveSpec.Drag;
+					}
+					else
+					{
+						Assert(Entity->FreeMover->IsSpacial);
+						Entity->FreeMover->P = {0,0,0};
+					}
+
+					//NOTE(bjorn): Make sure our changes to the entities persists.
+					Entity->Updates = true;
+					Entity->FreeMover->Updates = true;
+
+					EndSim(Input, Entities, WorldArena, SimRegion);
+				}
 			}
 		}
 	}
@@ -410,7 +456,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// NOTE(bjorn): Create sim region by camera
 	//
 
-	temporary_memory TempMem = BeginTemporaryMemory(TransientArena);
 	sim_region* SimRegion = 0;
 	{
 		u64 MainCamIndex = GameState->MainCameraStorageIndex;
@@ -430,7 +475,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//TODO(bjorn): Add some asserts and some limits to velocities related to the
 	//delta time so that tunneling becomes virtually impossible.
 	u32 Steps = 8; 
-	//NOTE(bjorn): Asserts at least one iteration to find the main camera entity pointer.
+	//NOTE(bjorn): Guarantees at least one iteration to find the main camera entity pointer.
 	Assert(Steps > 1);
 
 	entity* MainCamera = 0;
@@ -698,7 +743,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								Entity->MoveSpec.Speed = Entity->FreeMover->MoveSpec.Speed;
 								Entity->MoveSpec.Drag = Entity->FreeMover->MoveSpec.Drag;
 							}
-							else if(Entity->Prey == Entity->FreeMover)
+							//NOTE(bjorn): Dont bother to change to the player if he is
+							//outside of the update bounds.
+							else if(Entity->Prey == Entity->FreeMover &&
+											Entity->Player->Updates)
 							{
 								MakeEntityNonSpacial(Entity->FreeMover);
 								Entity->Player->MoveSpec.MoveByInput = true;

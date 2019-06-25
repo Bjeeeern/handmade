@@ -201,6 +201,10 @@ GetWorldMapPosDifference(world_map *WorldMap, world_map_position A, world_map_po
 	v3 InternalDiff = A.Offset_ - B.Offset_;
 	Result = (v3)ChunkDiff * WorldMap->ChunkSideInMeters + (v3)InternalDiff;
 
+	//TODO(bjorn): Handle differences that are far away in a way that lets the
+	//caller know so that this does not change an entity's position with respect
+	//to floating point error!!!
+
 	return Result;
 }
 

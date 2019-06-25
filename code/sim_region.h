@@ -363,6 +363,32 @@ BeginSim(game_input* Input, stored_entities* StoredEntities, memory_arena* SimAr
 	return Result;
 }
 
+internal_function entity* 
+AddEntityToSimRegionManually(game_input* Input, stored_entities* StoredEntities, 
+														 sim_region* SimRegion, u64 StorageIndex)
+{
+	entity* Result = 0;
+
+	stored_entity* StoredEntity = GetStoredEntityByIndex(StoredEntities, StorageIndex);
+	Assert(StoredEntity);
+
+	v3* SimPosRef = 0;
+	v3 SimPos = {};
+	if(StoredEntity->Sim.IsSpacial)
+	{
+		SimPos = GetWorldMapPosDifference(SimRegion->WorldMap, StoredEntity->Sim.WorldP, 
+																			SimRegion->Origin);
+		if(IsInRectangle(SimRegion->OuterBounds, SimPos))
+		{
+			SimPosRef = &SimPos;
+		}
+	}
+
+	Result = AddSimEntity(Input, StoredEntities, SimRegion, StoredEntity, StorageIndex, SimPosRef);
+
+	return Result;
+}
+
 	internal_function void
 EndSim(game_input* Input, stored_entities* Entities, memory_arena* WorldArena, sim_region* SimRegion)
 {
@@ -406,7 +432,19 @@ EndSim(game_input* Input, stored_entities* Entities, memory_arena* WorldArena, s
 		world_map_position NewWorldP = WorldMapNullPos();
 		if(SimEntity->IsSpacial)
 		{
-			NewWorldP = OffsetWorldPos(SimRegion->WorldMap, SimRegion->Origin, SimEntity->P);
+			//NOTE(bjorn): SimEntity->Updates is to prevent entities that have been
+			//loaded from a far away place to restore their position at an floating
+			//point error.
+			//TODO(bjorn): In addition to the SimEntity->Updates flag have another flag
+			//just for this case that has a more obvious name!!
+			if(SimEntity->Updates || !IsValid(SimEntity->WorldP))
+			{
+				NewWorldP = OffsetWorldPos(SimRegion->WorldMap, SimRegion->Origin, SimEntity->P);
+			}
+			else
+			{
+				NewWorldP = SimEntity->WorldP;
+			}
 		}
 		ChangeStoredEntityWorldLocation(WorldArena, SimRegion->WorldMap, Stored, NewWorldP);
 	}

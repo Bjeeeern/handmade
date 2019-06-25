@@ -4,6 +4,7 @@
 
 struct move_spec
 {
+	b32 EnforceFloor : 1;
 	b32 EnforceHorizontalMovement : 1;
 	b32 EnforceVerticalGravity : 1;
 	b32 AllowRotation : 1;
@@ -24,6 +25,7 @@ DefaultMoveSpec()
 
 	Result.AllowRotation = true;
 
+	Result.EnforceFloor = true;
 	Result.EnforceHorizontalMovement = true;
 	Result.Drag = 0.4f * 30.0f;
 
@@ -431,9 +433,10 @@ MoveEntity(entity* Entity, f32 dT)
 	f32 dA = Entity->dA;
 	f32 ddA = Entity->ddA;
 
-	if(Entity->MoveSpec.EnforceVerticalGravity)
+	move_spec MoveSpec = Entity->MoveSpec;
+	if(MoveSpec.EnforceVerticalGravity)
 	{
-		if(Entity->MoveSpec.MovingDirection.Z > 0 &&
+		if(MoveSpec.MovingDirection.Z > 0 &&
 			 P.Z == 0)
 		{
 			dP.Z = 18.0f;
@@ -445,19 +448,19 @@ MoveEntity(entity* Entity, f32 dT)
 		}
 	}
 
-	if(Entity->MoveSpec.EnforceHorizontalMovement)
+	if(MoveSpec.EnforceHorizontalMovement)
 	{
 		//TODO(casey): ODE here!
-		ddP.XY = Entity->MoveSpec.MovingDirection.XY * Entity->MoveSpec.Speed;
-		ddP.XY -= Entity->MoveSpec.Drag * dP.XY;
+		ddP.XY = MoveSpec.MovingDirection.XY * MoveSpec.Speed;
+		ddP.XY -= MoveSpec.Drag * dP.XY;
 	}
 	else
 	{
-		ddP = Entity->MoveSpec.MovingDirection * Entity->MoveSpec.Speed;
-		ddP -= Entity->MoveSpec.Drag * dP;
+		ddP = MoveSpec.MovingDirection * MoveSpec.Speed;
+		ddP -= MoveSpec.Drag * dP;
 	}
 
-	ddA -= Entity->MoveSpec.Drag * 0.7f * dA;
+	ddA -= MoveSpec.Drag * 0.7f * dA;
 
 	P += 0.5f * ddP * Square(dT) + dP * dT;
 	dP += ddP * dT;
@@ -470,7 +473,8 @@ MoveEntity(entity* Entity, f32 dT)
 	R = Normalize(R);
 
 	//TODO(bjorn): Think harder about how to implement the ground.
-	if(P.Z < 0.0f)
+	if(MoveSpec.EnforceFloor &&
+		 P.Z < 0.0f)
 	{
 		P.Z = 0.0f;
 		dP.Z = 0.0f;
@@ -480,7 +484,7 @@ MoveEntity(entity* Entity, f32 dT)
 	Entity->dP = dP;
 	Entity->P = P;
 
-	if(Entity->MoveSpec.AllowRotation)
+	if(MoveSpec.AllowRotation)
 	{
 		Entity->ddA = 0;
 		Entity->dA = dA;

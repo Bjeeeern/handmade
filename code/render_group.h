@@ -78,6 +78,12 @@ PushRenderPieceWireFrame(render_group* RenderGroup, v3 P, v3 Dim, v4 Color = {0,
 	RenderPiece->Color = Color;
 	RenderPiece->Dim = Dim;
 }
+internal_function void
+PushRenderPieceWireFrame(render_group* RenderGroup, rectangle3 Rect, v4 Color = {0,0,1,1})
+{
+	center_dim_v3_result CenterDim = RectToCenterDim(Rect);
+	PushRenderPieceWireFrame(RenderGroup, CenterDim.Center, CenterDim.Dim, Color);
+}
 
 struct transform_result
 {

@@ -16,7 +16,9 @@
 
 // QUICK TODO
 //
-// * Solve weird entity visual artefact when jumping.
+// * Solve weird entity visual artefact when jumping. Has to do with imperfect
+// dealing with flooring.
+// * Non horizontal movement for the camera with shift+W/S is not working for some reason.
 
 // TODO
 // * Make it so that I can visually step through a frame of collision.
@@ -65,7 +67,6 @@ struct game_state
 	hero_bitmaps HeroBitmaps[4];
 
 #if HANDMADE_INTERNAL
-	b32 DEBUG_VisualiseMinkowskiSum;
 	b32 DEBUG_VisualiseCollisionBox;
 
 	b32 DEBUG_StepThroughTheCollisionLoop;
@@ -183,6 +184,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	//TODO Is there a less cheesy (and safer!) way to do this assignment of the camera storage index?
 	GameState->MainCameraStorageIndex = 1;
 	MainCamera->Keyboard = GetKeyboard(Input, 1);
+	MainCamera->Mouse = GetMouse(Input, 1);
 
 	entity* Player = AddPlayer(SimRegion, v3{-2, 1, 0} * WorldMap->TileSideInMeters);
 	Player->Keyboard = GetKeyboard(Input, 1);
@@ -258,6 +260,22 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 
 	EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 }
+
+internal_function void
+TransformLineToScreenSpaceAndRender(game_offscreen_buffer* Buffer, render_piece* RenderPiece,
+																		f32 CamDist, m33 RotMat, v3 V0, v3 V1,
+																		v2 ScreenCenter, m22 GameSpaceToScreenSpace)
+{
+	transform_result Tran0 = TransformPoint(CamDist, RotMat, V0);
+	transform_result Tran1 = TransformPoint(CamDist, RotMat, V1);
+
+	if(Tran0.Valid && Tran1.Valid)
+	{
+		v2 PixelV0 = ScreenCenter + (GameSpaceToScreenSpace * Tran0.P) * Tran0.f;
+		v2 PixelV1 = ScreenCenter + (GameSpaceToScreenSpace * Tran1.P) * Tran1.f;
+		DrawLine(Buffer, PixelV0, PixelV1, RenderPiece->Color.RGB);
+	}
+};
 
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
@@ -368,7 +386,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 			if(Clicked(Keyboard, M))
 			{
-				GameState->DEBUG_VisualiseMinkowskiSum = !GameState->DEBUG_VisualiseMinkowskiSum;
 				GameState->DEBUG_VisualiseCollisionBox = !GameState->DEBUG_VisualiseCollisionBox;
 			}
 		}
@@ -404,6 +421,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	}
 
 	render_group* RenderGroup = AllocateRenderGroup(TransientArena);
+
+	PushRenderPieceWireFrame(RenderGroup, SimRegion->UpdateBounds, v4{0,1,0,1});
+	PushRenderPieceWireFrame(RenderGroup, SimRegion->OuterBounds, v4{1,1,0,1});
 
 	//TODO(bjorn): Implement step 2 in J.Blows framerate independence video.
 	// https://www.youtube.com/watch?v=fdAOPHgW7qM
@@ -453,41 +473,39 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					if(OtherEntity->EntityPairUpdateGenerationIndex == Step) { continue; }
 					if(!OtherEntity->IsSpacial) { continue; }
 
-					b32 Inside = true; 
-					f32 BestSquareDistanceToWall = positive_infinity32;
-					s32 RelevantNodeIndex = -1;
-					v2 P = Entity->P.XY;
-					polygon Sum = MinkowskiSum(OtherEntity, Entity);
-
-					for(s32 NodeIndex = 0; 
-							NodeIndex < Sum.NodeCount; 
-							NodeIndex++)
+					b32 Inside = false; 
+					f32 Penetration = 0;
+					v2 n = {};
+					v2 ImpactPoint = {};
+#if 0
 					{
-						v2 N0 = Sum.Nodes[NodeIndex];
-						v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
+						f32 BestSquareDistanceToWall = positive_infinity32;
+						s32 RelevantNodeIndex = -1;
+						v2 P = Entity->P.XY;
+						polygon Sum = MinkowskiSum(OtherEntity, Entity);
 
-						f32 Det = Determinant(N1-N0, P-N0);
-						if(Inside && (Det >= 0.0f)) 
-						{ 
-							Inside = false; 
-						}
-
-						f32 SquareDistanceToWall = SquareDistancePointToLineSegment(N0, N1, P);
-						if(SquareDistanceToWall < BestSquareDistanceToWall)
+						for(s32 NodeIndex = 0; 
+								NodeIndex < Sum.NodeCount; 
+								NodeIndex++)
 						{
-							BestSquareDistanceToWall = SquareDistanceToWall;
-							RelevantNodeIndex = NodeIndex;
-						}
-					}	
+							v2 N0 = Sum.Nodes[NodeIndex];
+							v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
 
-					if(Inside &&
-						 Entity->Collides && 
-						 OtherEntity->Collides)
-					{
+							f32 Det = Determinant(N1-N0, P-N0);
+							if(Inside && (Det >= 0.0f)) 
+							{ 
+								Inside = false; 
+							}
+
+							f32 SquareDistanceToWall = SquareDistancePointToLineSegment(N0, N1, P);
+							if(SquareDistanceToWall < BestSquareDistanceToWall)
+							{
+								BestSquareDistanceToWall = SquareDistanceToWall;
+								RelevantNodeIndex = NodeIndex;
+							}
+						}	
+
 						Assert(RelevantNodeIndex >= 0);
-
-						f32 Penetration;
-						v2 n, t, ImpactPoint;
 						{
 							Penetration	= SquareRoot(BestSquareDistanceToWall);
 							Assert(Penetration <= (Lenght(Entity->Dim) + Lenght(OtherEntity->Dim)) * 0.5f);
@@ -498,7 +516,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							v2 V1 = Sum.OriginalLineSeg[RelevantNodeIndex][1];
 
 							//TODO(bjorn): This normalization might not be needed.
-							t = Normalize(N1 - N0);
+							f32 t = Normalize(N1 - N0);
 							n = CCW90M22() * t;
 
 							closest_point_to_line_result ClosestPoint = GetClosestPointOnLineSegment(N0, N1, P);
@@ -509,7 +527,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								Sum.Genus[RelevantNodeIndex] == MinkowskiGenus_Movable ? 1.0f:-1.0f;
 							ImpactPoint += ImpactCorrection;
 						}
-
+					}
+#endif
+					if(Inside &&
+						 Entity->Collides && 
+						 OtherEntity->Collides)
+					{
 						//NOTE(bjorn): Normal always points away from other entity.
 						v2 AP = Entity->P.XY;
 						v2 BP = OtherEntity->P.XY;
@@ -575,26 +598,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #if HANDMADE_INTERNAL
 					if(Step == LastStep)
 					{
-						if(GameState->DEBUG_VisualiseMinkowskiSum)
-						{
-#if 0 
-							v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
-							m22 GameSpaceToScreenSpace = 
-							{PixelsPerMeter, 0             ,
-								0             ,-PixelsPerMeter};
-
-							u64 Player1StorageIndex = 2;
-							entity* Player = 0;
-							if(Entity->StorageIndex == Player1StorageIndex) { Player = Entity;}
-							if(OtherEntity->StorageIndex == Player1StorageIndex) { Player = OtherEntity;}
-
-							if(Player) 
-							{
-								entity* Target = Entity == Player ? OtherEntity : Entity;
-								DEBUGMinkowskiSum(Buffer, Target, Player, GameSpaceToScreenSpace, ScreenCenter);
-							}
-#endif
-						}
+						//TODO(bjorn): Visualize collision.
 					}
 #endif
 				}
@@ -608,7 +612,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					v3 WASDKeysDirection = {};
 					if(Held(Entity->Keyboard, S))
 					{
-						WASDKeysDirection.Y += -1;
+						if(Held(Entity->Keyboard, Shift))
+						{
+							WASDKeysDirection.Z += -1;
+						}
+						else
+						{
+							WASDKeysDirection.Y += -1;
+						}
 					}
 					if(Held(Entity->Keyboard, A))
 					{
@@ -616,7 +627,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					}
 					if(Held(Entity->Keyboard, W))
 					{
-						WASDKeysDirection.Y += 1;
+						if(Held(Entity->Keyboard, Shift))
+						{
+							WASDKeysDirection.Z += 1;
+						}
+						else
+						{
+							WASDKeysDirection.Y += 1;
+						}
 					}
 					if(Held(Entity->Keyboard, D))
 					{
@@ -626,12 +644,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					{
 						WASDKeysDirection.Z += 1;
 					}
-					if(WASDKeysDirection.X && WASDKeysDirection.Y)
+					if(LenghtSquared(WASDKeysDirection) > 1.0f)
 					{
 						WASDKeysDirection *= inv_root2;
 					}
 
-					Entity->MoveSpec.MovingDirection = Entity->MoveSpec.MoveByInput ? WASDKeysDirection : v3{};
+					Entity->MoveSpec.MovingDirection = 
+						Entity->MoveSpec.MoveByInput ? WASDKeysDirection : v3{};
 
 					v2 ArrowKeysDirection = {};
 					if(Held(Entity->Keyboard, Down))
@@ -692,23 +711,28 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						//TODO Smoother rotation.
 						//TODO(bjorn): Remove this hack as soon as I have full 3D rotations
 						//going on for all entites!!!
-						v2 RotSpeed = v2{-1, 1} * (tau32 * SecondsToUpdate * 0.2f);
-						f32 ZoomSpeed = (SecondsToUpdate * 10.0f);
+						v2 RotSpeed = v2{1, 1} * (tau32 * SecondsToUpdate * 20.0f);
+						f32 ZoomSpeed = (SecondsToUpdate * 30.0f);
 
-						v2 dCamRot = Hadamard(ArrowKeysDirection, RotSpeed);
-
-						b32 ZoomIn = (Held(Entity->Keyboard, Shift) &&
-													Held(Entity->Keyboard, Up));
-						b32 ZoomOut = (Held(Entity->Keyboard, Shift) &&
-													 Held(Entity->Keyboard, Down));
 						f32 dZoom = 0;
-						if(ZoomIn || ZoomOut)
+						v2 MouseDir = {};
+						if(Entity->Mouse && 
+							 Entity->Mouse->IsConnected)
 						{
-							dCamRot = {};
-							dZoom = ZoomIn ? -1.0f : 1.0f;
+							if(Held(Entity->Mouse, Left))
+							{
+								MouseDir = Entity->Mouse->dP;
+								if(MouseDir.X && MouseDir.Y)
+								{
+									MouseDir *= inv_root2;
+								}
+							}
+							dZoom = Entity->Mouse->Wheel * ZoomSpeed;
 						}
 
-						Entity->CamZoom = Entity->CamZoom + dZoom * ZoomSpeed;
+						v2 dCamRot = Hadamard(MouseDir, RotSpeed);
+
+						Entity->CamZoom = Entity->CamZoom + dZoom;
 						Entity->CamRot = Modulate0(Entity->CamRot + dCamRot, tau32);
 					}
 				}
@@ -809,7 +833,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							HitPointIndex++)
 					{
 						v2 HitPointDim = {0.15f, 0.3f};
-						v2 HitPointPos = Entity->P.XY;
+						v3 HitPointPos = Entity->P;
 						HitPointPos.Y -= 0.3f;
 						HitPointPos.X += ((HitPointIndex - (Entity->HitPointMax-1) * 0.5f) * 
 															HitPointDim.X * 1.5f);
@@ -906,16 +930,31 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						VertIndex < 4; 
 						VertIndex++)
 				{
-					v2 V0 = Verts.Verts[(VertIndex+0)%4].XY;
-					v2 V1 = Verts.Verts[(VertIndex+1)%4].XY;
-					transform_result Tran0 = TransformPoint(MainCamera->CamZoom, RotMat, V0);
-					transform_result Tran1 = TransformPoint(MainCamera->CamZoom, RotMat, V1);
-
-					if(!Tran0.Valid || !Tran1.Valid) { continue; }
-
-					v2 PixelV0 = ScreenCenter + (GameSpaceToScreenSpace * Tran0.P) * Tran0.f;
-					v2 PixelV1 = ScreenCenter + (GameSpaceToScreenSpace * Tran1.P) * Tran1.f;
-					DrawLine(Buffer, PixelV0, PixelV1, RenderPiece->Color.RGB);
+					v3 V0 = Verts.Verts[(VertIndex+0)%4];
+					v3 V1 = Verts.Verts[(VertIndex+1)%4];
+					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
+																							MainCamera->CamZoom, RotMat, V0, V1,
+																							ScreenCenter, GameSpaceToScreenSpace);
+				}
+				for(int VertIndex = 0; 
+						VertIndex < 4; 
+						VertIndex++)
+				{
+					v3 V0 = Verts.Verts[(VertIndex+0)%4 + 4];
+					v3 V1 = Verts.Verts[(VertIndex+1)%4 + 4];
+					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
+																							MainCamera->CamZoom, RotMat, V0, V1,
+																							ScreenCenter, GameSpaceToScreenSpace);
+				}
+				for(int VertIndex = 0; 
+						VertIndex < 4; 
+						VertIndex++)
+				{
+					v3 V0 = Verts.Verts[VertIndex];
+					v3 V1 = Verts.Verts[VertIndex + 4];
+					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
+																							MainCamera->CamZoom, RotMat, V0, V1,
+																							ScreenCenter, GameSpaceToScreenSpace);
 				}
 			}
 		}

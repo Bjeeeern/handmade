@@ -207,7 +207,7 @@ internal_function vertices
 GetEntityVerticesRaw(v3 R, v3 P, v3 Dim)
 {
 	vertices Result = {};
-	Result.Count = 4;
+	Result.Count = 8;
 
 	v2 OrderOfCorners[4] = {{-0.5f,  0.5f}, 
 													{ 0.5f,  0.5f}, 
@@ -216,10 +216,21 @@ GetEntityVerticesRaw(v3 R, v3 P, v3 Dim)
 	
 	m22 Transform = M22ByCol(CW90M22() * R.XY, R.XY);
 	for(u32 VertexIndex = 0; 
-			VertexIndex < Result.Count; 
+			VertexIndex < Result.Count/2; 
 			VertexIndex++)
 	{
 		Result.Verts[VertexIndex] = (Transform * Hadamard(OrderOfCorners[VertexIndex], Dim.XY) + P);
+
+		Result.Verts[VertexIndex].Z += Dim.Z * 0.5f;
+	}
+
+	for(u32 VertexIndex = 0; 
+			VertexIndex < Result.Count/2; 
+			VertexIndex++)
+	{
+		Result.Verts[Result.Count/2 + VertexIndex] = 
+			(Transform * Hadamard(OrderOfCorners[VertexIndex], Dim.XY) + P);
+		Result.Verts[Result.Count/2 + VertexIndex].Z -= Dim.Z * 0.5f;
 	}
 
 	return Result;
@@ -260,7 +271,7 @@ AddCamera(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered, InitP);
 
-	Entity->MoveSpec.EnforceHorizontalMovement = true;
+	Entity->MoveSpec.EnforceHorizontalMovement = false;
 	Entity->MoveSpec.Speed = 85.f;
 	Entity->MoveSpec.Drag = 0.24f * 30.0f;
 
@@ -292,7 +303,7 @@ AddInvisibleControllable(sim_region* SimRegion)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered);
 
 	Entity->MoveSpec.MoveByInput = true;
-	Entity->MoveSpec.EnforceHorizontalMovement = true;
+	Entity->MoveSpec.EnforceHorizontalMovement = false;
 	Entity->MoveSpec.Speed = 80.f * 2.0f;
 	Entity->MoveSpec.Drag = 0.24f * 20.0f;
 
@@ -304,7 +315,7 @@ AddSword(sim_region* SimRegion)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Sword);
 
-	Entity->Dim = v2{0.4f, 1.5f} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Dim = v3{0.4f, 1.5f, 0.1f} * SimRegion->WorldMap->TileSideInMeters;
 	Entity->Mass = 8.0f;
 
 	Entity->TriggerDamage = 1;
@@ -317,7 +328,7 @@ AddPlayer(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Player, InitP);
 
-	Entity->Dim = v2{0.5f, 0.3f} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Dim = v3{0.5f, 0.3f, 1.0f} * SimRegion->WorldMap->TileSideInMeters;
 	Entity->Collides = true;
 
 	//TODO(bjorn): Why does weight differences matter so much in the collision system.
@@ -340,7 +351,7 @@ AddMonstar(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Monstar, InitP);
 
-	Entity->Dim = v2{0.5f, 0.3f} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Dim = v3{0.5f, 0.3f, 1.0f} * SimRegion->WorldMap->TileSideInMeters;
 	Entity->Collides = true;
 
 	Entity->Mass = 40.0f / 8.0f;
@@ -366,7 +377,7 @@ AddFamiliar(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Familiar, InitP);
 
-	Entity->Dim = v2{0.5f, 0.3f} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Dim = v3{0.5f, 0.3f, 1.0f} * SimRegion->WorldMap->TileSideInMeters;
 	Entity->Collides = true;
 
 	Entity->Mass = 40.0f / 8.0f;
@@ -381,151 +392,12 @@ AddFamiliar(sim_region* SimRegion, v3 InitP)
 	return Entity;
 }
 
-#if 0
-	internal_function entity
-AddCarFrame(game_state* GameState, world_map_position WorldPos)
-{
-	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
-														EntityVisualType_CarFrame, &WorldPos);
-
-	Entity->Stored->Dim = v2{4, 6};
-	Entity->Stored->Collides = true;
-
-	Entity->Stored->MoveSpec = DefaultMoveSpec();
-
-	Entity->Stored->Mass = 800.0f;
-
-	return Entity;
-}
-
-	internal_function entity
-AddEngine(game_state* GameState, world_map_position WorldPos)
-{
-	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
-														EntityVisualType_Engine, &WorldPos);
-
-	Entity->Stored->Dim = v2{3, 2};
-	Entity->Stored->MoveSpec = DefaultMoveSpec();
-
-	return Entity;
-}
-
-	internal_function entity
-AddWheel(game_state* GameState, world_map_position WorldPos)
-{
-	entity Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, &GameState->Entities,
-														EntityVisualType_Wheel, &WorldPos);
-
-	Entity->Stored->Dim = v2{0.6f, 1.5f};
-	Entity->Stored->MoveSpec = DefaultMoveSpec();
-
-	return Entity;
-}
-
-	internal_function void
-MoveCarPartsToStartingPosition(memory_arena* WorldArena, world_map* WorldMap, entities* Entities,
-															 u32 CarFrameIndex)
-{
-	Assert(CarFrameIndex);
-	entity CarFrameEntity = GetEntityByLowIndex(Entities, CarFrameIndex);
-	Assert(CarFrameEntity->Low);
-	if(CarFrameEntity->Low)
-	{
-		entity EngineEntity = GetEntityByLowIndex(Entities, CarFrameEntity->Low->Engine);
-		if(EngineEntity->Low)
-		{
-			ChangeEntityWorldLocationRelativeOther(WorldArena, WorldMap, &EngineEntity, 
-																						 CarFrameEntity->Low->WorldP, v3{0, 1.5f, 0});
-		}
-
-		for(s32 WheelIndex = 0;
-				WheelIndex < 4;
-				WheelIndex++)
-		{
-			entity WheelEntity = 
-				GetEntityByLowIndex(Entities, CarFrameEntity->Low->Wheels[WheelIndex]);
-			if(WheelEntity->Low)
-			{
-				f32 dX = ((WheelIndex % 2) - 0.5f) * 2.0f;
-				f32 dY = ((WheelIndex / 2) - 0.5f) * 2.0f;
-				v2 D = v2{dX, dY};
-
-				v2 O = (Hadamard(D, CarFrameEntity->Low->Dim.XY * 0.5f) - 
-								Hadamard(D, WheelEntity->Low->Dim.XY * 0.5f));
-
-				ChangeEntityWorldLocationRelativeOther(WorldArena, WorldMap, &WheelEntity, 
-																							 CarFrameEntity->Low->WorldP, (v3)O);
-			}
-		}
-	}
-}
-
-	internal_function void
-DismountEntityFromCar(memory_arena* WorldArena, world_map* WorldMap, entity* Entity, entity* Car)
-{
-	Assert(Car->Low->VisualType == EntityVisualType_CarFrame);
-
-	Car->Low->DriverSeat = 0;
-	Entity->Low->RidingVehicle = 0;
-	Entity->Low->Attached = false;
-
-	v3 Offset = {4.0f, 0, 0};
-	if(Entity->High && Car->High)
-	{
-		Entity->High->P = Car->High->P + Offset;
-	}
-	ChangeEntityWorldLocationRelativeOther(WorldArena, WorldMap, Entity, Car->Low->WorldP, Offset);
-}
-	internal_function void
-MountEntityOnCar(memory_arena* WorldArena, world_map* WorldMap, entity* Entity, entity* Car)
-{
-	Assert(Car->Low->VisualType == EntityVisualType_CarFrame);
-
-	Car->Low->DriverSeat = Entity->LowIndex;
-	Entity->Low->RidingVehicle = Car->LowIndex;
-	Entity->Low->Attached = true;
-
-	//TODO(bjorn) What happens if you mount a car outside of the high entity zone.
-	if(Entity->High && Car->High)
-	{
-		Entity->High->P = Car->High->P;
-	}
-	ChangeEntityWorldLocationRelativeOther(WorldArena, WorldMap, Entity, Car->Low->WorldP, {});
-}
-
-	internal_function entity
-AddCar(game_state* GameState, world_map_position WorldPos)
-{
-	entity CarFrameEntity = AddCarFrame(GameState, WorldPos);
-
-	entity EngineEntity = AddEngine(GameState, WorldPos);
-	CarFrameEntity->Low->Engine = EngineEntity->LowIndex;
-	EngineEntity->Low->Vehicle = CarFrameEntity->LowIndex;
-	EngineEntity->Low->Attached = true;
-
-	for(s32 WheelIndex = 0;
-			WheelIndex < 4;
-			WheelIndex++)
-	{
-		entity WheelEntity = AddWheel(GameState, WorldPos);
-		CarFrameEntity->Low->Wheels[WheelIndex] = WheelEntity->LowIndex;
-		WheelEntity->Low->Vehicle = CarFrameEntity->LowIndex;
-		WheelEntity->Low->Attached = true;
-	}
-
-	MoveCarPartsToStartingPosition(&GameState->WorldArena, GameState->WorldMap, 
-																 &GameState->Entities, CarFrameEntity->LowIndex);
-
-	return CarFrameEntity;
-}
-#endif
-
 	internal_function entity*
 AddGround(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Ground, InitP);
 
-	Entity->Dim = v2{1, 1} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Dim = v3{1, 1, 0.1f} * SimRegion->WorldMap->TileSideInMeters;
 	Entity->Collides = false;
 
 	return Entity;
@@ -536,7 +408,7 @@ AddWall(sim_region* SimRegion, v3 InitP, f32 Mass = 1000.0f)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Wall, InitP);
 
-	Entity->Dim = v2{1, 1} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Dim = v3{1, 1, 1} * SimRegion->WorldMap->TileSideInMeters;
 	Entity->Collides = true;
 
 	Entity->Mass = Mass;
@@ -544,22 +416,6 @@ AddWall(sim_region* SimRegion, v3 InitP, f32 Mass = 1000.0f)
 
 	return Entity;
 }
-
-#if 0
-	internal_function entity*
-AddStair(game_state* GameState, world_map_position WorldPos, f32 dZ)
-{
-	entity* Entity = AddEntity(&GameState->WorldArena, GameState->WorldMap, 
-																		&GameState->Entities,
-																		EntityVisualType_Stair, &WorldPos);
-
-	Entity->Dim = v3{1, 1, 1} * GameState->WorldMap->TileSideInMeters;
-	Entity->Collides = true;
-	Entity->dZ = dZ;
-
-	return Entity;
-}
-#endif
 
 	internal_function void
 MoveEntity(entity* Entity, f32 dT)
@@ -593,9 +449,14 @@ MoveEntity(entity* Entity, f32 dT)
 	{
 		//TODO(casey): ODE here!
 		ddP.XY = Entity->MoveSpec.MovingDirection.XY * Entity->MoveSpec.Speed;
+		ddP.XY -= Entity->MoveSpec.Drag * dP.XY;
+	}
+	else
+	{
+		ddP = Entity->MoveSpec.MovingDirection * Entity->MoveSpec.Speed;
+		ddP -= Entity->MoveSpec.Drag * dP;
 	}
 
-	ddP.XY -= Entity->MoveSpec.Drag * dP.XY;
 	ddA -= Entity->MoveSpec.Drag * 0.7f * dA;
 
 	P += 0.5f * ddP * Square(dT) + dP * dT;

@@ -288,7 +288,9 @@ AddSimEntity(game_input* Input, stored_entities* StoredEntities, sim_region*
 	}
 
 	Result->EntityPairUpdateGenerationIndex = 0;
-	Result->Updates = !Result->IsSpacial || IsInRectangle(SimRegion->UpdateBounds, Result->P);
+	Result->Updates = (!Result->IsSpacial || 
+										 IsInRectangle(SimRegion->UpdateBounds, Result->P) ||
+										 (IsInRectangle(SimRegion->OuterBounds, Result->P) && Result->IsFloor));
 
 	return Result;
 }
@@ -302,8 +304,8 @@ BeginSim(game_input* Input, stored_entities* StoredEntities, memory_arena* SimAr
 
 	//TODO: Tradeoff with not having huge single entites. But Huge entities
 	//should maybe be made-up out of smaller constituents anyways.
-	Result->MaxEntityRadius = 5.0f;
-	Result->MaxEntityVelocity = 60.0f;
+	Result->MaxEntityRadius = 1000.0f;
+	Result->MaxEntityVelocity = 100.0f;
 	f32 SafetyUpdateMargin = Result->MaxEntityRadius + Result->MaxEntityVelocity * dT;
 
 	Result->WorldMap = WorldMap;

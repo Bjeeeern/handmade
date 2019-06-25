@@ -4,11 +4,11 @@
 
 struct move_spec
 {
-	b32 EnforceFloor : 1;
-	b32 EnforceHorizontalMovement : 1;
-	b32 EnforceVerticalGravity : 1;
 	b32 AllowRotation : 1;
 	b32 MoveByInput : 1;
+
+	v3 Gravity;
+	f32 Damping;
 
 	f32 Speed;
 	f32 Drag;
@@ -23,11 +23,7 @@ DefaultMoveSpec()
 {
 	move_spec Result = {};
 
-	Result.AllowRotation = true;
-
-	Result.EnforceFloor = true;
-	Result.EnforceHorizontalMovement = true;
-	Result.Drag = 0.4f * 30.0f;
+	Result.Damping = 0.9999f;
 
 	return Result;
 }
@@ -74,7 +70,7 @@ struct entity
 
 	b32 IsSpacial : 1;
 	b32 Collides : 1;
-	b32 Attached : 1;
+	b32 IsFloor : 1;
 	//NOTE(bjorn): CarFrame
 	//TODO(bjorn): Use this to move out the turning code to the cars update loop.
 	b32 AutoPilot : 1;
@@ -106,7 +102,7 @@ struct entity
 	v2 CamRot;
 	f32 CamZoom;
 
-	f32 Mass;
+	f32 iM; //NOTE(bjorn): Inverse mass
 	move_spec MoveSpec;
 	f32 GroundFriction;
 
@@ -254,6 +250,7 @@ AddEntity(sim_region* SimRegion, entity_visual_type VisualType)
 	Entity->WorldP = WorldMapNullPos();
 	Entity->VisualType = VisualType;
 	MakeEntityNonSpacial(Entity);
+	Entity->MoveSpec = DefaultMoveSpec();
 
 	return Entity;
 }
@@ -273,7 +270,6 @@ AddCamera(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered, InitP);
 
-	Entity->MoveSpec.EnforceHorizontalMovement = false;
 	Entity->MoveSpec.Speed = 85.f;
 	Entity->MoveSpec.Drag = 0.24f * 30.0f;
 
@@ -305,7 +301,6 @@ AddInvisibleControllable(sim_region* SimRegion)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered);
 
 	Entity->MoveSpec.MoveByInput = true;
-	Entity->MoveSpec.EnforceHorizontalMovement = false;
 	Entity->MoveSpec.Speed = 80.f * 2.0f;
 	Entity->MoveSpec.Drag = 0.24f * 20.0f;
 
@@ -318,9 +313,11 @@ AddSword(sim_region* SimRegion)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Sword);
 
 	Entity->Dim = v3{0.4f, 1.5f, 0.1f} * SimRegion->WorldMap->TileSideInMeters;
-	Entity->Mass = 8.0f;
+	Entity->iM = SafeRatio0(1.0f, 8.0f);
 
 	Entity->TriggerDamage = 1;
+
+	Entity->MoveSpec.Drag = 0.4f * 30.0f;
 
 	return Entity;
 }
@@ -334,11 +331,10 @@ AddPlayer(sim_region* SimRegion, v3 InitP)
 	Entity->Collides = true;
 
 	//TODO(bjorn): Why does weight differences matter so much in the collision system.
-	Entity->Mass = 40.0f / 8.0f;
+	Entity->iM = SafeRatio0(1.0f, 70.0f);
 
+	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
 	Entity->MoveSpec.MoveByInput = true;
-	Entity->MoveSpec.EnforceVerticalGravity = true;
-	Entity->MoveSpec.EnforceHorizontalMovement = true;
 	Entity->MoveSpec.Speed = 85.f;
 	Entity->MoveSpec.Drag = 0.24f * 30.0f;
 
@@ -356,9 +352,9 @@ AddMonstar(sim_region* SimRegion, v3 InitP)
 	Entity->Dim = v3{0.5f, 0.3f, 1.0f} * SimRegion->WorldMap->TileSideInMeters;
 	Entity->Collides = true;
 
-	Entity->Mass = 40.0f / 8.0f;
+	Entity->iM = SafeRatio0(1.0f, 40.0f / 8.0f);
 
-	Entity->MoveSpec.EnforceHorizontalMovement = true;
+	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
 	Entity->MoveSpec.Speed = 85.f * 0.75;
 	Entity->MoveSpec.Drag = 0.24f * 30.0f;
 
@@ -382,9 +378,9 @@ AddFamiliar(sim_region* SimRegion, v3 InitP)
 	Entity->Dim = v3{0.5f, 0.3f, 1.0f} * SimRegion->WorldMap->TileSideInMeters;
 	Entity->Collides = true;
 
-	Entity->Mass = 40.0f / 8.0f;
+	Entity->iM = SafeRatio0(1.0f, 40.0f / 8.0f);
 
-	Entity->MoveSpec.EnforceHorizontalMovement = true;
+	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
 	Entity->MoveSpec.Speed = 85.f * 0.7f;
 	Entity->MoveSpec.Drag = 0.2f * 30.0f;
 
@@ -406,6 +402,20 @@ AddGround(sim_region* SimRegion, v3 InitP)
 }
 
 	internal_function entity*
+AddFloor(sim_region* SimRegion, v3 InitP)
+{
+	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered, InitP);
+
+	Entity->Dim = v3{100, 100, 1} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Collides = true;
+	Entity->IsFloor = true;
+
+	Entity->iM = 0.0f;
+
+	return Entity;
+}
+
+	internal_function entity*
 AddWall(sim_region* SimRegion, v3 InitP, f32 Mass = 1000.0f)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Wall, InitP);
@@ -413,8 +423,10 @@ AddWall(sim_region* SimRegion, v3 InitP, f32 Mass = 1000.0f)
 	Entity->Dim = v3{1, 1, 1} * SimRegion->WorldMap->TileSideInMeters;
 	Entity->Collides = true;
 
-	Entity->Mass = Mass;
-	Entity->MoveSpec = DefaultMoveSpec();
+	Entity->iM = SafeRatio0(1.0f, Mass);
+
+	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
+	Entity->MoveSpec.Drag = 0.4f * 30.0f;
 
 	return Entity;
 }
@@ -428,42 +440,33 @@ MoveEntity(entity* Entity, f32 dT)
 	v3 dP = Entity->dP;
 	v3 ddP = Entity->ddP;
 
+#if 0
 	v3 R = Entity->R;
 	f32 A = Entity->A;
 	f32 dA = Entity->dA;
 	f32 ddA = Entity->ddA;
+#endif
 
-	move_spec MoveSpec = Entity->MoveSpec;
-	if(MoveSpec.EnforceVerticalGravity)
-	{
-		if(MoveSpec.MovingDirection.Z > 0 &&
-			 P.Z == 0)
-		{
-			dP.Z = 18.0f;
-		}
-		if(P.Z > 0)
-		{
-			//TODO(bjorn): Why do i need the gravity to be so heavy? Because of upscaling?
-			ddP.Z = -9.82f * 7.0f;
-		}
-	}
+	move_spec* MoveSpec = &Entity->MoveSpec;
 
-	if(MoveSpec.EnforceHorizontalMovement)
-	{
-		//TODO(casey): ODE here!
-		ddP.XY = MoveSpec.MovingDirection.XY * MoveSpec.Speed;
-		ddP.XY -= MoveSpec.Drag * dP.XY;
-	}
-	else
-	{
-		ddP = MoveSpec.MovingDirection * MoveSpec.Speed;
-		ddP -= MoveSpec.Drag * dP;
-	}
+	//TODO(bjorn): Why do i need the gravity to be so heavy? Because of upscaling?
+	ddP += MoveSpec->Gravity;
 
-	ddA -= MoveSpec.Drag * 0.7f * dA;
+	//TODO(casey): ODE here!
+	ddP += MoveSpec->MovingDirection * MoveSpec->Speed;
+	ddP -= dP * MoveSpec->Drag;
 
-	P += 0.5f * ddP * Square(dT) + dP * dT;
-	dP += ddP * dT;
+	P = P + dP * dT + 0.5f * ddP * Square(dT);
+	//TODO(bjorn): Damping with precalculated Pow(Damping, dT) per update step to
+	//support different frame rates.
+	dP = dP * MoveSpec->Damping + ddP * dT;
+
+	Entity->ddP = {};
+	Entity->dP = dP;
+	Entity->P = P;
+
+#if 0
+	ddA -= MoveSpec->Drag * 0.7f * dA;
 
 	A += 0.5f * ddA * Square(dT) + dA * dT;
 	dA += ddA * dT;
@@ -472,25 +475,14 @@ MoveEntity(entity* Entity, f32 dT)
 	R.XY = CCWM22(A) * DefaultEntityOrientation().XY;
 	R = Normalize(R);
 
-	//TODO(bjorn): Think harder about how to implement the ground.
-	if(MoveSpec.EnforceFloor &&
-		 P.Z < 0.0f)
-	{
-		P.Z = 0.0f;
-		dP.Z = 0.0f;
-	}
-
-	Entity->ddP = {};
-	Entity->dP = dP;
-	Entity->P = P;
-
-	if(MoveSpec.AllowRotation)
+	if(MoveSpec->AllowRotation)
 	{
 		Entity->ddA = 0;
 		Entity->dA = dA;
 		Entity->A = A;
 		Entity->R = R;
 	}
+#endif
 }
 
 	internal_function void
@@ -516,6 +508,26 @@ HunterLogic(entity* Hunter)
 			Hunter->P = Prey->P;
 		}
 	}
+}
+
+	//TODO(bjorn): Think harder about how to implement the ground.
+	internal_function void
+FloorLogicRaw(entity* Floor, entity* Other)
+{
+	f32 FloorZ = (Floor->P.Z + Floor->Dim.Z * 0.5f);
+	if(Other->P.Z < FloorZ,
+		 IsInRectangle(RectCenterDim(Floor->P, Floor->Dim), Other->P))
+	{
+		Other->P.Z = FloorZ;
+		Other->dP.Z = 0.0f;
+	}
+}
+
+	internal_function void
+FloorLogic(entity* A, entity* B)
+{
+	if(A->IsFloor && !B->IsFloor) { FloorLogicRaw(A, B); }
+	if(B->IsFloor && !A->IsFloor) { FloorLogicRaw(B, A); }
 }
 
 //TODO IMPORTANT: What is the best way to apply a force over time to make this a smooth bounce?
@@ -553,6 +565,7 @@ ApplyDamage(entity* A, entity* B)
 	if(A->TriggerDamage && B->HitPointMax) { ApplyDamageRaw(A, B); }
 	if(B->TriggerDamage && A->HitPointMax) { ApplyDamageRaw(B, A); }
 }
+
 #define ENTITY_H
 #endif //ENTITY_H_FIRST_SECOND
 

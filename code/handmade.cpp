@@ -67,6 +67,8 @@ struct game_state
 	hero_bitmaps HeroBitmaps[4];
 
 #if HANDMADE_INTERNAL
+	world_map_position DEBUG_TestLocations[10];
+
 	b32 DEBUG_VisualiseCollisionBox;
 
 	b32 DEBUG_StepThroughTheCollisionLoop;
@@ -175,12 +177,22 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	u32 RoomHeightInTiles = 9;
 
 	v3s RoomOrigin = (v3s)RoundV2ToV2S((v2)v2u{RoomWidthInTiles, RoomHeightInTiles} / 2.0f);
+	world_map_position RoomOriginWorldPos = GetChunkPosFromAbsTile(WorldMap, RoomOrigin);
+#if HANDMADE_INTERNAL
+	for(s32 Index = 0;
+			Index < 10;
+			Index++)
+	{
+		world_map_position* WorldP = GameState->DEBUG_TestLocations + Index;
+		WorldP->Offset_ = RoomOriginWorldPos.Offset_;
+		WorldP->ChunkP = RoomOriginWorldPos.ChunkP + v3s{Index * 4, 0, 0};
+	}
+#endif
 	GameState->CameraUpdateBounds = RectCenterDim(v3{0, 0, 0}, 
 																								v3{2, 2, 2} * WorldMap->ChunkSideInMeters);
-                                                                                                    
+
 	sim_region* SimRegion = BeginSim(Input, &GameState->Entities, &GameState->TransientArena,
-																	 WorldMap, GetChunkPosFromAbsTile(WorldMap, RoomOrigin), 
-																	 GameState->CameraUpdateBounds, 0);
+																	 WorldMap, RoomOriginWorldPos, GameState->CameraUpdateBounds, 0);
 
 	entity* MainCamera = AddCamera(SimRegion, v3{0, 0, 0});
 	//TODO Is there a less cheesy (and safer!) way to do this assignment of the camera storage index?
@@ -198,6 +210,8 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 
 	entity* Familiar = AddFamiliar(SimRegion, v3{4, 5, 0} * WorldMap->TileSideInMeters);
 	Familiar->Prey = Player;
+
+	AddFloor(SimRegion, v3{0, 0, -0.5f} * WorldMap->TileSideInMeters);
 
 	AddMonstar(SimRegion, v3{ 2, 5, 0} * WorldMap->TileSideInMeters);
 
@@ -388,7 +402,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				GameState->DEBUG_CollisionLoopAdvance = true;
 				GameState->DEBUG_CollisionLoopAdvance = true;
 			}
-#endif
 
 			if(Clicked(Keyboard, M))
 			{
@@ -402,11 +415,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				if(Held(Keyboard, Shift) &&
 					 Clicked(Keyboard, Numbers[NumKeyIndex]))
 				{
-					world_map_position WorldP = WorldMapNullPos();
-					WorldP.Offset_ = {};
-					WorldP.ChunkP = {NumKeyIndex * 2, 0, 0};
 					sim_region* SimRegion = BeginSim(Input, Entities, TransientArena, WorldMap, 
-															 WorldP, GameState->CameraUpdateBounds, SecondsToUpdate);
+																					 GameState->DEBUG_TestLocations[NumKeyIndex], 
+																					 GameState->CameraUpdateBounds, SecondsToUpdate);
 
 					entity* Entity = AddEntityToSimRegionManually(Input, Entities, SimRegion, 
 																												GameState->MainCameraStorageIndex);
@@ -434,6 +445,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					EndSim(Input, Entities, WorldArena, SimRegion);
 				}
 			}
+#endif
 		}
 	}
 
@@ -588,8 +600,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						v2 ABdP = AdP - BdP;
 						f32 ndotAB = Dot(n, ABdP);
 
-						f32 AInvMass = SafeRatio0(1.0f, Entity->Mass);
-						f32 BInvMass = SafeRatio0(1.0f, OtherEntity->Mass);
+						f32 AInvMass = Entity->iM;
+						f32 BInvMass = OtherEntity->iM;
 						//TODO(bjorn): Automize inertia calculation.
 						f32 AInvMoI  = AInvMass ? 0.08f:0.0f;//GetInverseOrZero(Entity->High->MoI);
 						f32 BInvMoI  = BInvMass ? 0.08f:0.0f;//GetInverseOrZero(OtherEntity->High->MoI);
@@ -622,12 +634,19 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					trigger_state_result TriggerState = 
 						UpdateAndGetCurrentTriggerState(Entity, OtherEntity, dT, Inside);
 
+					//TODO STUDY Doublecheck HMH 69 to see what this was for again.
+#if 0
 					entity* A = Entity;
 					entity* B = OtherEntity;
-					//TODO STUDY Doublecheck HMH 69 to see what this was for again.
 					if(Entity->StorageIndex > OtherEntity->StorageIndex)
 					{
 						Swap(A, B, entity*);
+					}
+#endif
+
+					if(Entity->IsFloor || OtherEntity->IsFloor)
+					{
+						FloorLogic(Entity, OtherEntity);
 					}
 
 					if(TriggerState.OnEnter)
@@ -685,7 +704,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					{
 						WASDKeysDirection.X += 1;
 					}
-					if(Held(Entity->Keyboard, Space))
+					if(Clicked(Entity->Keyboard, Space))
 					{
 						WASDKeysDirection.Z += 1;
 					}
@@ -696,6 +715,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 					Entity->MoveSpec.MovingDirection = 
 						Entity->MoveSpec.MoveByInput ? WASDKeysDirection : v3{};
+
+					if(Entity->Sword &&
+						 Entity->MoveSpec.MovingDirection.Z > 0)
+					{
+						Entity->dP += v3{0,0,10.0f};
+					}
 
 					v2 ArrowKeysDirection = {};
 					if(Held(Entity->Keyboard, Down))

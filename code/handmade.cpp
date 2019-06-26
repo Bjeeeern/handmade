@@ -189,111 +189,158 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	GameState->CameraUpdateBounds = RectCenterDim(v3{0, 0, 0}, 
 																								v3{2, 2, 2} * WorldMap->ChunkSideInMeters);
 
-	sim_region* SimRegion = BeginSim(Input, &GameState->Entities, &GameState->TransientArena,
-																	 WorldMap, RoomOriginWorldPos, GameState->CameraUpdateBounds, 0);
-
-	entity* MainCamera = AddCamera(SimRegion, v3{0, 0, 0});
-	//TODO Is there a less cheesy (and safer!) way to do this assignment of the camera storage index?
-	GameState->MainCameraStorageIndex = 1;
-	MainCamera->Keyboard = GetKeyboard(Input, 1);
-	MainCamera->Mouse = GetMouse(Input, 1);
-
-	entity* Player = AddPlayer(SimRegion, v3{-2, 1, 0} * WorldMap->TileSideInMeters);
-	Player->Keyboard = GetKeyboard(Input, 1);
-
-	MainCamera->Prey = Player;
-	MainCamera->Player = Player;
-	MainCamera->FreeMover = AddInvisibleControllable(SimRegion);
-	MainCamera->FreeMover->Keyboard = GetKeyboard(Input, 1);
-
-	entity* Familiar = AddFamiliar(SimRegion, v3{4, 5, 0} * WorldMap->TileSideInMeters);
-	Familiar->Prey = Player;
-
-	AddFloor(SimRegion, v3{0, 0, -0.5f} * WorldMap->TileSideInMeters);
-
-	AddMonstar(SimRegion, v3{ 2, 5, 0} * WorldMap->TileSideInMeters);
-
-	entity* A = AddWall(SimRegion, v3{2, 4, 0} * WorldMap->TileSideInMeters, 10.0f);
-	entity* B = AddWall(SimRegion, v3{5, 4, 0} * WorldMap->TileSideInMeters,  5.0f);
-
-	A->dP = {1, 0, 0};
-	B->dP = {-1, 0, 0};
-	//TODO(bjorn): Have an object stuck to the mouse.
-	//GameState->DEBUG_EntityBoundToMouse = AIndex;
-
-	entity* E[6];
-	for(u32 i=0;
-			i < 6;
-			i++)
 	{
-		E[i] = AddWall(SimRegion, v3{2.0f + 2.0f*i, 2.0f, 0.0f} * WorldMap->TileSideInMeters, 
-									 10.0f + i);
-		E[i]->dP = {2.0f-i, -2.0f+i};
-	}
+		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, &GameState->TransientArena,
+																		 WorldMap, RoomOriginWorldPos, GameState->CameraUpdateBounds, 0);
 
-	u32 ScreenX = 0;
-	u32 ScreenY = 0;
-	u32 ScreenZ = 0;
-	for(u32 TileY = 0;
-			TileY < RoomHeightInTiles;
-			++TileY)
-	{
-		for(u32 TileX = 0;
-				TileX < RoomWidthInTiles;
-				++TileX)
+		entity* MainCamera = AddCamera(SimRegion, v3{0, 0, 0});
+		//TODO Is there a less cheesy (and safer!) way to do this assignment of the camera storage index?
+		GameState->MainCameraStorageIndex = 1;
+		MainCamera->Keyboard = GetKeyboard(Input, 1);
+		MainCamera->Mouse = GetMouse(Input, 1);
+
+		entity* Player = AddPlayer(SimRegion, v3{-2, 1, 0} * WorldMap->TileSideInMeters);
+		Player->Keyboard = GetKeyboard(Input, 1);
+
+		MainCamera->Prey = Player;
+		MainCamera->Player = Player;
+		MainCamera->FreeMover = AddInvisibleControllable(SimRegion);
+		MainCamera->FreeMover->Keyboard = GetKeyboard(Input, 1);
+
+		entity* Familiar = AddFamiliar(SimRegion, v3{4, 5, 0} * WorldMap->TileSideInMeters);
+		Familiar->Prey = Player;
+
+		AddFloor(SimRegion, v3{0, 0, -0.5f} * WorldMap->TileSideInMeters);
+
+		AddMonstar(SimRegion, v3{ 2, 5, 0} * WorldMap->TileSideInMeters);
+
+		entity* A = AddWall(SimRegion, v3{2, 4, 0} * WorldMap->TileSideInMeters, 10.0f);
+		entity* B = AddWall(SimRegion, v3{5, 4, 0} * WorldMap->TileSideInMeters,  5.0f);
+
+		A->dP = {1, 0, 0};
+		B->dP = {-1, 0, 0};
+		//TODO(bjorn): Have an object stuck to the mouse.
+		//GameState->DEBUG_EntityBoundToMouse = AIndex;
+
+		entity* E[6];
+		for(u32 i=0;
+				i < 6;
+				i++)
 		{
-			v3u AbsTile = {
-									 ScreenX * RoomWidthInTiles + TileX, 
-									 ScreenY * RoomHeightInTiles + TileY, 
-									 ScreenZ};
+			E[i] = AddWall(SimRegion, v3{2.0f + 2.0f*i, 2.0f, 0.0f} * WorldMap->TileSideInMeters, 
+										 10.0f + i);
+			E[i]->dP = {2.0f-i, -2.0f+i};
+		}
 
-			u32 TileValue = 1;
-			if((TileX == 0))
+		u32 ScreenX = 0;
+		u32 ScreenY = 0;
+		u32 ScreenZ = 0;
+		for(u32 TileY = 0;
+				TileY < RoomHeightInTiles;
+				++TileY)
+		{
+			for(u32 TileX = 0;
+					TileX < RoomWidthInTiles;
+					++TileX)
 			{
-				TileValue = 2;
-			}
-			if((TileX == (RoomWidthInTiles-1)))
-			{
-				TileValue = 2;
-			}
-			if((TileY == 0))
-			{
-				TileValue = 2;
-			}
-			if((TileY == (RoomHeightInTiles-1)))
-			{
-				TileValue = 2;
-			}
+				v3u AbsTile = {
+										ScreenX * RoomWidthInTiles + TileX, 
+										ScreenY * RoomHeightInTiles + TileY, 
+										ScreenZ};
 
-			if((TileY != RoomHeightInTiles && TileX != RoomWidthInTiles/2) && TileValue ==  2)
-			{
-				entity* Wall = AddWall(SimRegion, (v3)AbsTile * WorldMap->TileSideInMeters);
+				u32 TileValue = 1;
+				if((TileX == 0))
+				{
+					TileValue = 2;
+				}
+				if((TileX == (RoomWidthInTiles-1)))
+				{
+					TileValue = 2;
+				}
+				if((TileY == 0))
+				{
+					TileValue = 2;
+				}
+				if((TileY == (RoomHeightInTiles-1)))
+				{
+					TileValue = 2;
+				}
+
+				if((TileY != RoomHeightInTiles && TileX != RoomWidthInTiles/2) && TileValue ==  2)
+				{
+					entity* Wall = AddWall(SimRegion, (v3)AbsTile * WorldMap->TileSideInMeters);
+				}
 			}
 		}
-	}
 
-	EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
+		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
+}
 
 #if HANDMADE_INTERNAL
-	SimRegion = BeginSim(Input, &GameState->Entities, &GameState->TransientArena,
-											 WorldMap, GameState->DEBUG_TestLocations[1], 
-											 GameState->CameraUpdateBounds, 0);
+	{ //NOTE(bjorn): Test location 1 setup
+		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, &GameState->TransientArena,
+																		 WorldMap, GameState->DEBUG_TestLocations[1], 
+																		 GameState->CameraUpdateBounds, 0);
 
-	AddFloor(SimRegion, v3{0, 0, -0.5f} * WorldMap->TileSideInMeters);
-	entity* ForceField = AddForceField(SimRegion, v3{0, 0, 6});
-	ForceField->Keyboard = GetKeyboard(Input, 1);
-	for(s32 ParticleIndex = 0;
-			ParticleIndex < 9;
-			ParticleIndex++)
-	{
-		f32 x = (f32)((ParticleIndex % 3) - 3/2);
-		f32 y = (f32)((ParticleIndex / 3) - 3/2);
+		AddFloor(SimRegion, v3{0, 0, -0.5f} * WorldMap->TileSideInMeters);
+		entity* ForceField = AddForceField(SimRegion, v3{0, 0, 6});
+		ForceField->Keyboard = GetKeyboard(Input, 1);
+		for(s32 ParticleIndex = 0;
+				ParticleIndex < 9;
+				ParticleIndex++)
+		{
+			f32 x = (f32)((ParticleIndex % 3) - 3/2);
+			f32 y = (f32)((ParticleIndex / 3) - 3/2);
 
-		AddParticle(SimRegion, v3{x, y, 0.0f} * 2.0f * WorldMap->TileSideInMeters, 
-								1.0f + ParticleIndex * 20.0f);
+			AddParticle(SimRegion, v3{x, y, 0.0f} * 2.0f * WorldMap->TileSideInMeters, 
+									1.0f + ParticleIndex * 20.0f);
+		}
+
+		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}
 
-	EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
+	{ //NOTE(bjorn): Test location 2 setup
+		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, &GameState->TransientArena,
+																		 WorldMap, GameState->DEBUG_TestLocations[2], 
+																		 GameState->CameraUpdateBounds, 0);
+
+		AddFloor(SimRegion, v3{0, 0, -0.5f} * WorldMap->TileSideInMeters);
+		entity* Fixture = AddFixture(SimRegion, v3{0, 0, 24});
+
+		f32 SpringConstant = 20.0f;
+
+		entity* PrevParticle = 0;
+		for(s32 ParticleIndex = 0;
+				ParticleIndex < 9;
+				ParticleIndex++)
+		{
+			f32 x = (f32)((ParticleIndex % 3) - 3/2);
+			f32 y = (f32)((ParticleIndex / 3) - 3/2);
+
+			v3 Pos = v3{x, y, 0.0f} * 2.0f * WorldMap->TileSideInMeters;
+			entity* Particle = AddParticle(SimRegion, Pos, 10.0f);
+
+			if(ParticleIndex < 7)
+			{
+				AddOneWaySpringAttachment(Particle, Fixture, SpringConstant, 2.0f);
+			}
+			else
+			{ 
+				AddTwoWaySpringAttachment(Particle, PrevParticle, SpringConstant*1.5f, 0.1f);
+			}
+
+			PrevParticle = Particle;
+		}
+
+		entity* A = AddMonstar(SimRegion, v3{6, 0, 0} * WorldMap->TileSideInMeters);
+		entity* B = AddMonstar(SimRegion, v3{6, -4, 0} * WorldMap->TileSideInMeters);
+		A->Keyboard = GetKeyboard(Input, 1);
+		A->MoveSpec.MoveOnInput = true;
+
+		AddTwoWayBungeeAttachment(A, B, SpringConstant*5.0f, 5.0f);
+
+		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
+	}
 #endif
 
 	EndTemporaryMemory(TempMem);
@@ -334,8 +381,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 	{
 		entity TestEntity = {};
-		s64 Amount = (&(TestEntity.struct_terminator0_) - &(TestEntity.Attatchments[0]));
-		s64 Limit = ArrayCount(TestEntity.Attatchments);
+		s64 Amount = (&(TestEntity.struct_terminator0_) - &(TestEntity.Attachments[0]));
+		s64 Limit = ArrayCount(TestEntity.Attachments);
 		Assert(Amount <= Limit);
 	}
 #endif
@@ -440,26 +487,38 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 																					 GameState->DEBUG_TestLocations[NumKeyIndex], 
 																					 GameState->CameraUpdateBounds, SecondsToUpdate);
 
-					entity* Entity = AddEntityToSimRegionManually(Input, Entities, SimRegion, 
+					entity* MainCamera = AddEntityToSimRegionManually(Input, Entities, SimRegion, 
 																												GameState->MainCameraStorageIndex);
-					Assert(Entity);
-					Assert(Entity->IsSpacial);
-					Entity->P = {0,0,0};
-					if(Entity->Prey == Entity->Player)
-					{
-						MakeEntitySpacial(Entity->FreeMover, Entity->P);
-						Entity->Player->MoveSpec.MoveByInput = false;
-						Entity->Prey = Entity->FreeMover;
-					}
-					else
-					{
-						Assert(Entity->FreeMover->IsSpacial);
-						Entity->FreeMover->P = {0,0,0};
-					}
+					Assert(MainCamera);
+					Assert(MainCamera->IsSpacial);
+					Assert(MainCamera->IsCamera);
 
-					//NOTE(bjorn): Make sure our changes to the entities persists.
-					Entity->Updates = true;
-					Entity->FreeMover->Updates = true;
+					if(!MainCamera->Updates)
+					{
+						if(MainCamera->Prey != MainCamera->FreeMover)
+						{
+							DetachToMoveFreely(MainCamera);
+						}
+						//TODO(bjorn): Add a MoveFarAwayEntityToUpdateRegion(v3 P) that bounds check properly.
+						MainCamera->P = {0,0,0};
+						//NOTE(bjorn): Make sure our changes to the entities persists.
+						MainCamera->Updates = true;
+
+						entity* Player = FindPlayerInSimUpdateRegion(SimRegion, MainCamera);
+
+						if(!Player)
+						{
+							Assert(MainCamera->FreeMover->IsSpacial);
+							MainCamera->FreeMover->P = {0,0,0};
+							MainCamera->FreeMover->Updates = true;
+						}
+						else
+						{
+							MainCamera->Player->MoveSpec.MoveOnInput = true;
+							MainCamera->Player = Player;
+							AttachToPlayer(MainCamera);
+						}
+					}
 
 					EndSim(Input, Entities, WorldArena, SimRegion);
 				}
@@ -663,6 +722,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					}
 #endif
 
+					//TODO IMPORTANT(bjorn): Both ForceFieldLogic and FloorLogic needs to be moved
+					//to a trigger handling and a collision handling system respectively. 
 					ForceFieldLogic(Entity, OtherEntity);
 					FloorLogic(Entity, OtherEntity);
 
@@ -730,8 +791,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						WASDKeysDirection *= inv_root2;
 					}
 
-					Entity->MoveSpec.MovingDirection = 
-						Entity->MoveSpec.MoveByInput ? WASDKeysDirection : v3{};
+					Entity->MoveSpec.MovingDirection = Entity->MoveSpec.MoveOnInput ? WASDKeysDirection : v3{};
 
 					if(Entity->Sword &&
 						 Entity->MoveSpec.MovingDirection.Z > 0)
@@ -784,25 +844,17 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						MakeEntitySpacial(Sword, P, ArrowKeysDirection * 8.0f, ArrowKeysDirection);
 					}
 
-					if(Entity->FreeMover && 
-						 Entity->Player)
+					if(Entity->IsCamera)
 					{
 						if(Clicked(Entity->Keyboard, C))
 						{
 							if(Entity->Prey == Entity->Player)
 							{
-								MakeEntitySpacial(Entity->FreeMover, Entity->P);
-								Entity->Player->MoveSpec.MoveByInput = false;
-								Entity->Prey = Entity->FreeMover;
+								DetachToMoveFreely(Entity);
 							}
-							//NOTE(bjorn): Dont bother to change to the player if he is
-							//outside of the update bounds.
-							else if(Entity->Prey == Entity->FreeMover &&
-											Entity->Player->Updates)
+							else if(Entity->Prey == Entity->FreeMover)
 							{
-								MakeEntityNonSpacial(Entity->FreeMover);
-								Entity->Player->MoveSpec.MoveByInput = true;
-								Entity->Prey = Entity->Player;
+								AttachToPlayer(Entity);
 							}
 						}
 
@@ -836,6 +888,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				}
 
 				HunterLogic(Entity);
+				ApplySpringyForces(Entity);
 
 				MoveEntity(Entity, dT);
 

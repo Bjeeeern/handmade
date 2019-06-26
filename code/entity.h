@@ -5,7 +5,7 @@
 struct move_spec
 {
 	b32 AllowRotation : 1;
-	b32 MoveByInput : 1;
+	b32 MoveOnInput : 1;
 
 	v3 Gravity;
 	f32 Damping;
@@ -61,6 +61,7 @@ typedef game_keyboard* keyboard_reference;
 typedef game_mouse* mouse_reference;
 
 #include "trigger.h"
+#include "attachment.h"
 
 struct entity
 {
@@ -72,6 +73,7 @@ struct entity
 	b32 IsSpacial : 1;
 	b32 Collides : 1;
 	b32 IsFloor : 1;
+	b32 IsCamera : 1;
 	//NOTE(bjorn): CarFrame
 	//TODO(bjorn): Use this to move out the turning code to the cars update loop.
 	b32 AutoPilot : 1;
@@ -121,12 +123,14 @@ struct entity
 
 	union
 	{
-		entity_reference EntityReferences[16];
+#define ENTITY_REFERENCES 16
+		entity_reference EntityReferences[ENTITY_REFERENCES];
 		struct
 		{
 			union
 			{
-				entity_reference Attatchments[8];
+#define ENTITY_ATTACHMENTS (ENTITY_REFERENCES / 2)
+				entity_reference Attachments[ENTITY_ATTACHMENTS];
 				struct
 				{
 					//NOTE(bjorn): Car-parts
@@ -138,17 +142,30 @@ struct entity
 					entity_reference struct_terminator0_;
 				};
 			};
-			//NOTE(bjorn): Camera
+			//TODO STUDY(bjorn): Does a parent-child entity grouping have in anyway
+			//be a dependency on the attachment system? Maybe I could keep them
+			//somewhat separable.
+			entity_reference Parent;
+
+			//TODO(bjorn): I use these to identify the camera and the player rigth
+			//now. Maybe the player is just undefined and the real "player" could in
+			//principle play any entity in the game? The camera should maybe just be
+			//its own system together with a flag.
+			//TODO STUDY(bjorn): How do I distribute the references among the
+			//systems? Does a system just hog the first best reference spot or should
+			//each system just have the neccesary references they need as it is right
+			//now? This goes for the attachments too I feel...
 			entity_reference Player;
 			entity_reference FreeMover;
 			//NOTE(bjorn): Player
 			entity_reference Sword;
-			//entity_reference RidingVehicle;
-
 			entity_reference Prey;
+
 			entity_reference struct_terminator1_;
 		};
 	};
+	u32 AttachmentCount;
+	attachment_info AttachmentInfo[ENTITY_ATTACHMENTS];
 
 	//NOTE(bjorn): Sword
 	f32 DistanceRemaining;
@@ -165,6 +182,7 @@ struct entity
 };
 
 #include "trigger.h"
+#include "attachment.h"
 
 inline v3
 DefaultEntityOrientation()
@@ -283,6 +301,7 @@ AddCamera(sim_region* SimRegion, v3 InitP)
 	Entity->HunterSearchRadius = positive_infinity32;
 	Entity->MinimumHuntRangeSquared = Square(0.2f);
 
+	Entity->IsCamera = true;
 	Entity->CamZoom = 1.0f;
 
 	return Entity;
@@ -306,7 +325,7 @@ AddInvisibleControllable(sim_region* SimRegion)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered);
 
-	Entity->MoveSpec.MoveByInput = true;
+	Entity->MoveSpec.MoveOnInput = true;
 	Entity->MoveSpec.Speed = 80.f * 2.0f;
 	Entity->MoveSpec.Damping = 0.98f;
 
@@ -348,7 +367,7 @@ AddPlayer(sim_region* SimRegion, v3 InitP)
 	Entity->iM = SafeRatio0(1.0f, 70.0f);
 
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
-	Entity->MoveSpec.MoveByInput = true;
+	Entity->MoveSpec.MoveOnInput = true;
 	Entity->MoveSpec.Speed = 85.f;
 	SetStandardFrictionForGroundObjects(&Entity->MoveSpec);
 
@@ -366,7 +385,7 @@ AddMonstar(sim_region* SimRegion, v3 InitP)
 	Entity->Dim = v3{0.5f, 0.3f, 1.0f} * SimRegion->WorldMap->TileSideInMeters;
 	Entity->Collides = true;
 
-	Entity->iM = SafeRatio0(1.0f, 40.0f / 8.0f);
+	Entity->iM = SafeRatio0(1.0f, 70.0f);
 
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
 	Entity->MoveSpec.Speed = 85.f * 0.75;
@@ -430,6 +449,19 @@ AddFloor(sim_region* SimRegion, v3 InitP)
 }
 
 	internal_function entity*
+AddFixture(sim_region* SimRegion, v3 InitP)
+{
+	entity* Entity = AddEntity(SimRegion, EntityVisualType_Sword, InitP);
+
+	Entity->Dim = v3{1, 1, 1} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Collides = true;
+
+	Entity->iM = 0.0f;
+
+	return Entity;
+}
+
+	internal_function entity*
 AddWall(sim_region* SimRegion, v3 InitP, f32 Mass = 1000.0f)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Wall, InitP);
@@ -471,6 +503,8 @@ AddParticle(sim_region* SimRegion, v3 InitP, f32 Mass = 0.0f)
 	Entity->iM = SafeRatio0(1.0f, Mass);
 
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 10.0f;
+	Entity->MoveSpec.Drag_k1 = 0.0f;
+	Entity->MoveSpec.Drag_k2 = 0.5f;
 
 	return Entity;
 }
@@ -637,7 +671,60 @@ ApplyDamage(entity* A, entity* B)
 	if(B->TriggerDamage && A->HitPointMax) { ApplyDamageRaw(B, A); }
 }
 
-#define ENTITY_H
-#endif //ENTITY_H_FIRST_SECOND
+//TODO(bjorn): This feels like a future camera.h
+internal_function void
+AttachToPlayer(entity* Camera)
+{
+	Assert(Camera->IsCamera);
+	Assert(Camera->Player && Camera->FreeMover);
+	Assert(Camera->Player != Camera->Prey)
 
+	MakeEntityNonSpacial(Camera->FreeMover);
+	Camera->Player->MoveSpec.MoveOnInput = true;
+	Camera->Prey = Camera->Player;
+
+	if(!Camera->Player->Updates)
+	{
+		Camera->P = Camera->Player->P;
+	}
+}
+
+	internal_function void
+DetachToMoveFreely(entity* Camera)
+{
+	Assert(Camera->IsCamera);
+	Assert(Camera->Player && Camera->FreeMover);
+	Assert(Camera->FreeMover != Camera->Prey);
+
+	MakeEntitySpacial(Camera->FreeMover, Camera->P);
+	Camera->Player->MoveSpec.MoveOnInput = false;
+	Camera->Prey = Camera->FreeMover;
+}
+
+	internal_function entity*
+FindPlayerInSimUpdateRegion(sim_region* SimRegion, entity* Camera)
+{
+	Assert(Camera->IsCamera);
+	Assert(Camera->FreeMover);
+
+	entity* Result = 0;
+
+	entity* Entity = SimRegion->Entities;
+	for(u32 EntityIndex = 0;
+			EntityIndex < SimRegion->EntityCount;
+			EntityIndex++, Entity++)
+	{
+		if(Entity->MoveSpec.MoveOnInput && 
+			 Entity->Updates &&
+			 Entity != Camera->FreeMover)
+		{
+			Result = Entity;
+		}
+	}
+
+	return Result;
+}
+
+#define ENTITY_H
+#endif //ENTITY_H_FIRST_PASS
 #endif //ENTITY_H

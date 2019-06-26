@@ -191,10 +191,12 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 
 	{
 		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, &GameState->TransientArena,
-																		 WorldMap, RoomOriginWorldPos, GameState->CameraUpdateBounds, 0);
+																		 WorldMap, RoomOriginWorldPos, GameState->CameraUpdateBounds, 
+																		 0);
 
 		entity* MainCamera = AddCamera(SimRegion, v3{0, 0, 0});
-		//TODO Is there a less cheesy (and safer!) way to do this assignment of the camera storage index?
+		//TODO Is there a less cheesy (and safer!) way to do this assignment of the
+		//camera storage index?
 		GameState->MainCameraStorageIndex = 1;
 		MainCamera->Keyboard = GetKeyboard(Input, 1);
 		MainCamera->Mouse = GetMouse(Input, 1);
@@ -334,10 +336,14 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 
 		entity* A = AddMonstar(SimRegion, v3{6, 0, 0} * WorldMap->TileSideInMeters);
 		entity* B = AddMonstar(SimRegion, v3{6, -4, 0} * WorldMap->TileSideInMeters);
+		entity* C = AddMonstar(SimRegion, v3{6, -7, 0} * WorldMap->TileSideInMeters);
+		entity* D = AddMonstar(SimRegion, v3{3, -7, 0} * WorldMap->TileSideInMeters);
 		A->Keyboard = GetKeyboard(Input, 1);
 		A->MoveSpec.MoveOnInput = true;
 
 		AddTwoWayBungeeAttachment(A, B, SpringConstant*5.0f, 5.0f);
+		AddTwoWayRodAttachment(A, C, 3.0f);
+		AddTwoWayCableAttachment(D, C, 0.5f, 5.0f);
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}

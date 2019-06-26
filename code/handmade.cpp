@@ -16,9 +16,7 @@
 
 // QUICK TODO
 //
-// * Solve weird entity visual artefact when jumping. Has to do with imperfect
-// dealing with flooring.
-// * Non horizontal movement for the camera with shift+W/S is not working for some reason.
+// * Add hunting along Z-axis too.
 
 // TODO
 // * Make it so that I can visually step through a frame of collision.
@@ -275,6 +273,29 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	}
 
 	EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
+
+#if HANDMADE_INTERNAL
+	SimRegion = BeginSim(Input, &GameState->Entities, &GameState->TransientArena,
+											 WorldMap, GameState->DEBUG_TestLocations[1], 
+											 GameState->CameraUpdateBounds, 0);
+
+	AddFloor(SimRegion, v3{0, 0, -0.5f} * WorldMap->TileSideInMeters);
+	entity* ForceField = AddForceField(SimRegion, v3{0, 0, 6});
+	ForceField->Keyboard = GetKeyboard(Input, 1);
+	for(s32 ParticleIndex = 0;
+			ParticleIndex < 9;
+			ParticleIndex++)
+	{
+		f32 x = (f32)((ParticleIndex % 3) - 3/2);
+		f32 y = (f32)((ParticleIndex / 3) - 3/2);
+
+		AddParticle(SimRegion, v3{x, y, 0.0f} * 2.0f * WorldMap->TileSideInMeters, 
+								1.0f + ParticleIndex * 20.0f);
+	}
+
+	EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
+#endif
+
 	EndTemporaryMemory(TempMem);
 }
 
@@ -429,8 +450,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						MakeEntitySpacial(Entity->FreeMover, Entity->P);
 						Entity->Player->MoveSpec.MoveByInput = false;
 						Entity->Prey = Entity->FreeMover;
-						Entity->MoveSpec.Speed = Entity->FreeMover->MoveSpec.Speed;
-						Entity->MoveSpec.Drag = Entity->FreeMover->MoveSpec.Drag;
 					}
 					else
 					{
@@ -644,10 +663,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					}
 #endif
 
-					if(Entity->IsFloor || OtherEntity->IsFloor)
-					{
-						FloorLogic(Entity, OtherEntity);
-					}
+					ForceFieldLogic(Entity, OtherEntity);
+					FloorLogic(Entity, OtherEntity);
 
 					if(TriggerState.OnEnter)
 					{
@@ -722,6 +739,18 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						Entity->dP += v3{0,0,10.0f};
 					}
 
+					if(Entity->ForceFieldRadiusSquared)
+					{
+						if(Held(Entity->Keyboard, Space))
+						{
+							Entity->ForceFieldStrenght = 100.0f;
+						}
+						else
+						{
+							Entity->ForceFieldStrenght = 0.0f;
+						}
+					}
+
 					v2 ArrowKeysDirection = {};
 					if(Held(Entity->Keyboard, Down))
 					{
@@ -765,8 +794,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								MakeEntitySpacial(Entity->FreeMover, Entity->P);
 								Entity->Player->MoveSpec.MoveByInput = false;
 								Entity->Prey = Entity->FreeMover;
-								Entity->MoveSpec.Speed = Entity->FreeMover->MoveSpec.Speed;
-								Entity->MoveSpec.Drag = Entity->FreeMover->MoveSpec.Drag;
 							}
 							//NOTE(bjorn): Dont bother to change to the player if he is
 							//outside of the update bounds.
@@ -776,8 +803,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								MakeEntityNonSpacial(Entity->FreeMover);
 								Entity->Player->MoveSpec.MoveByInput = true;
 								Entity->Prey = Entity->Player;
-								Entity->MoveSpec.Speed = Entity->Player->MoveSpec.Speed;
-								Entity->MoveSpec.Drag = Entity->Player->MoveSpec.Drag;
 							}
 						}
 

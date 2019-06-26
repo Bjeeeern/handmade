@@ -11,8 +11,9 @@ struct move_spec
 	f32 Damping;
 
 	f32 Speed;
-	f32 Drag;
-	f32 AngularDrag;
+	f32 Drag_k1;
+	f32 Drag_k2;
+	//f32 AngularDrag;
 
 	//TODO(bjorn): Could this just be ddP?
 	v3 MovingDirection;
@@ -96,6 +97,7 @@ struct entity
 	v3 P;
 	v3 dP;
 	v3 ddP;
+	v3 F;
 
 	v3 Dim;
 
@@ -156,6 +158,10 @@ struct entity
 	f32 HunterSearchRadius;
 	f32 BestDistanceToPreySquared;
 	f32 MinimumHuntRangeSquared;
+
+	//NOTE(bjorn): Force field
+	f32 ForceFieldRadiusSquared;
+	f32 ForceFieldStrenght;
 };
 
 #include "trigger.h"
@@ -270,8 +276,8 @@ AddCamera(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered, InitP);
 
-	Entity->MoveSpec.Speed = 85.f;
-	Entity->MoveSpec.Drag = 0.24f * 30.0f;
+	Entity->MoveSpec.Speed = 80.f * 2.0f;
+	Entity->MoveSpec.Damping = 0.98f;
 
 	Entity->StickToPrey = true;
 	Entity->HunterSearchRadius = positive_infinity32;
@@ -302,7 +308,7 @@ AddInvisibleControllable(sim_region* SimRegion)
 
 	Entity->MoveSpec.MoveByInput = true;
 	Entity->MoveSpec.Speed = 80.f * 2.0f;
-	Entity->MoveSpec.Drag = 0.24f * 20.0f;
+	Entity->MoveSpec.Damping = 0.98f;
 
 	return Entity;
 }
@@ -317,9 +323,17 @@ AddSword(sim_region* SimRegion)
 
 	Entity->TriggerDamage = 1;
 
-	Entity->MoveSpec.Drag = 0.4f * 30.0f;
+	Entity->MoveSpec.Drag_k1 = 0.3f;
+	Entity->MoveSpec.Drag_k2 = 0.1f;
 
 	return Entity;
+}
+
+internal_function void
+SetStandardFrictionForGroundObjects(move_spec* MoveSpec)
+{
+	MoveSpec->Drag_k1 = 400.0f;
+	MoveSpec->Drag_k2 = 5.0f;
 }
 
 	internal_function entity*
@@ -336,7 +350,7 @@ AddPlayer(sim_region* SimRegion, v3 InitP)
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
 	Entity->MoveSpec.MoveByInput = true;
 	Entity->MoveSpec.Speed = 85.f;
-	Entity->MoveSpec.Drag = 0.24f * 30.0f;
+	SetStandardFrictionForGroundObjects(&Entity->MoveSpec);
 
 	AddHitPoints(Entity, 6);
 	Entity->Sword = AddSword(SimRegion);
@@ -356,7 +370,7 @@ AddMonstar(sim_region* SimRegion, v3 InitP)
 
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
 	Entity->MoveSpec.Speed = 85.f * 0.75;
-	Entity->MoveSpec.Drag = 0.24f * 30.0f;
+	SetStandardFrictionForGroundObjects(&Entity->MoveSpec);
 
 	AddHitPoints(Entity, 3);
 
@@ -382,7 +396,7 @@ AddFamiliar(sim_region* SimRegion, v3 InitP)
 
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
 	Entity->MoveSpec.Speed = 85.f * 0.7f;
-	Entity->MoveSpec.Drag = 0.2f * 30.0f;
+	SetStandardFrictionForGroundObjects(&Entity->MoveSpec);
 
 	Entity->HunterSearchRadius = 6.0f;
 	Entity->MinimumHuntRangeSquared = Square(2.0f);
@@ -406,7 +420,7 @@ AddFloor(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered, InitP);
 
-	Entity->Dim = v3{100, 100, 1} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Dim = v3{50, 50, 1} * SimRegion->WorldMap->TileSideInMeters;
 	Entity->Collides = true;
 	Entity->IsFloor = true;
 
@@ -426,7 +440,37 @@ AddWall(sim_region* SimRegion, v3 InitP, f32 Mass = 1000.0f)
 	Entity->iM = SafeRatio0(1.0f, Mass);
 
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
-	Entity->MoveSpec.Drag = 0.4f * 30.0f;
+	SetStandardFrictionForGroundObjects(&Entity->MoveSpec);
+
+	return Entity;
+}
+
+	internal_function entity*
+AddForceField(sim_region* SimRegion, v3 InitP)
+{
+	entity* Entity = AddEntity(SimRegion, EntityVisualType_Sword, InitP);
+
+	Entity->Dim = v3{0.1f, 0.1f, 0.1f} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Collides = true;
+	Entity->iM = 0.0f;
+
+	Entity->ForceFieldRadiusSquared = Square(10.0f);
+	Entity->ForceFieldStrenght = 0.0f;
+
+	return Entity;
+}
+
+	internal_function entity*
+AddParticle(sim_region* SimRegion, v3 InitP, f32 Mass = 0.0f)
+{
+	entity* Entity = AddEntity(SimRegion, EntityVisualType_Wall, InitP);
+
+	Entity->Dim = v3{1, 1, 1} * SimRegion->WorldMap->TileSideInMeters * Mass/100.0f;
+	Entity->Collides = true;
+
+	Entity->iM = SafeRatio0(1.0f, Mass);
+
+	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 10.0f;
 
 	return Entity;
 }
@@ -435,10 +479,10 @@ AddWall(sim_region* SimRegion, v3 InitP, f32 Mass = 1000.0f)
 MoveEntity(entity* Entity, f32 dT)
 {
 	Assert(Entity->IsSpacial);
-
 	v3 P = Entity->P;
 	v3 dP = Entity->dP;
 	v3 ddP = Entity->ddP;
+	v3 F = Entity->F;
 
 #if 0
 	v3 R = Entity->R;
@@ -449,18 +493,28 @@ MoveEntity(entity* Entity, f32 dT)
 
 	move_spec* MoveSpec = &Entity->MoveSpec;
 
-	//TODO(bjorn): Why do i need the gravity to be so heavy? Because of upscaling?
-	ddP += MoveSpec->Gravity;
+	if(Entity->iM)
+	{ 
+		if(MoveSpec->Drag_k1 || MoveSpec->Drag_k2)
+		{
+			f32 dP_m = Lenght(dP);
+			F -= dP * (MoveSpec->Drag_k1 + MoveSpec->Drag_k2 * dP_m);
+		}
+
+		ddP += F * Entity->iM;
+		//TODO(bjorn): Why do i need the gravity to be so heavy? Because of upscaling?
+		ddP += MoveSpec->Gravity;
+	}
 
 	//TODO(casey): ODE here!
 	ddP += MoveSpec->MovingDirection * MoveSpec->Speed;
-	ddP -= dP * MoveSpec->Drag;
 
 	P = P + dP * dT + 0.5f * ddP * Square(dT);
 	//TODO(bjorn): Damping with precalculated Pow(Damping, dT) per update step to
 	//support different frame rates.
 	dP = dP * MoveSpec->Damping + ddP * dT;
 
+	Entity->F = {};
 	Entity->ddP = {};
 	Entity->dP = dP;
 	Entity->P = P;
@@ -508,6 +562,23 @@ HunterLogic(entity* Hunter)
 			Hunter->P = Prey->P;
 		}
 	}
+}
+
+	internal_function void
+ForceFieldLogicRaw(entity* ForceField, entity* Other)
+{
+	v3 ToCenter = ForceField->P - Other->P;
+	if(LenghtSquared(ToCenter) < ForceField->ForceFieldRadiusSquared)
+	{
+		Other->F += ToCenter * ForceField->ForceFieldStrenght;
+	}
+}
+
+	internal_function void
+ForceFieldLogic(entity* A, entity* B)
+{
+	if(A->ForceFieldRadiusSquared && !B->ForceFieldRadiusSquared) { ForceFieldLogicRaw(A, B); }
+	if(B->ForceFieldRadiusSquared && !A->ForceFieldRadiusSquared) { ForceFieldLogicRaw(B, A); }
 }
 
 	//TODO(bjorn): Think harder about how to implement the ground.

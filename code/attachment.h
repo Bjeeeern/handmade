@@ -40,6 +40,7 @@ AddAttachmentRaw(entity* Subject, entity* EndPoint)
 	attachment_info* Result = 0;
 
 	Assert(Subject && EndPoint);
+	Assert(Subject != EndPoint);
 	Assert(Subject->AttachmentCount < ArrayCount(Subject->Attachments));
 	u32 AttachmentIndex = Subject->AttachmentCount++;
 
@@ -113,6 +114,10 @@ AddTwoWayCableAttachment(entity* A, entity* B, f32 Restitution, f32 SlackLength)
 	AddOneWayCableAttachment(B, A, Restitution, SlackLength);
 }
 
+//TODO STUDY(bjorn): Multiple attachment can still totally glicth out sometimes. 
+// * Make attachments have breaking points and failstates (more realistic)
+// * Special case handling of generated speeds over sim_region maximum.
+// * Maybe solve it through some sort of ordererd resolution scheme.
 internal_function void
 ApplyAttachmentForcesAndImpulses(entity* Entity)
 {

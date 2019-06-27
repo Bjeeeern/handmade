@@ -107,8 +107,10 @@ struct entity
 	f32 CamZoom;
 
 	f32 iM; //NOTE(bjorn): Inverse mass
-	move_spec MoveSpec;
+	f32 Restitution;
 	f32 GroundFriction;
+
+	move_spec MoveSpec;
 
 	u32 FacingDirection;
 
@@ -412,6 +414,7 @@ AddFamiliar(sim_region* SimRegion, v3 InitP)
 	Entity->Collides = true;
 
 	Entity->iM = SafeRatio0(1.0f, 40.0f / 8.0f);
+	Entity->Restitution = 0.5f;
 
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
 	Entity->MoveSpec.Speed = 85.f * 0.7f;
@@ -501,6 +504,7 @@ AddParticle(sim_region* SimRegion, v3 InitP, f32 Mass = 0.0f)
 	Entity->Collides = true;
 
 	Entity->iM = SafeRatio0(1.0f, Mass);
+	Entity->Restitution = 0.9f;
 
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 10.0f;
 	Entity->MoveSpec.Drag_k1 = 0.0f;
@@ -531,7 +535,7 @@ MoveEntity(entity* Entity, f32 dT)
 	{ 
 		if(MoveSpec->Drag_k1 || MoveSpec->Drag_k2)
 		{
-			f32 dP_m = Lenght(dP);
+			f32 dP_m = Length(dP);
 			F -= dP * (MoveSpec->Drag_k1 + MoveSpec->Drag_k2 * dP_m);
 		}
 
@@ -581,7 +585,7 @@ HunterLogic(entity* Hunter)
 		entity* Prey = Hunter->Prey;
 
 		v3 DistanceToPrey = Prey->P - Hunter->P;
-		f32 DistanceToPreySquared = LenghtSquared(DistanceToPrey);
+		f32 DistanceToPreySquared = LengthSquared(DistanceToPrey);
 
 		if(DistanceToPreySquared < Hunter->BestDistanceToPreySquared &&
 			 DistanceToPreySquared > Hunter->MinimumHuntRangeSquared)
@@ -602,7 +606,7 @@ HunterLogic(entity* Hunter)
 ForceFieldLogicRaw(entity* ForceField, entity* Other)
 {
 	v3 ToCenter = ForceField->P - Other->P;
-	if(LenghtSquared(ToCenter) < ForceField->ForceFieldRadiusSquared)
+	if(LengthSquared(ToCenter) < ForceField->ForceFieldRadiusSquared)
 	{
 		Other->F += ToCenter * ForceField->ForceFieldStrenght;
 	}
@@ -640,7 +644,7 @@ FloorLogic(entity* A, entity* B)
 BounceRaw(entity* Flyer, entity* Other)
 {
 	Assert(Flyer->DistanceRemaining);
-	Flyer->dP = Lenght(Flyer->dP) * Normalize(Flyer->P - Other->P);
+	Flyer->dP = Length(Flyer->dP) * Normalize(Flyer->P - Other->P);
 }
 
 	internal_function void

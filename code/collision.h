@@ -38,7 +38,7 @@ GetClosestPointOnLineSegment(v2 A, v2 B, v2 P)
 	v2 AP = P - A;
 	v2 AB = B - A;
 
-	f32 t = Dot(AP, AB) / LenghtSquared(AB);
+	f32 t = Dot(AP, AB) / LengthSquared(AB);
 
 	Result.t = t;
 	if (t <= 0)

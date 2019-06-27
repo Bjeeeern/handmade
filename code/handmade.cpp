@@ -649,7 +649,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						Assert(RelevantNodeIndex >= 0);
 						{
 							Penetration	= SquareRoot(BestSquareDistanceToWall);
-							Assert(Penetration <= (Lenght(Entity->Dim) + Lenght(OtherEntity->Dim)) * 0.5f);
+							Assert(Penetration <= (Length(Entity->Dim) + Length(OtherEntity->Dim)) * 0.5f);
 
 							v2 N0 = Sum.Nodes[RelevantNodeIndex];
 							v2 N1 = Sum.Nodes[(RelevantNodeIndex+1) % Sum.NodeCount];
@@ -792,12 +792,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					{
 						WASDKeysDirection.Z += 1;
 					}
-					if(LenghtSquared(WASDKeysDirection) > 1.0f)
+					if(LengthSquared(WASDKeysDirection) > 1.0f)
 					{
 						WASDKeysDirection *= inv_root2;
 					}
 
-					Entity->MoveSpec.MovingDirection = Entity->MoveSpec.MoveOnInput ? WASDKeysDirection : v3{};
+					Entity->MoveSpec.MovingDirection = 
+						Entity->MoveSpec.MoveOnInput ? WASDKeysDirection : v3{};
 
 					if(Entity->Sword &&
 						 Entity->MoveSpec.MovingDirection.Z > 0)
@@ -894,22 +895,23 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				}
 
 				HunterLogic(Entity);
-				ApplySpringyForces(Entity);
+
+				ApplyAttachmentForcesAndImpulses(Entity);
 
 				MoveEntity(Entity, dT);
 
 #if HANDMADE_SLOW
 				{
-					Assert(LenghtSquared(Entity->dP) <= Square(SimRegion->MaxEntityVelocity));
+					Assert(LengthSquared(Entity->dP) <= Square(SimRegion->MaxEntityVelocity));
 
-					f32 S1 = LenghtSquared(Entity->Dim * 0.5f);
+					f32 S1 = LengthSquared(Entity->Dim * 0.5f);
 					f32 S2 = Square(SimRegion->MaxEntityRadius);
 					Assert(S1 <= S2);
 				}
 #endif
 
 				v3 NewP = Entity->P;
-				f32 dP = Lenght(NewP - OldP);
+				f32 dP = Length(NewP - OldP);
 
 				if(Entity->DistanceRemaining > 0)
 				{
@@ -934,7 +936,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			//
 			if(Step == LastStep)
 			{
-				if(LenghtSquared(Entity->dP) != 0.0f)
+				if(LengthSquared(Entity->dP) != 0.0f)
 				{
 					if(Absolute(Entity->dP.X) > Absolute(Entity->dP.Y))
 					{

@@ -65,6 +65,7 @@ struct collision_result
 	v2 Normal;
 };
 
+#if 0
 enum minkowski_sum_origin
 {
 	MinkowskiGenus_Target,
@@ -173,6 +174,7 @@ DEBUGMinkowskiSum(game_offscreen_buffer* Buffer,
 						 NormalColor);
 	}
 }
+#endif
 #endif
 
 //STUDY(bjorn): This is from a book about collision. Comeback and make sure you

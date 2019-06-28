@@ -17,9 +17,8 @@ struct render_piece
 	loaded_bitmap* BMP;
 
 	v4 Color;
-	v3 Dim;
 
-	v3 P;
+	m44 ObjToWorldTransform;
 };
 
 struct render_group
@@ -39,31 +38,30 @@ AllocateRenderGroup(memory_arena* Arena)
 }
 
 internal_function render_piece*
-PushRenderPieceRaw(render_group* RenderGroup, v3 P)
+PushRenderPieceRaw(render_group* RenderGroup, m44 T)
 {
 	Assert(RenderGroup->PieceCount < ArrayCount(RenderGroup->RenderPieces));
 	render_piece* Result = RenderGroup->RenderPieces + RenderGroup->PieceCount++;
 
 	*Result = {};
-	Result->P = P;
+	Result->ObjToWorldTransform = T;
 
 	return Result;
 }
 
 internal_function void
-PushRenderPieceQuad(render_group* RenderGroup, v3 P, v3 Dim, v4 Color)
+PushRenderPieceQuad(render_group* RenderGroup, m44 T, v4 Color)
 {
-	render_piece* RenderPiece = PushRenderPieceRaw(RenderGroup, P);
+	render_piece* RenderPiece = PushRenderPieceRaw(RenderGroup, T);
 	RenderPiece->Type = RenderPieceType_Quad;
 	RenderPiece->BMP = 0;
-	RenderPiece->Dim = Dim;
 	RenderPiece->Color = Color;
 }
 
 internal_function void
-PushRenderPieceQuad(render_group* RenderGroup, v3 P, loaded_bitmap* BMP, v4 Color = {1,1,1,1})
+PushRenderPieceQuad(render_group* RenderGroup, m44 T, loaded_bitmap* BMP, v4 Color = {1,1,1,1})
 {
-	render_piece* RenderPiece = PushRenderPieceRaw(RenderGroup, P);
+	render_piece* RenderPiece = PushRenderPieceRaw(RenderGroup, T);
 	RenderPiece->Type = RenderPieceType_Quad;
 	Assert(BMP);
 	RenderPiece->BMP = BMP;
@@ -71,18 +69,19 @@ PushRenderPieceQuad(render_group* RenderGroup, v3 P, loaded_bitmap* BMP, v4 Colo
 }
 
 internal_function void
-PushRenderPieceWireFrame(render_group* RenderGroup, v3 P, v3 Dim, v4 Color = {0,0,1,1})
+PushRenderPieceWireFrame(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.8f,1})
 {
-	render_piece* RenderPiece = PushRenderPieceRaw(RenderGroup, P);
+	render_piece* RenderPiece = PushRenderPieceRaw(RenderGroup, T);
 	RenderPiece->Type = RenderPieceType_DimCube;
 	RenderPiece->Color = Color;
-	RenderPiece->Dim = Dim;
 }
 internal_function void
 PushRenderPieceWireFrame(render_group* RenderGroup, rectangle3 Rect, v4 Color = {0,0,1,1})
 {
 	center_dim_v3_result CenterDim = RectToCenterDim(Rect);
-	PushRenderPieceWireFrame(RenderGroup, CenterDim.Center, CenterDim.Dim, Color);
+
+	m44 T = ObjectToWorldTransform(CenterDim.Center, QuaternionIdentity(), CenterDim.Dim);
+	PushRenderPieceWireFrame(RenderGroup, T, Color);
 }
 
 struct transform_result

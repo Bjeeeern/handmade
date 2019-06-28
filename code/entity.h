@@ -91,10 +91,9 @@ struct entity
 	keyboard_reference Keyboard;
 	mouse_reference Mouse;
 
-	v3 R;
-	f32 A;
-	f32 dA;
-	f32 ddA;
+	q O;
+	v3 dO;
+	v3 ddO;
 
 	v3 P;
 	v3 dP;
@@ -186,17 +185,12 @@ struct entity
 #include "trigger.h"
 #include "attachment.h"
 
-inline v3
-DefaultEntityOrientation()
-{
-	return {0, 1, 0};
-}
-
 	inline void
-MakeEntitySpacial(entity* Entity, v3 P, v3 dP = {}, v3 R = DefaultEntityOrientation())
+MakeEntitySpacial(entity* Entity, v3 P, v3 dP = {}, q O = QuaternionIdentity(), v3 dO = {})
 {
 	Entity->IsSpacial = true;
-	Entity->R = R;
+	Entity->O = O;
+	Entity->dO = dO;
 	Entity->P = P;
 	Entity->dP = dP;
 }
@@ -210,10 +204,16 @@ MakeEntityNonSpacial(entity* Entity)
 	v3 InvalidV3 = {signaling_not_a_number32, 
 									signaling_not_a_number32, 
 									signaling_not_a_number32 };
+	v4 InvalidV4 = {signaling_not_a_number32, 
+									signaling_not_a_number32, 
+									signaling_not_a_number32,
+									signaling_not_a_number32};
 #elif
 	v3 InvalidV3 = {-10000, -10000, -10000};
+	v3 InvalidV4 = {-10000, -10000, -10000, -10000};
 #endif
-	Entity->R = InvalidV3;
+	Entity->O = InvalidV4;
+	Entity->dO = InvalidV3;
 	Entity->P = InvalidV3;
 	Entity->dP = InvalidV3;
 }
@@ -221,48 +221,36 @@ MakeEntityNonSpacial(entity* Entity)
 #define ENTITY_H_FIRST_PASS
 #else
 
-struct vertices
+struct aabb_verts_result
 {
 	u32 Count;
-	v3 Verts[16];
+	v3 Verts[8];
 };
 
-internal_function vertices
-GetEntityVerticesRaw(v3 R, v3 P, v3 Dim)
+internal_function aabb_verts_result
+GetAABBVertices(m44* ObjToWorldTransform)
 {
-	vertices Result = {};
+	aabb_verts_result Result = {};
 	Result.Count = 8;
 
-	v2 OrderOfCorners[4] = {{-0.5f,  0.5f}, 
-													{ 0.5f,  0.5f}, 
-													{ 0.5f, -0.5f}, 
-													{-0.5f, -0.5f}};
-	
-	m22 Transform = M22ByCol(CW90M22() * R.XY, R.XY);
-	for(u32 VertexIndex = 0; 
-			VertexIndex < Result.Count/2; 
-			VertexIndex++)
-	{
-		Result.Verts[VertexIndex] = (Transform * Hadamard(OrderOfCorners[VertexIndex], Dim.XY) + P);
+	v3 UnscaledAABB[8] = {{-0.5f,  0.5f, 0.5f}, 
+												{ 0.5f,  0.5f, 0.5f}, 
+												{ 0.5f, -0.5f, 0.5f}, 
+												{-0.5f, -0.5f, 0.5f},
+												{-0.5f,  0.5f,-0.5f}, 
+												{ 0.5f,  0.5f,-0.5f}, 
+												{ 0.5f, -0.5f,-0.5f}, 
+												{-0.5f, -0.5f,-0.5f}};
 
-		Result.Verts[VertexIndex].Z += Dim.Z * 0.5f;
-	}
-
-	for(u32 VertexIndex = 0; 
-			VertexIndex < Result.Count/2; 
-			VertexIndex++)
+	for(u32 CornerIndex = 0; 
+			CornerIndex < ArrayCount(UnscaledAABB); 
+			CornerIndex++)
 	{
-		Result.Verts[Result.Count/2 + VertexIndex] = 
-			(Transform * Hadamard(OrderOfCorners[VertexIndex], Dim.XY) + P);
-		Result.Verts[Result.Count/2 + VertexIndex].Z -= Dim.Z * 0.5f;
+		v3 Corner = UnscaledAABB[CornerIndex];
+		Result.Verts[CornerIndex] = *ObjToWorldTransform * Corner;
 	}
 
 	return Result;
-}
-internal_function vertices
-GetEntityVertices(entity* Entity)
-{
-	return GetEntityVerticesRaw(Entity->R, Entity->P, Entity->Dim);
 }
 
 	internal_function entity*
@@ -339,7 +327,7 @@ AddSword(sim_region* SimRegion)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Sword);
 
-	Entity->Dim = v3{0.4f, 1.5f, 0.1f} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Dim = v3{1.5f, 0.4f, 0.1f} * SimRegion->WorldMap->TileSideInMeters;
 	Entity->iM = SafeRatio0(1.0f, 8.0f);
 
 	Entity->TriggerDamage = 1;
@@ -522,12 +510,9 @@ MoveEntity(entity* Entity, f32 dT)
 	v3 ddP = Entity->ddP;
 	v3 F = Entity->F;
 
-#if 0
-	v3 R = Entity->R;
-	f32 A = Entity->A;
-	f32 dA = Entity->dA;
-	f32 ddA = Entity->ddA;
-#endif
+	q O = Entity->O;
+	v3 dO = Entity->dO;
+	v3 ddO = Entity->ddO;
 
 	move_spec* MoveSpec = &Entity->MoveSpec;
 
@@ -543,20 +528,25 @@ MoveEntity(entity* Entity, f32 dT)
 		//TODO(bjorn): Why do i need the gravity to be so heavy? Because of upscaling?
 		ddP += MoveSpec->Gravity;
 	}
-
 	//TODO(casey): ODE here!
 	ddP += MoveSpec->MovingDirection * MoveSpec->Speed;
 
-	P = P + dP * dT + 0.5f * ddP * Square(dT);
 	//TODO(bjorn): Damping with precalculated Pow(Damping, dT) per update step to
 	//support different frame rates.
 	dP = dP * MoveSpec->Damping + ddP * dT;
+	P = P + dP * dT;
+
+	dO = dO * MoveSpec->Damping + ddO * dT;
+	O = UpdateOrientationByAngularVelocity(O, dO*dT);
 
 	Entity->F = {};
 	Entity->ddP = {};
 	Entity->dP = dP;
 	Entity->P = P;
 
+	Entity->ddO = {};
+	Entity->dO = dO;
+	Entity->O = QuaternionNormalize(O);
 #if 0
 	ddA -= MoveSpec->Drag * 0.7f * dA;
 

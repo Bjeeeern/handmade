@@ -355,7 +355,8 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 internal_function void
 TransformLineToScreenSpaceAndRender(game_offscreen_buffer* Buffer, render_piece* RenderPiece,
 																		f32 CamDist, m33 RotMat, v3 V0, v3 V1,
-																		v2 ScreenCenter, m22 GameSpaceToScreenSpace)
+																		v2 ScreenCenter, m22 GameSpaceToScreenSpace,
+																		v3 RGB)
 {
 	transform_result Tran0 = TransformPoint(CamDist, RotMat, V0);
 	transform_result Tran1 = TransformPoint(CamDist, RotMat, V1);
@@ -364,7 +365,7 @@ TransformLineToScreenSpaceAndRender(game_offscreen_buffer* Buffer, render_piece*
 	{
 		v2 PixelV0 = ScreenCenter + (GameSpaceToScreenSpace * Tran0.P) * Tran0.f;
 		v2 PixelV1 = ScreenCenter + (GameSpaceToScreenSpace * Tran1.P) * Tran1.f;
-		DrawLine(Buffer, PixelV0, PixelV1, RenderPiece->Color.RGB);
+		DrawLine(Buffer, PixelV0, PixelV1, RGB);
 	}
 };
 
@@ -563,7 +564,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 	render_group* RenderGroup = AllocateRenderGroup(TransientArena);
 
-	PushRenderPieceWireFrame(RenderGroup, SimRegion->UpdateBounds, v4{0,1,0,1});
+	PushRenderPieceWireFrame(RenderGroup, SimRegion->UpdateBounds, v4{0,1,1,1});
 	PushRenderPieceWireFrame(RenderGroup, SimRegion->OuterBounds, v4{1,1,0,1});
 
 	//TODO(bjorn): Implement step 2 in J.Blows framerate independence video.
@@ -669,7 +670,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							ImpactPoint += ImpactCorrection;
 						}
 					}
-#endif
 					if(Inside &&
 						 Entity->Collides && 
 						 OtherEntity->Collides)
@@ -714,6 +714,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						Entity->P.XY       += n * Penetration * 0.5f;
 						OtherEntity->P.XY  -= n * Penetration * 0.5f;
 					} 
+#endif
 
 					trigger_state_result TriggerState = 
 						UpdateAndGetCurrentTriggerState(Entity, OtherEntity, dT, Inside);
@@ -819,28 +820,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					}
 
 					v2 ArrowKeysDirection = {};
-					if(Held(Entity->Keyboard, Down))
-					{
-						ArrowKeysDirection.Y += -1;
-					}
-					if(Held(Entity->Keyboard, Left))
-					{
-						ArrowKeysDirection.X += -1;
-					}
-					if(Held(Entity->Keyboard, Up))
-					{
-						ArrowKeysDirection.Y += 1;
-					}
-					if(Held(Entity->Keyboard, Right))
-					{
-						ArrowKeysDirection.X += 1;
-					}
-					if(ArrowKeysDirection.X && ArrowKeysDirection.Y)
-					{
-						ArrowKeysDirection *= inv_root2;
-					}
+					if(Held(Entity->Keyboard, Down))                 { ArrowKeysDirection.Y += -1; }
+					if(Held(Entity->Keyboard, Left))                 { ArrowKeysDirection.X += -1; }
+					if(Held(Entity->Keyboard, Up))                   { ArrowKeysDirection.Y +=  1; }
+					if(Held(Entity->Keyboard, Right))                { ArrowKeysDirection.X +=  1; }
+					if(ArrowKeysDirection.X && ArrowKeysDirection.Y) { ArrowKeysDirection *= inv_root2; }
 
-					if(Clicked(Entity->Keyboard, Q) &&
+					if((ArrowKeysDirection.X || ArrowKeysDirection.Y) &&
+						 Clicked(Entity->Keyboard, Q) &&
 						 Entity->Sword)
 					{
 						entity* Sword = Entity->Sword;
@@ -848,7 +835,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						if(!Sword->IsSpacial) { Sword->DistanceRemaining = 20.0f; }
 
 						v3 P = (Sword->IsSpacial ?  Sword->P : (Entity->P + ArrowKeysDirection * Sword->Dim.Y));
-						MakeEntitySpacial(Sword, P, ArrowKeysDirection * 8.0f, ArrowKeysDirection);
+
+						MakeEntitySpacial(Sword, P, ArrowKeysDirection * 1.0f, 
+															AngleAxisToQuaternion(ArrowKeysDirection, Normalize(v3{0,0.8f,-1})),
+															Normalize({2,3,1})*tau32*0.2f);
 					}
 
 					if(Entity->IsCamera)
@@ -936,6 +926,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			//
 			if(Step == LastStep)
 			{
+				m44 T = ObjectToWorldTransform(Entity->P, Entity->O, Entity->Dim);
+
 				if(LengthSquared(Entity->dP) != 0.0f)
 				{
 					if(Absolute(Entity->dP.X) > Absolute(Entity->dP.Y))
@@ -950,7 +942,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				if(Entity->VisualType == EntityVisualType_Wall)
 				{
-					PushRenderPieceQuad(RenderGroup, Entity->P, &GameState->Rock);
+					PushRenderPieceQuad(RenderGroup, T, &GameState->Rock);
 				}
 
 				if(Entity->VisualType == EntityVisualType_Player)
@@ -958,30 +950,30 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
 
 					f32 ZAlpha = Clamp01(1.0f - (Entity->P.Z / 2.0f));
-					PushRenderPieceQuad(RenderGroup, Entity->P, &GameState->Shadow, {1, 1, 1, ZAlpha});
-					PushRenderPieceQuad(RenderGroup, Entity->P, &Hero->Torso);
-					PushRenderPieceQuad(RenderGroup, Entity->P, &Hero->Cape);
-					PushRenderPieceQuad(RenderGroup, Entity->P, &Hero->Head);
+					PushRenderPieceQuad(RenderGroup, T, &GameState->Shadow, {1, 1, 1, ZAlpha});
+					PushRenderPieceQuad(RenderGroup, T, &Hero->Torso);
+					PushRenderPieceQuad(RenderGroup, T, &Hero->Cape);
+					PushRenderPieceQuad(RenderGroup, T, &Hero->Head);
 				}
 				if(Entity->VisualType == EntityVisualType_Monstar)
 				{
 					hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
 
 					f32 ZAlpha = Clamp01(1.0f - (Entity->P.Z / 2.0f));
-					PushRenderPieceQuad(RenderGroup, Entity->P, &GameState->Shadow, {1, 1, 1, ZAlpha});
-					PushRenderPieceQuad(RenderGroup, Entity->P, &Hero->Torso);
+					PushRenderPieceQuad(RenderGroup, T, &GameState->Shadow, {1, 1, 1, ZAlpha});
+					PushRenderPieceQuad(RenderGroup, T, &Hero->Torso);
 				}
 				if(Entity->VisualType == EntityVisualType_Familiar)
 				{
 					hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
 
 					f32 ZAlpha = Clamp01(1.0f - ((Entity->P.Z + 1.4f) / 2.0f));
-					PushRenderPieceQuad(RenderGroup, Entity->P, &GameState->Shadow, {1, 1, 1, ZAlpha});
-					PushRenderPieceQuad(RenderGroup, Entity->P, &Hero->Head);
+					PushRenderPieceQuad(RenderGroup, T, &GameState->Shadow, {1, 1, 1, ZAlpha});
+					PushRenderPieceQuad(RenderGroup, T, &Hero->Head);
 				}
 				if(Entity->VisualType == EntityVisualType_Sword)
 				{
-					PushRenderPieceQuad(RenderGroup, Entity->P, &GameState->Sword);
+					PushRenderPieceQuad(RenderGroup, T, &GameState->Sword);
 				}
 
 				if(Entity->VisualType == EntityVisualType_Monstar ||
@@ -997,12 +989,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						HitPointPos.X += ((HitPointIndex - (Entity->HitPointMax-1) * 0.5f) * 
 															HitPointDim.X * 1.5f);
 
+						m44 HitPointT = ObjectToWorldTransform(HitPointPos, Entity->O, HitPointDim);
 						hit_point HP = Entity->HitPoints[HitPointIndex];
 						if(HP.FilledAmount == HIT_POINT_SUB_COUNT)
 						{
 							v3 Green = {0.0f, 1.0f, 0.0f};
 
-							PushRenderPieceQuad(RenderGroup, HitPointPos, HitPointDim, V4(Green, 1.0f));
+							PushRenderPieceQuad(RenderGroup, HitPointT, V4(Green, 1.0f));
 						}
 						else if(HP.FilledAmount < HIT_POINT_SUB_COUNT &&
 										HP.FilledAmount > 0)
@@ -1018,7 +1011,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						{
 							v3 Red = {1.0f, 0.0f, 0.0f};
 
-							PushRenderPieceQuad(RenderGroup, HitPointPos, HitPointDim, V4(Red, 1.0f));
+							PushRenderPieceQuad(RenderGroup, HitPointT, V4(Red, 1.0f));
 						}
 					}
 				}
@@ -1026,7 +1019,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #if HANDMADE_INTERNAL
 				if(GameState->DEBUG_VisualiseCollisionBox)
 				{
-					PushRenderPieceWireFrame(RenderGroup, Entity->P, Entity->Dim);
+					PushRenderPieceWireFrame(RenderGroup, T);
 				}
 #endif
 			}
@@ -1057,8 +1050,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		{
 			if(RenderPiece->Type == RenderPieceType_Quad)
 			{
-
-				transform_result Tran = TransformPoint(MainCamera->CamZoom, RotMat, RenderPiece->P);
+				v3 P = RenderPiece->ObjToWorldTransform * v3{0,0,0};
+				transform_result Tran = TransformPoint(MainCamera->CamZoom, RotMat, P);
 				if(!Tran.Valid) { continue; }
 
 				f32 f = Tran.f;
@@ -1074,46 +1067,74 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				}
 				else
 				{
+					//TODO(bjorn): Think about how and when in the pipeline to render the hit-points.
+#if 0
 					v2 PixelDim = RenderPiece->Dim.XY * (PixelsPerMeter * f);
 					rectangle2 Rect = RectCenterDim(PixelPos, PixelDim);
 
 					DrawRectangle(Buffer, Rect, RenderPiece->Color.RGB);
+#endif
 				}
 			}
 			else if(RenderPiece->Type == RenderPieceType_DimCube)
 			{
-				vertices Verts = GetEntityVerticesRaw(DefaultEntityOrientation(), 
-																							 RenderPiece->P, RenderPiece->Dim);
+				aabb_verts_result AABB = GetAABBVertices(&RenderPiece->ObjToWorldTransform);
 
 				for(int VertIndex = 0; 
 						VertIndex < 4; 
 						VertIndex++)
 				{
-					v3 V0 = Verts.Verts[(VertIndex+0)%4];
-					v3 V1 = Verts.Verts[(VertIndex+1)%4];
+					v3 V0 = AABB.Verts[(VertIndex+0)%4];
+					v3 V1 = AABB.Verts[(VertIndex+1)%4];
 					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
 																							MainCamera->CamZoom, RotMat, V0, V1,
-																							ScreenCenter, GameSpaceToScreenSpace);
+																							ScreenCenter, GameSpaceToScreenSpace, 
+																							RenderPiece->Color.RGB);
 				}
 				for(int VertIndex = 0; 
 						VertIndex < 4; 
 						VertIndex++)
 				{
-					v3 V0 = Verts.Verts[(VertIndex+0)%4 + 4];
-					v3 V1 = Verts.Verts[(VertIndex+1)%4 + 4];
+					v3 V0 = AABB.Verts[(VertIndex+0)%4 + 4];
+					v3 V1 = AABB.Verts[(VertIndex+1)%4 + 4];
 					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
 																							MainCamera->CamZoom, RotMat, V0, V1,
-																							ScreenCenter, GameSpaceToScreenSpace);
+																							ScreenCenter, GameSpaceToScreenSpace, 
+																							RenderPiece->Color.RGB);
 				}
 				for(int VertIndex = 0; 
 						VertIndex < 4; 
 						VertIndex++)
 				{
-					v3 V0 = Verts.Verts[VertIndex];
-					v3 V1 = Verts.Verts[VertIndex + 4];
+					v3 V0 = AABB.Verts[VertIndex];
+					v3 V1 = AABB.Verts[VertIndex + 4];
 					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
 																							MainCamera->CamZoom, RotMat, V0, V1,
-																							ScreenCenter, GameSpaceToScreenSpace);
+																							ScreenCenter, GameSpaceToScreenSpace, 
+																							RenderPiece->Color.RGB);
+				}
+
+				f32 AxesScale = 1.5f;
+				{
+					v3 V0 = RenderPiece->ObjToWorldTransform * v3{0,0,0};
+					v3 V1 = RenderPiece->ObjToWorldTransform * (v3{1,0,0}*AxesScale);
+					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
+																							MainCamera->CamZoom, RotMat, V0, V1,
+																							ScreenCenter, GameSpaceToScreenSpace, {1,0,0});
+				}
+				{
+					v3 V0 = RenderPiece->ObjToWorldTransform * v3{0,0,0};
+					v3 V1 = RenderPiece->ObjToWorldTransform * (v3{0,1,0}*AxesScale);
+					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
+																							MainCamera->CamZoom, RotMat, V0, V1,
+																							ScreenCenter, GameSpaceToScreenSpace, {0,1,0});
+				}
+				{
+					v3 V0 = RenderPiece->ObjToWorldTransform * v3{0,0,0};
+					v3 V1 = RenderPiece->ObjToWorldTransform * (v3{0,0,1}*AxesScale);
+					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
+																							MainCamera->CamZoom, RotMat, V0, V1,
+																							ScreenCenter, GameSpaceToScreenSpace, {0,0,1});
 				}
 			}
 		}

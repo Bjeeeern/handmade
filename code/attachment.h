@@ -12,6 +12,8 @@ struct attachment_info
 {
 	attachment_type Type;
 
+	v3 AP1;
+	v3 AP2;
 	union
 	{
 		f32 RestLength;
@@ -35,7 +37,8 @@ internal_function void
 RemoveTwoWayAttachment(entity* A, entity* B);
 
 	internal_function attachment_info*
-AddAttachmentRaw(entity* Subject, entity* EndPoint)
+AddAttachmentRaw(entity* Subject, entity* EndPoint, 
+								 v3 SubjectAttachmentPoint = {}, v3 EndPointAttachmentPoint = {})
 {
 	attachment_info* Result = 0;
 
@@ -47,46 +50,57 @@ AddAttachmentRaw(entity* Subject, entity* EndPoint)
 	Subject->Attachments[AttachmentIndex] = EndPoint;
 	Result = Subject->AttachmentInfo + AttachmentIndex;
 
+	*Result = {};
+	Result->AP1 = SubjectAttachmentPoint;
+	Result->AP2 = EndPointAttachmentPoint;
+
 	return Result;
 }
 
 	internal_function void
-AddOneWaySpringAttachment(entity* Subject, entity* EndPoint, f32 SpringConstant, f32 RestLength)
+AddOneWaySpringAttachment(entity* Subject, entity* EndPoint, f32 SpringConstant, f32 RestLength,
+													v3 SubjectAttachmentPoint = {}, v3 EndPointAttachmentPoint = {})
 {
-	attachment_info* Info = AddAttachmentRaw(Subject, EndPoint);
-	*Info = {};
+	attachment_info* Info = AddAttachmentRaw(Subject, EndPoint, 
+																					 SubjectAttachmentPoint, EndPointAttachmentPoint);
 	Info->Type = AttachmentType_Spring;
 	Info->SpringConstant = SpringConstant;
 	Info->Length = RestLength;
 }
 internal_function void
-AddTwoWaySpringAttachment(entity* A, entity* B, f32 SpringConstant, f32 RestLength)
+AddTwoWaySpringAttachment(entity* A, entity* B, f32 SpringConstant, f32 RestLength,
+													v3 SubjectAttachmentPoint = {}, v3 EndPointAttachmentPoint = {})
 {
-	AddOneWaySpringAttachment(A, B, SpringConstant, RestLength);
-	AddOneWaySpringAttachment(B, A, SpringConstant, RestLength);
+	AddOneWaySpringAttachment(A, B, SpringConstant, RestLength, 
+														SubjectAttachmentPoint, EndPointAttachmentPoint);
+	AddOneWaySpringAttachment(B, A, SpringConstant, RestLength,
+														EndPointAttachmentPoint, SubjectAttachmentPoint);
 }
 
 internal_function void
-AddOneWayBungeeAttachment(entity* Subject, entity* EndPoint, f32 SpringConstant, f32 RestLength)
+AddOneWayBungeeAttachment(entity* Subject, entity* EndPoint, f32 SpringConstant, f32 RestLength,
+													v3 SubjectAttachmentPoint = {}, v3 EndPointAttachmentPoint = {})
 {
-	attachment_info* Info = AddAttachmentRaw(Subject, EndPoint);
-	*Info = {};
+	attachment_info* Info = AddAttachmentRaw(Subject, EndPoint, 
+																					 SubjectAttachmentPoint, EndPointAttachmentPoint);
 	Info->Type = AttachmentType_Bungee;
 	Info->SpringConstant = SpringConstant;
 	Info->RestLength = RestLength;
 }
 internal_function void
-AddTwoWayBungeeAttachment(entity* A, entity* B, f32 SpringConstant, f32 RestLength)
+AddTwoWayBungeeAttachment(entity* A, entity* B, f32 SpringConstant, f32 RestLength,
+													v3 SubjectAttachmentPoint = {}, v3 EndPointAttachmentPoint = {})
 {
-	AddOneWayBungeeAttachment(A, B, SpringConstant, RestLength);
-	AddOneWayBungeeAttachment(B, A, SpringConstant, RestLength);
+	AddOneWayBungeeAttachment(A, B, SpringConstant, RestLength, 
+														SubjectAttachmentPoint, EndPointAttachmentPoint);
+	AddOneWayBungeeAttachment(B, A, SpringConstant, RestLength, 
+														EndPointAttachmentPoint, SubjectAttachmentPoint);
 }
 
 internal_function void
 AddOneWayRodAttachment(entity* Subject, entity* EndPoint, f32 Length)
 {
 	attachment_info* Info = AddAttachmentRaw(Subject, EndPoint);
-	*Info = {};
 	Info->Type = AttachmentType_Rod;
 	Info->Length = Length;
 }
@@ -102,7 +116,6 @@ AddOneWayCableAttachment(entity* Subject, entity* EndPoint, f32 Restitution, f32
 {
 	Assert(0 <= Restitution && Restitution <= 1);
 	attachment_info* Info = AddAttachmentRaw(Subject, EndPoint);
-	*Info = {};
 	Info->Type = AttachmentType_Cable;
 	Info->Restitution = Restitution;
 	Info->SlackLength = SlackLength;
@@ -132,9 +145,12 @@ ApplyAttachmentForcesAndImpulses(entity* Entity)
 
 			f32 PointSeparationEpsilon = 0.0001f;
 
+			v3 AP1 = Entity->ObjToWorldTransform   * Info.AP1;
+			v3 AP2 = EndPoint->ObjToWorldTransform * Info.AP2;
+
 			if(Info.Type == AttachmentType_Spring || Info.Type == AttachmentType_Bungee)
 			{
-				v3 PointSeparationVector  = Entity->P - EndPoint->P;
+				v3 PointSeparationVector = AP1 - AP2;
 				f32 PointSeparation = Length(PointSeparationVector);
 				f32 RestLength = Info.Length;
 				f32 Separation = (PointSeparation - RestLength);
@@ -143,16 +159,29 @@ ApplyAttachmentForcesAndImpulses(entity* Entity)
 					 Separation > 0)
 				{
 					f32 SpringConstant = Info.SpringConstant;
-					v3 ContactNormal = Normalize(PointSeparationVector);
 
+					v3 PointSeparationNormal = Normalize(PointSeparationVector);
+					v3 ForceVector = (-SpringConstant*Separation) * PointSeparationNormal;
 					//TODO STUDY(bjorn): Why does the springs go out of control without drag?
-					Entity->F += (-SpringConstant*Separation) * ContactNormal;
+					//TODO IMPORTANT(bjorn): Debug this tourqe addition!!!
+					if(IsZeroVector(Info.AP1))
+					{
+						Entity->F += ForceVector;
+					}
+					else
+					{
+						v3 AttachmentPointVector = (AP1 - Entity->P);
+						v3 AttachmentPointNormal = Normalize(AttachmentPointVector);
+
+						Entity->F += ForceVector;// * Dot(PointSeparationVector, -AttachmentPointNormal);
+						Entity->T += Cross(ForceVector, AttachmentPointVector);
+					}
 				}
 			}
 
 			if(Info.Type == AttachmentType_Rod || Info.Type == AttachmentType_Cable)
 			{
-				f32 iM_iSum = SafeRatio0(1.0f, Entity->iM + EndPoint->iM);
+				f32 iM_iSum = SafeRatio0(1.0f, Entity->Body.iM + EndPoint->Body.iM);
 
 				if(iM_iSum)
 				{
@@ -163,7 +192,7 @@ ApplyAttachmentForcesAndImpulses(entity* Entity)
 						Restitution = (Info.Restitution + Entity->Restitution) * 0.5f;
 					}
 
-					v3 PointSeparationVector = Entity->P - EndPoint->P;
+					v3 PointSeparationVector = AP1 - AP2;
 
 					f32 PointSeparation = Length(PointSeparationVector);
 					f32 Penetration = (AttachmentLength - PointSeparation);
@@ -183,11 +212,11 @@ ApplyAttachmentForcesAndImpulses(entity* Entity)
 					if(Info.Type == AttachmentType_Rod ||
 						 (Info.Type == AttachmentType_Cable && Penetration < 0))
 					{
-						Entity->dP   += ContactNormal * (Entity->iM   * Impulse);
-						EndPoint->dP -= ContactNormal * (EndPoint->iM * Impulse);
+						Entity->dP   += ContactNormal * (Entity->Body.iM   * Impulse);
+						EndPoint->dP -= ContactNormal * (EndPoint->Body.iM * Impulse);
 
-						f32 Entity_MassRatio   = (Entity->iM   * iM_iSum);
-						f32 EndPoint_MassRatio = (EndPoint->iM * iM_iSum);
+						f32 Entity_MassRatio   = (Entity->Body.iM   * iM_iSum);
+						f32 EndPoint_MassRatio = (EndPoint->Body.iM * iM_iSum);
 						Entity->P   += (Entity_MassRatio   * Penetration) * ContactNormal;
 						EndPoint->P -= (EndPoint_MassRatio * Penetration) * ContactNormal;
 					}

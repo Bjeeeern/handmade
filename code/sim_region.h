@@ -129,9 +129,9 @@ GetSimEntityHashSlotFromStorageIndex(sim_region* SimRegion, u64 StorageIndex)
 	return Result;
 }
 
-	internal_function entity*
+internal_function entity*
 AddSimEntity(game_input* Input, stored_entities* StoredEntities, sim_region* SimRegion, 
-						 stored_entity* Source, u64 StorageIndex, v3* SimP);
+						 stored_entity* Source, u64 StorageIndex);
 
 	internal_function void
 LoadEntityReference(game_input* Input, stored_entities* StoredEntities, sim_region* SimRegion, 
@@ -141,8 +141,7 @@ LoadEntityReference(game_input* Input, stored_entities* StoredEntities, sim_regi
 	if(StorageIndex)
 	{
 		*Ref = AddSimEntity(Input, StoredEntities, SimRegion, 
-												GetStoredEntityByIndex(StoredEntities, StorageIndex), 
-												StorageIndex, 0);
+												GetStoredEntityByIndex(StoredEntities, StorageIndex), StorageIndex);
 	}
 }
 
@@ -262,35 +261,49 @@ AddSimEntityRaw(game_input* Input, stored_entities* StoredEntities, sim_region*
 	return Entity;
 }
 
+	internal_function void
+SetAddedSimEntityFlagsAndState(sim_region* SimRegion, entity* Entity)
+{
+	if(Entity->IsSpacial)
+	{
+		Entity->P = GetWorldMapPosDifference(SimRegion->WorldMap, Entity->WorldP, SimRegion->Origin);
+		Entity->ObjToWorldTransform = ConstructTransform(Entity->P, Entity->O, Entity->Body.S);
+	}
+
+	Entity->EntityPairUpdateGenerationIndex = 0;
+	//TODO(bjorn): Does non-spatial entities update?
+	Entity->Updates = (!Entity->IsSpacial || 
+										 IsInRectangle(SimRegion->UpdateBounds, Entity->P) ||
+										 (IsInRectangle(SimRegion->OuterBounds, Entity->P) && Entity->IsFloor));
+}
+
 	internal_function entity*
 AddSimEntity(game_input* Input, stored_entities* StoredEntities, sim_region*
-						 SimRegion, stored_entity* Source, u64 StorageIndex, v3* SimP)
+						 SimRegion, stored_entity* Source, u64 StorageIndex)
 {
 	entity* Result = AddSimEntityRaw(Input, StoredEntities, SimRegion, Source, StorageIndex);
 	Assert(Result);
 
-	//TODO(bjorn): The pos should be set to an invalid one here if the entitiy is non-spatial.
-	if(SimP)
-	{
-		Result->P = *SimP;
-	}
-	else
-	{
-		if(Result->IsSpacial)
-		{
-			Result->P = GetWorldMapPosDifference(SimRegion->WorldMap, Source->Sim.WorldP, 
-																					 SimRegion->Origin);
-		}
-		else
-		{
-			MakeEntityNonSpacial(Result);
-		}
-	}
+	SetAddedSimEntityFlagsAndState(SimRegion, Result);
 
-	Result->EntityPairUpdateGenerationIndex = 0;
-	Result->Updates = (!Result->IsSpacial || 
-										 IsInRectangle(SimRegion->UpdateBounds, Result->P) ||
-										 (IsInRectangle(SimRegion->OuterBounds, Result->P) && Result->IsFloor));
+	return Result;
+}
+
+	internal_function entity*
+AddSimEntityIfInsideBounds(game_input* Input, stored_entities* StoredEntities, 
+													 sim_region* SimRegion, stored_entity* Source, u64 StorageIndex)
+{
+	entity* Result = 0;
+
+	v3 SimPos = GetWorldMapPosDifference(SimRegion->WorldMap, Source->Sim.WorldP, SimRegion->Origin);
+	if(IsInRectangle(SimRegion->OuterBounds, SimPos))
+	{
+		Result = AddSimEntityRaw(Input, StoredEntities, SimRegion, Source, StorageIndex);
+		Assert(Result);
+		Assert(Result->IsSpacial);
+
+		SetAddedSimEntityFlagsAndState(SimRegion, Result);
+	}
 
 	return Result;
 }
@@ -349,12 +362,7 @@ BeginSim(game_input* Input, stored_entities* StoredEntities, memory_arena* SimAr
 							Assert(StoredEntity);
 							Assert(StoredEntity->Sim.IsSpacial);
 
-							v3 SimPos = GetWorldMapPosDifference(WorldMap, StoredEntity->Sim.WorldP, RegionCenter);
-							if(IsInRectangle(Result->OuterBounds, SimPos))
-							{
-								entity* Entity = AddSimEntity(Input, StoredEntities, Result, StoredEntity, 
-																							StorageIndex, &SimPos);
-							}
+							AddSimEntityIfInsideBounds(Input, StoredEntities, Result, StoredEntity, StorageIndex);
 						}
 					}
 				}
@@ -374,19 +382,7 @@ AddEntityToSimRegionManually(game_input* Input, stored_entities* StoredEntities,
 	stored_entity* StoredEntity = GetStoredEntityByIndex(StoredEntities, StorageIndex);
 	Assert(StoredEntity);
 
-	v3* SimPosRef = 0;
-	v3 SimPos = {};
-	if(StoredEntity->Sim.IsSpacial)
-	{
-		SimPos = GetWorldMapPosDifference(SimRegion->WorldMap, StoredEntity->Sim.WorldP, 
-																			SimRegion->Origin);
-		if(IsInRectangle(SimRegion->OuterBounds, SimPos))
-		{
-			SimPosRef = &SimPos;
-		}
-	}
-
-	Result = AddSimEntity(Input, StoredEntities, SimRegion, StoredEntity, StorageIndex, SimPosRef);
+	Result = AddSimEntity(Input, StoredEntities, SimRegion, StoredEntity, StorageIndex);
 
 	return Result;
 }

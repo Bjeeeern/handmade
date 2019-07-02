@@ -347,6 +347,28 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}
+
+	{ //NOTE(bjorn): Test location 3 setup
+		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, &GameState->TransientArena,
+																		 WorldMap, GameState->DEBUG_TestLocations[3], 
+																		 GameState->CameraUpdateBounds, 0);
+
+		AddFloor(SimRegion, v3{0, 0, -0.5f} * WorldMap->TileSideInMeters);
+		entity* Fixture = AddFixture(SimRegion, v3{0, 0, 24});
+
+		entity* ForceField = AddForceField(SimRegion, v3{0, 7, 4});
+		ForceField->Keyboard = GetKeyboard(Input, 1);
+		ForceField->ForceFieldStrenght = 20.0f;
+
+		f32 SpringConstant = 20.0f;
+
+		entity* A = AddParticle(SimRegion, v3{ 2,0,0}, 10.0f);
+		AddOneWaySpringAttachment(A, Fixture, SpringConstant, 4.0f, -v3{0.5f,0.5f,0.5f}, {0,0,0});
+		entity* B = AddParticle(SimRegion, v3{-2,0,0}, 10.0f);
+		AddTwoWaySpringAttachment(A, B, SpringConstant*1.5f, 2.0f, {0.5f,0.5f,0.5f}, {0,0,-0.5f});
+
+		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
+	}
 #endif
 
 	EndTemporaryMemory(TempMem);
@@ -834,7 +856,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 						if(!Sword->IsSpacial) { Sword->DistanceRemaining = 20.0f; }
 
-						v3 P = (Sword->IsSpacial ?  Sword->P : (Entity->P + ArrowKeysDirection * Sword->Dim.Y));
+						v3 P = (Sword->IsSpacial ?  Sword->P : (Entity->P + ArrowKeysDirection * Sword->Body.S.Y));
 
 						MakeEntitySpacial(Sword, P, ArrowKeysDirection * 1.0f, 
 															AngleAxisToQuaternion(ArrowKeysDirection, Normalize(v3{0,0.8f,-1})),
@@ -894,7 +916,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				{
 					Assert(LengthSquared(Entity->dP) <= Square(SimRegion->MaxEntityVelocity));
 
-					f32 S1 = LengthSquared(Entity->Dim * 0.5f);
+					f32 S1 = LengthSquared(Entity->Body.S * 0.5f);
 					f32 S2 = Square(SimRegion->MaxEntityRadius);
 					Assert(S1 <= S2);
 				}
@@ -920,13 +942,15 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					Entity->MoveSpec.MovingDirection = {};
 				}
 			}
+			
+			Entity->ObjToWorldTransform = ConstructTransform(Entity->P, Entity->O, Entity->Body.S);
 
 			//
 			// NOTE(bjorn): Push to render buffer
 			//
 			if(Step == LastStep)
 			{
-				m44 T = ObjectToWorldTransform(Entity->P, Entity->O, Entity->Dim);
+				m44 T = Entity->ObjToWorldTransform; 
 
 				if(LengthSquared(Entity->dP) != 0.0f)
 				{
@@ -989,7 +1013,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						HitPointPos.X += ((HitPointIndex - (Entity->HitPointMax-1) * 0.5f) * 
 															HitPointDim.X * 1.5f);
 
-						m44 HitPointT = ObjectToWorldTransform(HitPointPos, Entity->O, HitPointDim);
+						m44 HitPointT = ConstructTransform(HitPointPos, Entity->O, HitPointDim);
 						hit_point HP = Entity->HitPoints[HitPointIndex];
 						if(HP.FilledAmount == HIT_POINT_SUB_COUNT)
 						{
@@ -1020,6 +1044,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				if(GameState->DEBUG_VisualiseCollisionBox)
 				{
 					PushRenderPieceWireFrame(RenderGroup, T);
+					PushRenderPieceCardinalAxes(RenderGroup, 
+																			ConstructTransform(Entity->P, Entity->O, {1,1,1}));
 				}
 #endif
 			}
@@ -1031,8 +1057,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// NOTE(bjorn): Rendering
 	//
 	{
-		//TODO(bjorn): Remove this hack as soon as I have full 3D rotations
-		//going on for all entites!!!
+		//TODO(bjorn): Rewrite this to use the entity orientation later when I
+		//rewrite/extend the rendering system.
 		Assert(MainCamera);
 		m33 XRot = XRotationMatrix(MainCamera->CamRot.Y);
 		m33 RotMat = AxisRotationMatrix(MainCamera->CamRot.X, GetMatCol(XRot, 2)) * XRot;
@@ -1113,7 +1139,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 																							ScreenCenter, GameSpaceToScreenSpace, 
 																							RenderPiece->Color.RGB);
 				}
-
+			}
+#if HANDMADE_INTERNAL
+			else if(RenderPiece->Type == DEBUG_RenderPieceType_CardinalAxes)
+			{
 				f32 AxesScale = 1.5f;
 				{
 					v3 V0 = RenderPiece->ObjToWorldTransform * v3{0,0,0};
@@ -1137,6 +1166,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 																							ScreenCenter, GameSpaceToScreenSpace, {0,0,1});
 				}
 			}
+#endif
 		}
 	}
 

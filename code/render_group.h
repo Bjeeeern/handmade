@@ -8,6 +8,9 @@ enum render_piece_type
 {
 	RenderPieceType_DimCube,
 	RenderPieceType_Quad,
+#if HANDMADE_INTERNAL
+	DEBUG_RenderPieceType_CardinalAxes
+#endif
 };
 
 struct render_piece
@@ -76,11 +79,17 @@ PushRenderPieceWireFrame(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.
 	RenderPiece->Color = Color;
 }
 internal_function void
+PushRenderPieceCardinalAxes(render_group* RenderGroup, m44 T)
+{
+	render_piece* RenderPiece = PushRenderPieceRaw(RenderGroup, T);
+	RenderPiece->Type = DEBUG_RenderPieceType_CardinalAxes;
+}
+internal_function void
 PushRenderPieceWireFrame(render_group* RenderGroup, rectangle3 Rect, v4 Color = {0,0,1,1})
 {
 	center_dim_v3_result CenterDim = RectToCenterDim(Rect);
 
-	m44 T = ObjectToWorldTransform(CenterDim.Center, QuaternionIdentity(), CenterDim.Dim);
+	m44 T = ConstructTransform(CenterDim.Center, QuaternionIdentity(), CenterDim.Dim);
 	PushRenderPieceWireFrame(RenderGroup, T, Color);
 }
 

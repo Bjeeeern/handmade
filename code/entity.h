@@ -52,6 +52,56 @@ struct hit_point
 	u8 FilledAmount;
 };
 
+struct aabb_verts_result
+{
+	u32 Count;
+	v3 Verts[8];
+};
+
+v3 UnscaledAABB[8] = {{-0.5f,  0.5f, 0.5f}, 
+											 { 0.5f,  0.5f, 0.5f}, 
+											 { 0.5f, -0.5f, 0.5f}, 
+											 {-0.5f, -0.5f, 0.5f},
+											 {-0.5f,  0.5f,-0.5f}, 
+											 { 0.5f,  0.5f,-0.5f}, 
+											 { 0.5f, -0.5f,-0.5f}, 
+											 {-0.5f, -0.5f,-0.5f}};
+
+enum collision_shape
+{
+	CollisonShape_Circle,
+	CollisonShape_AABB,
+	CollisonShape_Convex,
+};
+
+	internal_function aabb_verts_result
+GetAABBVertices(m44* ObjToWorldTransform)
+{
+	aabb_verts_result Result = {};
+	Result.Count = 8;
+
+	for(u32 CornerIndex = 0; 
+			CornerIndex < ArrayCount(UnscaledAABB); 
+			CornerIndex++)
+	{
+		v3 Corner = UnscaledAABB[CornerIndex];
+		Result.Verts[CornerIndex] = *ObjToWorldTransform * Corner;
+	}
+
+	return Result;
+}
+
+struct physical_body
+{
+	collision_shape CollisionShape;
+
+	f32 iM; //NOTE(bjorn): Inverse mass
+	m33 iI; //NOTE(bjorn): Inverse inertia tensor
+
+	v3 S;
+	v3 CoM;
+};
+
 struct entity;
 
 typedef entity* entity_reference;
@@ -94,18 +144,21 @@ struct entity
 	q O;
 	v3 dO;
 	v3 ddO;
+	v3 T;
 
 	v3 P;
 	v3 dP;
 	v3 ddP;
 	v3 F;
 
-	v3 Dim;
+	m44 ObjToWorldTransform;
 
 	v2 CamRot;
 	f32 CamZoom;
 
-	f32 iM; //NOTE(bjorn): Inverse mass
+	//TODO(bjorn): Make this settable by an aggregate function
+	physical_body Body;
+
 	f32 Restitution;
 	f32 GroundFriction;
 
@@ -185,6 +238,37 @@ struct entity
 #include "trigger.h"
 #include "attachment.h"
 
+internal_function physical_body
+CalculatePhysicalBody(f32 Mass, v3 Scale)
+{
+	physical_body Result = {};
+
+	//TODO(bjorn): Support other shapes even when scaled.
+	Result.CollisionShape = CollisonShape_AABB;
+	//TODO(bjorn): Support other centers of mass apart from the origin.
+	Result.CoM = {};
+	Result.S = Scale;
+
+	Result.iM = SafeRatio0(1.0f, Mass);
+	if(Result.iM)
+	{
+		if(Result.CollisionShape == CollisonShape_AABB)
+		{
+			m33 I = {};
+			I.E_[0] = Square(Scale.Y) + Square(Scale.Z);
+			I.E_[4] = Square(Scale.X) + Square(Scale.Z);
+			I.E_[8] = Square(Scale.X) + Square(Scale.Y);
+			I *= Mass * (1.0f/12.0f);
+
+			inverse_m33_result iI = InverseMatrix(I);
+			Assert(iI.Valid);
+			Result.iI = iI.M;
+		}
+	}
+
+	return Result;
+}
+
 	inline void
 MakeEntitySpacial(entity* Entity, v3 P, v3 dP = {}, q O = QuaternionIdentity(), v3 dO = {})
 {
@@ -220,38 +304,6 @@ MakeEntityNonSpacial(entity* Entity)
 
 #define ENTITY_H_FIRST_PASS
 #else
-
-struct aabb_verts_result
-{
-	u32 Count;
-	v3 Verts[8];
-};
-
-internal_function aabb_verts_result
-GetAABBVertices(m44* ObjToWorldTransform)
-{
-	aabb_verts_result Result = {};
-	Result.Count = 8;
-
-	v3 UnscaledAABB[8] = {{-0.5f,  0.5f, 0.5f}, 
-												{ 0.5f,  0.5f, 0.5f}, 
-												{ 0.5f, -0.5f, 0.5f}, 
-												{-0.5f, -0.5f, 0.5f},
-												{-0.5f,  0.5f,-0.5f}, 
-												{ 0.5f,  0.5f,-0.5f}, 
-												{ 0.5f, -0.5f,-0.5f}, 
-												{-0.5f, -0.5f,-0.5f}};
-
-	for(u32 CornerIndex = 0; 
-			CornerIndex < ArrayCount(UnscaledAABB); 
-			CornerIndex++)
-	{
-		v3 Corner = UnscaledAABB[CornerIndex];
-		Result.Verts[CornerIndex] = *ObjToWorldTransform * Corner;
-	}
-
-	return Result;
-}
 
 	internal_function entity*
 AddEntity(sim_region* SimRegion, entity_visual_type VisualType)
@@ -327,8 +379,8 @@ AddSword(sim_region* SimRegion)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Sword);
 
-	Entity->Dim = v3{1.5f, 0.4f, 0.1f} * SimRegion->WorldMap->TileSideInMeters;
-	Entity->iM = SafeRatio0(1.0f, 8.0f);
+	Entity->Body = 
+		CalculatePhysicalBody(8.0f, v3{1.5f, 0.4f, 0.1f} * SimRegion->WorldMap->TileSideInMeters);
 
 	Entity->TriggerDamage = 1;
 
@@ -350,11 +402,10 @@ AddPlayer(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Player, InitP);
 
-	Entity->Dim = v3{0.5f, 0.3f, 1.0f} * SimRegion->WorldMap->TileSideInMeters;
-	Entity->Collides = true;
-
 	//TODO(bjorn): Why does weight differences matter so much in the collision system.
-	Entity->iM = SafeRatio0(1.0f, 70.0f);
+	Entity->Body = 
+		CalculatePhysicalBody(70.0f, v3{0.5f, 0.3f, 1.0f} * SimRegion->WorldMap->TileSideInMeters);
+	Entity->Collides = true;
 
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
 	Entity->MoveSpec.MoveOnInput = true;
@@ -372,10 +423,9 @@ AddMonstar(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Monstar, InitP);
 
-	Entity->Dim = v3{0.5f, 0.3f, 1.0f} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Body = 
+		CalculatePhysicalBody(70.0f, v3{0.5f, 0.3f, 1.0f} * SimRegion->WorldMap->TileSideInMeters);
 	Entity->Collides = true;
-
-	Entity->iM = SafeRatio0(1.0f, 70.0f);
 
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
 	Entity->MoveSpec.Speed = 85.f * 0.75;
@@ -398,10 +448,10 @@ AddFamiliar(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Familiar, InitP);
 
-	Entity->Dim = v3{0.5f, 0.3f, 1.0f} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Body = 
+		CalculatePhysicalBody(5.0f, v3{0.5f, 0.3f, 1.0f} * SimRegion->WorldMap->TileSideInMeters);
 	Entity->Collides = true;
 
-	Entity->iM = SafeRatio0(1.0f, 40.0f / 8.0f);
 	Entity->Restitution = 0.5f;
 
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
@@ -419,7 +469,7 @@ AddGround(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Ground, InitP);
 
-	Entity->Dim = v3{1, 1, 0.1f} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Body = CalculatePhysicalBody(0.0f, v3{1, 1, 0.1f} * SimRegion->WorldMap->TileSideInMeters);
 	Entity->Collides = false;
 
 	return Entity;
@@ -430,11 +480,9 @@ AddFloor(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered, InitP);
 
-	Entity->Dim = v3{50, 50, 1} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Body = CalculatePhysicalBody(0.0f, v3{50, 50, 1} * SimRegion->WorldMap->TileSideInMeters);
 	Entity->Collides = true;
 	Entity->IsFloor = true;
-
-	Entity->iM = 0.0f;
 
 	return Entity;
 }
@@ -444,10 +492,8 @@ AddFixture(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Sword, InitP);
 
-	Entity->Dim = v3{1, 1, 1} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Body = CalculatePhysicalBody(0.0f, v3{1, 1, 1} * SimRegion->WorldMap->TileSideInMeters);
 	Entity->Collides = true;
-
-	Entity->iM = 0.0f;
 
 	return Entity;
 }
@@ -457,10 +503,8 @@ AddWall(sim_region* SimRegion, v3 InitP, f32 Mass = 1000.0f)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Wall, InitP);
 
-	Entity->Dim = v3{1, 1, 1} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Body = CalculatePhysicalBody(Mass, v3{1, 1, 1} * SimRegion->WorldMap->TileSideInMeters);
 	Entity->Collides = true;
-
-	Entity->iM = SafeRatio0(1.0f, Mass);
 
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
 	SetStandardFrictionForGroundObjects(&Entity->MoveSpec);
@@ -473,9 +517,9 @@ AddForceField(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Sword, InitP);
 
-	Entity->Dim = v3{0.1f, 0.1f, 0.1f} * SimRegion->WorldMap->TileSideInMeters;
+	Entity->Body = 
+		CalculatePhysicalBody(0.0f, v3{0.1f, 0.1f, 0.1f} * SimRegion->WorldMap->TileSideInMeters);
 	Entity->Collides = true;
-	Entity->iM = 0.0f;
 
 	Entity->ForceFieldRadiusSquared = Square(10.0f);
 	Entity->ForceFieldStrenght = 0.0f;
@@ -484,14 +528,13 @@ AddForceField(sim_region* SimRegion, v3 InitP)
 }
 
 	internal_function entity*
-AddParticle(sim_region* SimRegion, v3 InitP, f32 Mass = 0.0f)
+AddParticle(sim_region* SimRegion, v3 InitP, f32 Mass = 0.01f)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Wall, InitP);
 
-	Entity->Dim = v3{1, 1, 1} * SimRegion->WorldMap->TileSideInMeters * Mass/100.0f;
+	Entity->Body = CalculatePhysicalBody(Mass, v3{1, 1, 1} * SimRegion->WorldMap->TileSideInMeters);
 	Entity->Collides = true;
 
-	Entity->iM = SafeRatio0(1.0f, Mass);
 	Entity->Restitution = 0.9f;
 
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 10.0f;
@@ -515,8 +558,9 @@ MoveEntity(entity* Entity, f32 dT)
 	v3 ddO = Entity->ddO;
 
 	move_spec* MoveSpec = &Entity->MoveSpec;
+	physical_body* Body = &Entity->Body;
 
-	if(Entity->iM)
+	if(Body->iM)
 	{ 
 		if(MoveSpec->Drag_k1 || MoveSpec->Drag_k2)
 		{
@@ -524,9 +568,13 @@ MoveEntity(entity* Entity, f32 dT)
 			F -= dP * (MoveSpec->Drag_k1 + MoveSpec->Drag_k2 * dP_m);
 		}
 
-		ddP += F * Entity->iM;
+		ddP += F * Body->iM;
 		//TODO(bjorn): Why do i need the gravity to be so heavy? Because of upscaling?
 		ddP += MoveSpec->Gravity;
+
+		m33 Rot = QuaternionToRotationMatrix(O);
+		m33 iI_world = Rot * (Body->iI * Transpose(Rot));
+		ddO += iI_world * Entity->T;
 	}
 	//TODO(casey): ODE here!
 	ddP += MoveSpec->MovingDirection * MoveSpec->Speed;
@@ -547,24 +595,6 @@ MoveEntity(entity* Entity, f32 dT)
 	Entity->ddO = {};
 	Entity->dO = dO;
 	Entity->O = QuaternionNormalize(O);
-#if 0
-	ddA -= MoveSpec->Drag * 0.7f * dA;
-
-	A += 0.5f * ddA * Square(dT) + dA * dT;
-	dA += ddA * dT;
-	A = Modulate0(A, tau32);
-
-	R.XY = CCWM22(A) * DefaultEntityOrientation().XY;
-	R = Normalize(R);
-
-	if(MoveSpec->AllowRotation)
-	{
-		Entity->ddA = 0;
-		Entity->dA = dA;
-		Entity->A = A;
-		Entity->R = R;
-	}
-#endif
 }
 
 	internal_function void
@@ -613,9 +643,9 @@ ForceFieldLogic(entity* A, entity* B)
 	internal_function void
 FloorLogicRaw(entity* Floor, entity* Other)
 {
-	f32 FloorZ = (Floor->P.Z + Floor->Dim.Z * 0.5f);
+	f32 FloorZ = (Floor->P.Z + Floor->Body.S.Z * 0.5f);
 	if(Other->P.Z < FloorZ,
-		 IsInRectangle(RectCenterDim(Floor->P, Floor->Dim), Other->P))
+		 IsInRectangle(RectCenterDim(Floor->P, Floor->Body.S), Other->P))
 	{
 		Other->P.Z = FloorZ;
 		Other->dP.Z = 0.0f;

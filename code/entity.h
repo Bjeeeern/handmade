@@ -151,6 +151,11 @@ struct entity
 	v3 ddP;
 	v3 F;
 
+#if HANDMADE_INTERNAL
+	v3 DEBUG_MostRecent_F;
+	v3 DEBUG_MostRecent_T;
+#endif
+
 	m44 ObjToWorldTransform;
 
 	v2 CamRot;
@@ -528,11 +533,11 @@ AddForceField(sim_region* SimRegion, v3 InitP)
 }
 
 	internal_function entity*
-AddParticle(sim_region* SimRegion, v3 InitP, f32 Mass = 0.01f)
+AddParticle(sim_region* SimRegion, v3 InitP, f32 Mass = 0.01f, v3 Scale = v3{1, 1, 1})
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Wall, InitP);
 
-	Entity->Body = CalculatePhysicalBody(Mass, v3{1, 1, 1} * SimRegion->WorldMap->TileSideInMeters);
+	Entity->Body = CalculatePhysicalBody(Mass, Scale);
 	Entity->Collides = true;
 
 	Entity->Restitution = 0.9f;
@@ -556,6 +561,7 @@ MoveEntity(entity* Entity, f32 dT)
 	q O = Entity->O;
 	v3 dO = Entity->dO;
 	v3 ddO = Entity->ddO;
+	v3 T = Entity->T;
 
 	move_spec* MoveSpec = &Entity->MoveSpec;
 	physical_body* Body = &Entity->Body;
@@ -574,7 +580,7 @@ MoveEntity(entity* Entity, f32 dT)
 
 		m33 Rot = QuaternionToRotationMatrix(O);
 		m33 iI_world = Rot * (Body->iI * Transpose(Rot));
-		ddO += iI_world * Entity->T;
+		ddO += iI_world * T;
 	}
 	//TODO(casey): ODE here!
 	ddP += MoveSpec->MovingDirection * MoveSpec->Speed;
@@ -587,11 +593,17 @@ MoveEntity(entity* Entity, f32 dT)
 	dO = dO * MoveSpec->Damping + ddO * dT;
 	O = UpdateOrientationByAngularVelocity(O, dO*dT);
 
+#if HANDMADE_INTERNAL
+	Entity->DEBUG_MostRecent_F = F;
+	Entity->DEBUG_MostRecent_T = T;
+#endif
+
 	Entity->F = {};
 	Entity->ddP = {};
 	Entity->dP = dP;
 	Entity->P = P;
 
+	Entity->T = {};
 	Entity->ddO = {};
 	Entity->dO = dO;
 	Entity->O = QuaternionNormalize(O);

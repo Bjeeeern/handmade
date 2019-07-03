@@ -59,42 +59,36 @@ AddAttachmentRaw(entity* Subject, entity* EndPoint,
 
 	internal_function void
 AddOneWaySpringAttachment(entity* Subject, entity* EndPoint, f32 SpringConstant, f32 RestLength,
-													v3 SubjectAttachmentPoint = {}, v3 EndPointAttachmentPoint = {})
+													v3 Subject_AP = {}, v3 EndPoint_AP = {})
 {
-	attachment_info* Info = AddAttachmentRaw(Subject, EndPoint, 
-																					 SubjectAttachmentPoint, EndPointAttachmentPoint);
+	attachment_info* Info = AddAttachmentRaw(Subject, EndPoint, Subject_AP, EndPoint_AP);
 	Info->Type = AttachmentType_Spring;
 	Info->SpringConstant = SpringConstant;
 	Info->Length = RestLength;
 }
 internal_function void
 AddTwoWaySpringAttachment(entity* A, entity* B, f32 SpringConstant, f32 RestLength,
-													v3 SubjectAttachmentPoint = {}, v3 EndPointAttachmentPoint = {})
+													v3 A_AP = {}, v3 B_AP = {})
 {
-	AddOneWaySpringAttachment(A, B, SpringConstant, RestLength, 
-														SubjectAttachmentPoint, EndPointAttachmentPoint);
-	AddOneWaySpringAttachment(B, A, SpringConstant, RestLength,
-														EndPointAttachmentPoint, SubjectAttachmentPoint);
+	AddOneWaySpringAttachment(A, B, SpringConstant, RestLength, A_AP, B_AP);
+	AddOneWaySpringAttachment(B, A, SpringConstant, RestLength, B_AP, A_AP);
 }
 
 internal_function void
 AddOneWayBungeeAttachment(entity* Subject, entity* EndPoint, f32 SpringConstant, f32 RestLength,
-													v3 SubjectAttachmentPoint = {}, v3 EndPointAttachmentPoint = {})
+													v3 Subject_AP = {}, v3 EndPoint_AP = {})
 {
-	attachment_info* Info = AddAttachmentRaw(Subject, EndPoint, 
-																					 SubjectAttachmentPoint, EndPointAttachmentPoint);
+	attachment_info* Info = AddAttachmentRaw(Subject, EndPoint, Subject_AP, EndPoint_AP);
 	Info->Type = AttachmentType_Bungee;
 	Info->SpringConstant = SpringConstant;
 	Info->RestLength = RestLength;
 }
 internal_function void
 AddTwoWayBungeeAttachment(entity* A, entity* B, f32 SpringConstant, f32 RestLength,
-													v3 SubjectAttachmentPoint = {}, v3 EndPointAttachmentPoint = {})
+													v3 A_AP = {}, v3 B_AP = {})
 {
-	AddOneWayBungeeAttachment(A, B, SpringConstant, RestLength, 
-														SubjectAttachmentPoint, EndPointAttachmentPoint);
-	AddOneWayBungeeAttachment(B, A, SpringConstant, RestLength, 
-														EndPointAttachmentPoint, SubjectAttachmentPoint);
+	AddOneWayBungeeAttachment(A, B, SpringConstant, RestLength, A_AP, B_AP);
+	AddOneWayBungeeAttachment(B, A, SpringConstant, RestLength, B_AP, A_AP);
 }
 
 internal_function void
@@ -173,8 +167,12 @@ ApplyAttachmentForcesAndImpulses(entity* Entity)
 						v3 AttachmentPointVector = (AP1 - Entity->P);
 						v3 AttachmentPointNormal = Normalize(AttachmentPointVector);
 
-						Entity->F += ForceVector;// * Dot(PointSeparationVector, -AttachmentPointNormal);
-						Entity->T += Cross(ForceVector, AttachmentPointVector);
+						//TODO STUDY(bjorn): Why do the author in (Game Physics Millington
+						//2010) apply the force through the center even when parallel??
+						Entity->F += ForceVector * Dot(PointSeparationNormal, -AttachmentPointNormal);
+						v3 Torque = Cross(AttachmentPointVector, -ForceVector);
+
+						Entity->T += Torque;
 					}
 				}
 			}

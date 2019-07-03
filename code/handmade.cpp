@@ -64,17 +64,10 @@ struct game_state
 
 	hero_bitmaps HeroBitmaps[4];
 
+	f32 SimulationSpeedModifier;
 #if HANDMADE_INTERNAL
-	world_map_position DEBUG_TestLocations[10];
-
 	b32 DEBUG_VisualiseCollisionBox;
-
-	b32 DEBUG_StepThroughTheCollisionLoop;
-	b32 DEBUG_CollisionLoopAdvance;
-
-	entity* DEBUG_CollisionLoopEntity;
-	s32 DEBUG_CollisionLoopStepIndex;
-	v3 DEBUG_CollisionLoopEstimatedPos;
+	world_map_position DEBUG_TestLocations[10];
 #endif
 
 	f32 GroundStaticFriction;
@@ -88,6 +81,8 @@ struct game_state
 	internal_function void
 InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 {
+	GameState->SimulationSpeedModifier = 1;
+
 	GameState->GroundStaticFriction = 2.1f; 
 	GameState->GroundDynamicFriction = 2.0f; 
 	GameState->Backdrop = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
@@ -354,18 +349,28 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 																		 GameState->CameraUpdateBounds, 0);
 
 		AddFloor(SimRegion, v3{0, 0, -0.5f} * WorldMap->TileSideInMeters);
-		entity* Fixture = AddFixture(SimRegion, v3{0, 0, 24});
-
-		entity* ForceField = AddForceField(SimRegion, v3{0, 7, 4});
-		ForceField->Keyboard = GetKeyboard(Input, 1);
-		ForceField->ForceFieldStrenght = 20.0f;
+		entity* Fixture = AddFixture(SimRegion, v3{0, 0, 12});
 
 		f32 SpringConstant = 20.0f;
 
-		entity* A = AddParticle(SimRegion, v3{ 2,0,0}, 10.0f);
-		AddOneWaySpringAttachment(A, Fixture, SpringConstant, 4.0f, -v3{0.5f,0.5f,0.5f}, {0,0,0});
-		entity* B = AddParticle(SimRegion, v3{-2,0,0}, 10.0f);
-		AddTwoWaySpringAttachment(A, B, SpringConstant*1.5f, 2.0f, {0.5f,0.5f,0.5f}, {0,0,-0.5f});
+		entity* A = AddParticle(SimRegion, v3{ 2,0,0}, 20.0f, 2.0f*v3{1,1,1});
+		AddOneWaySpringAttachment(A, Fixture, SpringConstant*0.4f, 2.0f, -v3{0.5f,0.5f,0.5f}, {0,0,0});
+		entity* B = AddParticle(SimRegion, v3{-2,0,0}, 20.0f);
+		AddTwoWaySpringAttachment(A, B, SpringConstant, 2.0f, {0.5f,0.5f,0.5f}, {0.5f,0.5f,0.5f});
+
+		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
+	}
+
+	{ //NOTE(bjorn): Test location 4 setup
+		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, &GameState->TransientArena,
+																		 WorldMap, GameState->DEBUG_TestLocations[4], 
+																		 GameState->CameraUpdateBounds, 0);
+
+		AddFloor(SimRegion, v3{0, 0, -0.5f});
+		entity* Fixture = AddFixture(SimRegion, v3{4, 5, 0});
+
+		entity* A = AddParticle(SimRegion, v3{0,0,0}, 20.0f, v3{1,10,1});
+		AddOneWaySpringAttachment(A, Fixture, 10.0f, 2.0f, v3{0.0f,0.5f,0.0f}, {0,0,0});
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}
@@ -471,6 +476,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		}
 	}
 
+#if HANDMADE_INTERNAL
+	b32 DEBUG_UpdateLoopAdvance = false;
+#endif
+
 	for(s32 KeyboardIndex = 1;
 			KeyboardIndex <= ArrayCount(Input->Keyboards);
 			KeyboardIndex++)
@@ -478,7 +487,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		game_keyboard* Keyboard = GetKeyboard(Input, KeyboardIndex);
 		if(Keyboard->IsConnected)
 		{
-#if HANDMADE_INTERNAL
 			if(Clicked(Keyboard, Q))
 			{
 				GameState->NoteTone = 500.0f;
@@ -487,22 +495,29 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				//TODO STUDY(bjorn): Just setting the flag is not working anymore.
 				//Memory->IsInitialized = false;
-
-				GameState->DEBUG_StepThroughTheCollisionLoop = 
-					!GameState->DEBUG_StepThroughTheCollisionLoop;
-				GameState->DEBUG_CollisionLoopEntity = 0;
-				GameState->DEBUG_CollisionLoopStepIndex = 0;
 			}
 
-			if(GameState->DEBUG_StepThroughTheCollisionLoop && Clicked(Keyboard, Space))
+			if(Clicked(Keyboard, P))
 			{
-				GameState->DEBUG_CollisionLoopAdvance = true;
-				GameState->DEBUG_CollisionLoopAdvance = true;
+				if(GameState->SimulationSpeedModifier)
+				{
+					GameState->SimulationSpeedModifier = 0;
+				}
+				else
+				{
+					GameState->SimulationSpeedModifier = 1;
+				}
 			}
-
+#if HANDMADE_INTERNAL
 			if(Clicked(Keyboard, M))
 			{
 				GameState->DEBUG_VisualiseCollisionBox = !GameState->DEBUG_VisualiseCollisionBox;
+			}
+
+			if(Clicked(Keyboard, Space) && 
+				 GameState->SimulationSpeedModifier != 1.0f)
+			{
+				DEBUG_UpdateLoopAdvance = true;
 			}
 
 			for(s32 NumKeyIndex = 0;
@@ -517,7 +532,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 																					 GameState->CameraUpdateBounds, SecondsToUpdate);
 
 					entity* MainCamera = AddEntityToSimRegionManually(Input, Entities, SimRegion, 
-																												GameState->MainCameraStorageIndex);
+																														GameState->MainCameraStorageIndex);
 					Assert(MainCamera);
 					Assert(MainCamera->IsSpacial);
 					Assert(MainCamera->IsCamera);
@@ -597,10 +612,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//NOTE(bjorn): Guarantees at least one iteration to find the main camera entity pointer.
 	Assert(Steps > 1);
 
-	entity* MainCamera = 0;
+	entity* MainCamera = AddEntityToSimRegionManually(Input, Entities, SimRegion, 
+																										GameState->MainCameraStorageIndex);
+	Assert(MainCamera);
 
 	u32 LastStep = Steps;
-	f32 dT = SecondsToUpdate / (f32)Steps;
 	for(u32 Step = 1;
 			Step <= LastStep;
 			Step++)
@@ -614,15 +630,23 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			//TODO Do non-spacial entities ever do logic/Render? Do they affect other entities then? 
 			if(!Entity->IsSpacial) { continue; }
 
-			if(!MainCamera && Entity->Player && Entity->FreeMover) 
-			{ 
-				MainCamera = Entity; 
+			f32 dT = SecondsToUpdate / (f32)Steps;
+			b32 CameraOrAssociates = Entity->IsCamera || (MainCamera->FreeMover == Entity);
+			if(!CameraOrAssociates)
+			{
+#if HANDMADE_INTERNAL
+				if(!DEBUG_UpdateLoopAdvance)
+				{
+					dT *= GameState->SimulationSpeedModifier;
+				}
+#elif
+				dT *= GameState->SimulationSpeedModifier;
+#endif
 			}
-
 			//
 			// NOTE(bjorn): Moving / Collision / Game Logic
 			//
-			if(Entity->Updates)
+			if(Entity->Updates && dT)
 			{
 				//TODO(bjorn):
 				// Add negative gravity for penetration if relative velocity is >= 0.
@@ -813,7 +837,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					}
 					if(Clicked(Entity->Keyboard, Space))
 					{
-						WASDKeysDirection.Z += 1;
+						if(!Entity->IsCamera &&
+							 Entity != MainCamera->FreeMover)
+						{
+							WASDKeysDirection.Z += 1;
+						}
 					}
 					if(LengthSquared(WASDKeysDirection) > 1.0f)
 					{
@@ -856,7 +884,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 						if(!Sword->IsSpacial) { Sword->DistanceRemaining = 20.0f; }
 
-						v3 P = (Sword->IsSpacial ?  Sword->P : (Entity->P + ArrowKeysDirection * Sword->Body.S.Y));
+						v3 P = (Sword->IsSpacial ?  
+										Sword->P : (Entity->P + ArrowKeysDirection * Sword->Body.S.Y));
 
 						MakeEntitySpacial(Sword, P, ArrowKeysDirection * 1.0f, 
 															AngleAxisToQuaternion(ArrowKeysDirection, Normalize(v3{0,0.8f,-1})),
@@ -908,6 +937,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				HunterLogic(Entity);
 
+				//TODO(bjorn): Make ApplyAttachmentForcesAndImpulses somehow depend on
+				//time in such a way that changing the simulation speed does not affect
+				//the simulation.
 				ApplyAttachmentForcesAndImpulses(Entity);
 
 				MoveEntity(Entity, dT);
@@ -1044,8 +1076,48 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				if(GameState->DEBUG_VisualiseCollisionBox)
 				{
 					PushRenderPieceWireFrame(RenderGroup, T);
-					PushRenderPieceCardinalAxes(RenderGroup, 
-																			ConstructTransform(Entity->P, Entity->O, {1,1,1}));
+
+					if(!Entity->IsCamera &&
+						 !Entity->IsFloor &&
+						 Entity != MainCamera->FreeMover)
+					{
+						f32 AxesScale = 1.0f;
+						m44 TranslationAndRotation = ConstructTransform(Entity->P, Entity->O, {1,1,1});
+						PushRenderPieceLineSegment(RenderGroup, TranslationAndRotation, 
+																			 v3{0,0,0}, v3{1,0,0}*AxesScale, {1,0,0});
+						PushRenderPieceLineSegment(RenderGroup, TranslationAndRotation, 
+																			 v3{0,0,0}, v3{0,1,0}*AxesScale, {0,1,0});
+						PushRenderPieceLineSegment(RenderGroup, TranslationAndRotation, 
+																			 v3{0,0,0}, v3{0,0,1}*AxesScale, {0,0,1});
+
+						m44 TranslationOnly = ConstructTransform(Entity->P, QuaternionIdentity(), {1,1,1});
+						PushRenderPieceLineSegment(RenderGroup, TranslationOnly, v3{0,0,0}, 
+																			 Entity->DEBUG_MostRecent_F*(1.0f/10.0f), {1,0,1});
+						PushRenderPieceLineSegment(RenderGroup, TranslationOnly, v3{0,0,0}, 
+																			 Entity->DEBUG_MostRecent_T*(1.0f/tau32), {1,1,0});
+					}
+
+					for(u32 AttachmentIndex = 0;
+							AttachmentIndex < ArrayCount(Entity->Attachments);
+							AttachmentIndex++)
+					{
+						entity* EndPoint = Entity->Attachments[AttachmentIndex];
+						if(EndPoint)
+						{
+							attachment_info Info = Entity->AttachmentInfo[AttachmentIndex];
+
+							v3 AP1 = Entity->ObjToWorldTransform   * Info.AP1;
+							v3 AP2 = EndPoint->ObjToWorldTransform * Info.AP2;
+
+							v3 APSize = 0.08f*v3{1,1,1};
+							v4 Color = {0.7f, 0, 0, 1};
+
+							m44 T1 = ConstructTransform(AP1, QuaternionIdentity(), APSize);
+							m44 T2 = ConstructTransform(AP2, QuaternionIdentity(), APSize);
+							PushRenderPieceWireFrame(RenderGroup, T1, Color);
+							PushRenderPieceLineSegment(RenderGroup, M44Identity(), AP1, AP2);
+						}
+					}
 				}
 #endif
 			}
@@ -1140,33 +1212,63 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 																							RenderPiece->Color.RGB);
 				}
 			}
-#if HANDMADE_INTERNAL
-			else if(RenderPiece->Type == DEBUG_RenderPieceType_CardinalAxes)
+			else if(RenderPiece->Type == RenderPieceType_LineSegment)
 			{
-				f32 AxesScale = 1.5f;
+				v3 V0 = RenderPiece->ObjToWorldTransform * RenderPiece->A;
+				v3 V1 = RenderPiece->ObjToWorldTransform * RenderPiece->B;
+
+				TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
+																						MainCamera->CamZoom, RotMat, V0, V1,
+																						ScreenCenter, GameSpaceToScreenSpace, 
+																						RenderPiece->Color.RGB);
+
+				v3 n = Normalize(V1-V0);
+
+				v3 t0 = {};
+				v3 t1 = {};
+				f32 e = 0.01f;
+				if(IsWithin(n.X, -e, e) && 
+					 IsWithin(n.Y, -e, e))
 				{
-					v3 V0 = RenderPiece->ObjToWorldTransform * v3{0,0,0};
-					v3 V1 = RenderPiece->ObjToWorldTransform * (v3{1,0,0}*AxesScale);
-					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
-																							MainCamera->CamZoom, RotMat, V0, V1,
-																							ScreenCenter, GameSpaceToScreenSpace, {1,0,0});
+					t0 = {1,0,0};
 				}
+				else
 				{
-					v3 V0 = RenderPiece->ObjToWorldTransform * v3{0,0,0};
-					v3 V1 = RenderPiece->ObjToWorldTransform * (v3{0,1,0}*AxesScale);
-					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
-																							MainCamera->CamZoom, RotMat, V0, V1,
-																							ScreenCenter, GameSpaceToScreenSpace, {0,1,0});
+					t0 = n + v3{0,0,100};
 				}
+				t1 = Normalize(Cross(n, t0));
+				t0 = Cross(n, t1);
+
+				f32 Scale = 0.2f;
+				v3 Verts[5];
+				Verts[0] = V1 - n*Scale + t0 * 0.25f * Scale + t1 * 0.25f * Scale;
+				Verts[1] = V1 - n*Scale - t0 * 0.25f * Scale + t1 * 0.25f * Scale;
+				Verts[2] = V1 - n*Scale - t0 * 0.25f * Scale - t1 * 0.25f * Scale;
+				Verts[3] = V1 - n*Scale + t0 * 0.25f * Scale - t1 * 0.25f * Scale;
+				Verts[4] = V1;
+				for(int VertIndex = 0; 
+						VertIndex < 4; 
+						VertIndex++)
 				{
-					v3 V0 = RenderPiece->ObjToWorldTransform * v3{0,0,0};
-					v3 V1 = RenderPiece->ObjToWorldTransform * (v3{0,0,1}*AxesScale);
+					V0 = Verts[(VertIndex+0)%4];
+					V1 = Verts[(VertIndex+1)%4];
 					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
 																							MainCamera->CamZoom, RotMat, V0, V1,
-																							ScreenCenter, GameSpaceToScreenSpace, {0,0,1});
+																							ScreenCenter, GameSpaceToScreenSpace, 
+																							RenderPiece->Color.RGB);
+				}
+				for(int VertIndex = 0; 
+						VertIndex < 4; 
+						VertIndex++)
+				{
+					V0 = Verts[VertIndex];
+					V1 = Verts[4];
+					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
+																							MainCamera->CamZoom, RotMat, V0, V1,
+																							ScreenCenter, GameSpaceToScreenSpace, 
+																							RenderPiece->Color.RGB);
 				}
 			}
-#endif
 		}
 	}
 

@@ -6,11 +6,9 @@
 
 enum render_piece_type
 {
+	RenderPieceType_LineSegment,
 	RenderPieceType_DimCube,
 	RenderPieceType_Quad,
-#if HANDMADE_INTERNAL
-	DEBUG_RenderPieceType_CardinalAxes
-#endif
 };
 
 struct render_piece
@@ -22,6 +20,9 @@ struct render_piece
 	v4 Color;
 
 	m44 ObjToWorldTransform;
+
+	v3 A;
+	v3 B;
 };
 
 struct render_group
@@ -79,18 +80,21 @@ PushRenderPieceWireFrame(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.
 	RenderPiece->Color = Color;
 }
 internal_function void
-PushRenderPieceCardinalAxes(render_group* RenderGroup, m44 T)
-{
-	render_piece* RenderPiece = PushRenderPieceRaw(RenderGroup, T);
-	RenderPiece->Type = DEBUG_RenderPieceType_CardinalAxes;
-}
-internal_function void
 PushRenderPieceWireFrame(render_group* RenderGroup, rectangle3 Rect, v4 Color = {0,0,1,1})
 {
 	center_dim_v3_result CenterDim = RectToCenterDim(Rect);
 
 	m44 T = ConstructTransform(CenterDim.Center, QuaternionIdentity(), CenterDim.Dim);
 	PushRenderPieceWireFrame(RenderGroup, T, Color);
+}
+internal_function void
+PushRenderPieceLineSegment(render_group* RenderGroup, m44 T, v3 A, v3 B, v4 Color = {0,0.4f,0.8f,1})
+{
+	render_piece* RenderPiece = PushRenderPieceRaw(RenderGroup, T);
+	RenderPiece->Type = RenderPieceType_LineSegment;
+	RenderPiece->A = A;
+	RenderPiece->B = B;
+	RenderPiece->Color = Color;
 }
 
 struct transform_result
@@ -110,7 +114,7 @@ TransformPoint(f32 dp, m33 RotMat, v3 P)
 	f32 s = -Pos.Z + (de+dp);
 
 	Result.P = Pos.XY;
-	Result.Valid = s >= 0;
+	Result.Valid = s > 0;
 	Result.f = de/s;
 
 	return Result;

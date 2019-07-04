@@ -19,7 +19,7 @@
 // * Add hunting along Z-axis too.
 
 // TODO
-// * Make it so that I can visually step through a frame of collision.
+// * Make it so that I can visually step through a frame of collision collision by collision.
 // * generate world as you drive
 // * car engine that is settable by mouse click and drag
 // * ai cars
@@ -271,7 +271,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 		}
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
-}
+	}
 
 #if HANDMADE_INTERNAL
 	{ //NOTE(bjorn): Test location 1 setup
@@ -362,10 +362,10 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 		entity* D = AddParticle(SimRegion, v3{-1,-1, 1}, 5.0f);
 		entity* E = AddParticle(SimRegion, v3{ 1,-1, 1}, 5.0f);
 
-		AddTwoWaySpringAttachment(A, B, SpringConstant, 2.0f, {-0.5f,0.5f,0.5f}, {0,0,0});
-		AddTwoWaySpringAttachment(A, C, SpringConstant, 2.0f, {0.5f,-0.5f,0.5f}, {0,0,0});
-		AddTwoWaySpringAttachment(A, D, SpringConstant, 2.0f, {0.5f,0.5f,-0.5f}, {0,0,0});
-		AddTwoWaySpringAttachment(A, E, SpringConstant, 2.0f, {0.5f,0.5f,0.5f}, {0,0,0});
+		//AddTwoWaySpringAttachment(A, B, SpringConstant, 2.0f, {-0.5f,0.5f,0.5f}, {0,0,0});
+		//ddTwoWaySpringAttachment(A, C, SpringConstant, 2.0f, {0.5f,-0.5f,0.5f}, {0,0,0});
+		//ddTwoWaySpringAttachment(A, D, SpringConstant, 2.0f, {0.5f,0.5f,-0.5f}, {0,0,0});
+		AddTwoWaySpringAttachment(A, E, SpringConstant, 2.0f, {0.5f,0.5f,0.5f}, {0.5f,0.5f,0.5f});
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}
@@ -376,7 +376,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 																		 GameState->CameraUpdateBounds, 0);
 
 		AddFloor(SimRegion, v3{0, 0, -0.5f});
-		entity* Fixture = AddFixture(SimRegion, v3{4, 5, 4});
+		entity* Fixture = AddFixture(SimRegion, v3{4, 5, 0});
 
 		entity* A = AddParticle(SimRegion, v3{0,0,0}, 20.0f, v3{1,10,1});
 		AddOneWaySpringAttachment(A, Fixture, 10.0f, 2.0f, v3{0.0f,0.5f,0.0f}, {0,0,0});

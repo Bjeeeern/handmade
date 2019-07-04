@@ -19,6 +19,7 @@
 // * Add hunting along Z-axis too.
 
 // TODO
+// & Clip lines that are drawn behind the screen instead of not rendering them at all.
 // * Make it so that I can visually step through a frame of collision collision by collision.
 // * generate world as you drive
 // * car engine that is settable by mouse click and drag
@@ -362,10 +363,18 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 		entity* D = AddParticle(SimRegion, v3{-1,-1, 1}, 5.0f);
 		entity* E = AddParticle(SimRegion, v3{ 1,-1, 1}, 5.0f);
 
-		AddTwoWaySpringAttachment(A, B, SpringConstant, 2.0f, {-0.5f,0.5f,0.5f}, {0,0,0});
-		AddTwoWaySpringAttachment(A, C, SpringConstant, 2.0f, {0.5f,-0.5f,0.5f}, {0,0,0});
-		AddTwoWaySpringAttachment(A, D, SpringConstant, 2.0f, {0.5f,0.5f,-0.5f}, {0,0,0});
-		AddTwoWaySpringAttachment(A, E, SpringConstant, 2.0f, {0.5f,0.5f,0.5f}, {0,0,0});
+		AddTwoWaySpringAttachment(A, B, SpringConstant, 2.0f, 
+															A->Body.Primitives[1].Offset * v3{-0.5f,0.5f,0.5f}, 
+															A->Body.Primitives[1].Offset * v3{0,0,0});
+		AddTwoWaySpringAttachment(A, C, SpringConstant, 2.0f, 
+															A->Body.Primitives[1].Offset * v3{0.5f,-0.5f,0.5f}, 
+															A->Body.Primitives[1].Offset * v3{0,0,0});
+		AddTwoWaySpringAttachment(A, D, SpringConstant, 2.0f, 
+															A->Body.Primitives[1].Offset * v3{0.5f,0.5f,-0.5f}, 
+															A->Body.Primitives[1].Offset * v3{0,0,0});
+		AddTwoWaySpringAttachment(A, E, SpringConstant, 2.0f, 
+															A->Body.Primitives[1].Offset * v3{0.5f,0.5f,0.5f}, 
+															A->Body.Primitives[1].Offset * v3{0,0,0});
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}
@@ -379,7 +388,9 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 		entity* Fixture = AddFixture(SimRegion, v3{4, 5, 0});
 
 		entity* A = AddParticle(SimRegion, v3{0,0,0}, 20.0f, v3{1,10,1});
-		AddOneWaySpringAttachment(A, Fixture, 10.0f, 2.0f, v3{0.0f,0.5f,0.0f}, {0,0,0});
+		AddOneWaySpringAttachment(A, Fixture, 10.0f, 2.0f, 
+															A->Body.Primitives[1].Offset * v3{0.0f,0.5f,0.0f}, 
+															A->Body.Primitives[1].Offset * v3{0,0,0});
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}
@@ -893,6 +904,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 						if(!Sword->IsSpacial) { Sword->DistanceRemaining = 20.0f; }
 
+						//TODO(bjorn): Use the relevant body primitive scale instead.
 						v3 P = (Sword->IsSpacial ?  
 										Sword->P : (Entity->P + ArrowKeysDirection * Sword->Body.S.Y));
 
@@ -1084,7 +1096,30 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #if HANDMADE_INTERNAL
 				if(GameState->DEBUG_VisualiseCollisionBox)
 				{
-					PushRenderPieceWireFrame(RenderGroup, T);
+					for(u32 PrimitiveIndex = 0;
+							PrimitiveIndex < Entity->Body.PrimitiveCount;
+							PrimitiveIndex++)
+					{
+						body_primitive* Primitive = Entity->Body.Primitives + PrimitiveIndex;
+						if(Primitive->CollisionShape == CollisonShape_Circle)
+						{
+							if(!Entity->IsCamera &&
+								 !Entity->IsFloor &&
+								 Entity != MainCamera->FreeMover &&
+								 PrimitiveIndex == 0)
+							{
+								//PushRenderPieceSphere(RenderGroup, T * Primitive->Offset, {0,1,0,0.1f});
+							}
+							else if(PrimitiveIndex != 0)
+							{
+								PushRenderPieceSphere(RenderGroup, T * Primitive->Offset, {0,0.2f,0.8f,0.05f});
+							}
+						}
+						else if(Primitive->CollisionShape == CollisonShape_AABB)
+						{
+							PushRenderPieceWireFrame(RenderGroup, T * Primitive->Offset);
+						}
+					}
 
 					if(!Entity->IsCamera &&
 						 !Entity->IsFloor &&
@@ -1191,7 +1226,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			{
 				aabb_verts_result AABB = GetAABBVertices(&RenderPiece->ObjToWorldTransform);
 
-				for(int VertIndex = 0; 
+				for(u32 VertIndex = 0; 
 						VertIndex < 4; 
 						VertIndex++)
 				{
@@ -1202,7 +1237,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 																							ScreenCenter, GameSpaceToScreenSpace, 
 																							RenderPiece->Color.RGB);
 				}
-				for(int VertIndex = 0; 
+				for(u32 VertIndex = 0; 
 						VertIndex < 4; 
 						VertIndex++)
 				{
@@ -1213,7 +1248,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 																							ScreenCenter, GameSpaceToScreenSpace, 
 																							RenderPiece->Color.RGB);
 				}
-				for(int VertIndex = 0; 
+				for(u32 VertIndex = 0; 
 						VertIndex < 4; 
 						VertIndex++)
 				{
@@ -1282,6 +1317,19 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 																							RenderPiece->Color.RGB);
 				}
 			}
+			else if(RenderPiece->Type == RenderPieceType_Sphere)
+			{
+				v3 P0 = RenderPiece->ObjToWorldTransform * v3{0,0,0};
+				v3 P1 = RenderPiece->ObjToWorldTransform * v3{0.5f,0,0};
+
+				transform_result Tran0 = TransformPoint(MainCamera->CamZoom, RotMat, P0);
+				if(!Tran0.Valid) { continue; }
+
+				f32 PixR = PixelsPerMeter * Magnitude(P1 - P0) * Tran0.f;
+				v2 PixC = ScreenCenter + GameSpaceToScreenSpace * Tran0.P * Tran0.f;
+
+				DrawCircle(Buffer, PixC, PixR, RenderPiece->Color);
+			}
 		}
 	}
 
@@ -1316,7 +1364,6 @@ OutputSound(game_sound_output_buffer *SoundBuffer, game_state* GameState)
 		*SampleOut++ = SampleValue;
 		*SampleOut++ = SampleValue;
 	}
-
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)

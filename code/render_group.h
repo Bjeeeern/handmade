@@ -9,6 +9,7 @@ enum render_piece_type
 	RenderPieceType_LineSegment,
 	RenderPieceType_DimCube,
 	RenderPieceType_Quad,
+	RenderPieceType_Sphere,
 };
 
 struct render_piece
@@ -87,6 +88,7 @@ PushRenderPieceWireFrame(render_group* RenderGroup, rectangle3 Rect, v4 Color = 
 	m44 T = ConstructTransform(CenterDim.Center, QuaternionIdentity(), CenterDim.Dim);
 	PushRenderPieceWireFrame(RenderGroup, T, Color);
 }
+//TODO(bjorn): Rename LineSegment -> Vector
 internal_function void
 PushRenderPieceLineSegment(render_group* RenderGroup, m44 T, v3 A, v3 B, v4 Color = {0,0.4f,0.8f,1})
 {
@@ -94,6 +96,13 @@ PushRenderPieceLineSegment(render_group* RenderGroup, m44 T, v3 A, v3 B, v4 Colo
 	RenderPiece->Type = RenderPieceType_LineSegment;
 	RenderPiece->A = A;
 	RenderPiece->B = B;
+	RenderPiece->Color = Color;
+}
+internal_function void
+PushRenderPieceSphere(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.8f,1})
+{
+	render_piece* RenderPiece = PushRenderPieceRaw(RenderGroup, T);
+	RenderPiece->Type = RenderPieceType_Sphere;
 	RenderPiece->Color = Color;
 }
 
@@ -109,6 +118,7 @@ TransformPoint(f32 dp, m33 RotMat, v3 P)
 {
 	transform_result Result = {};
 
+	//TODO(bjorn): "de" should probably be grouped together with the other data defining the camera.
 	v3 Pos = (RotMat * P);
 	f32 de = 20.0f;
 	f32 s = -Pos.Z + (de+dp);

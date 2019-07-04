@@ -70,9 +70,9 @@ v3 UnscaledAABB[8] = {{-0.5f,  0.5f, 0.5f},
 
 enum collision_shape
 {
-	CollisonShape_Circle,
-	CollisonShape_AABB,
-	CollisonShape_Convex,
+	CollisonShape_Circle = 0,
+	CollisonShape_AABB = 1,
+	CollisonShape_Convex = 2,
 };
 
 	internal_function aabb_verts_result
@@ -92,15 +92,26 @@ GetAABBVertices(m44* ObjToWorldTransform)
 	return Result;
 }
 
+struct body_primitive
+{
+	union
+	{
+		collision_shape CollisionShape;
+		u32 CollisionShapeIndex;
+	};
+
+	m44 Offset;
+};
+
 struct physical_body
 {
-	collision_shape CollisionShape;
+	u32 PrimitiveCount;
+	body_primitive Primitives[4];
 
 	f32 iM; //NOTE(bjorn): Inverse mass
 	m33 iI; //NOTE(bjorn): Inverse inertia tensor
 
 	v3 S;
-	v3 CoM;
 };
 
 struct entity;
@@ -247,18 +258,40 @@ struct entity
 internal_function physical_body
 CalculatePhysicalBody(f32 Mass, v3 Scale)
 {
+	//TODO(bjorn): Multiple bodyparts.
+	//TODO(bjorn): Support other shapes even when scaled.
+	//TODO(bjorn): Support other centers of mass apart from the origin.
 	physical_body Result = {};
 
-	//TODO(bjorn): Support other shapes even when scaled.
-	Result.CollisionShape = CollisonShape_AABB;
-	//TODO(bjorn): Support other centers of mass apart from the origin.
-	Result.CoM = {};
-	Result.S = Scale;
+	Result.PrimitiveCount = 2;
+
+	body_primitive* Cube = Result.Primitives + 1;
+	Cube->CollisionShape = CollisonShape_AABB;
+	Cube->Offset = ConstructTransform({0,0,0}, QuaternionIdentity(), Scale);
+
+	aabb_verts_result AABB = GetAABBVertices(&Cube->Offset);
+	f32 R = 0;
+	for(u32 VertIndex = 0; 
+			VertIndex < AABB.Count; 
+			VertIndex++)
+	{
+		R = Magnitude(AABB.Verts[VertIndex]) > R ? Magnitude(AABB.Verts[VertIndex]) : R;
+	}
+
+	body_primitive* BoundingVolume = Result.Primitives + 0;
+	BoundingVolume->CollisionShape = CollisonShape_Circle;
+	BoundingVolume->Offset = ConstructTransform({0,0,0}, QuaternionIdentity(), 2.0f*v3{R,R,R});
+
+	Result.S = {1,1,1};
 
 	Result.iM = SafeRatio0(1.0f, Mass);
 	if(Result.iM)
 	{
-		if(Result.CollisionShape == CollisonShape_AABB)
+		Assert(Result.PrimitiveCount == 2 &&
+					 Result.Primitives[1].CollisionShape == CollisonShape_AABB);
+
+		if(Result.PrimitiveCount == 2 &&
+			 Result.Primitives[1].CollisionShape == CollisonShape_AABB)
 		{
 			m33 I = {};
 			I.E_[0] = Square(Scale.Y) + Square(Scale.Z);
@@ -667,12 +700,10 @@ ForceFieldLogic(entity* A, entity* B)
 	internal_function void
 FloorLogicRaw(entity* Floor, entity* Other)
 {
-	f32 FloorZ = (Floor->P.Z + Floor->Body.S.Z * 0.5f);
-	if(Other->P.Z < FloorZ,
-		 IsInRectangle(RectCenterDim(Floor->P, Floor->Body.S), Other->P))
+	if(Other->P.Z < Floor->P.Z)
 	{
-		Other->P.Z = FloorZ;
-		Other->dP.Z = 0.0f;
+		Other->P.Z = Floor->P.Z;
+		Other->dP.Z = 0;
 	}
 }
 

@@ -362,10 +362,10 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 		entity* D = AddParticle(SimRegion, v3{-1,-1, 1}, 5.0f);
 		entity* E = AddParticle(SimRegion, v3{ 1,-1, 1}, 5.0f);
 
-		//AddTwoWaySpringAttachment(A, B, SpringConstant, 2.0f, {-0.5f,0.5f,0.5f}, {0,0,0});
-		//ddTwoWaySpringAttachment(A, C, SpringConstant, 2.0f, {0.5f,-0.5f,0.5f}, {0,0,0});
-		//ddTwoWaySpringAttachment(A, D, SpringConstant, 2.0f, {0.5f,0.5f,-0.5f}, {0,0,0});
-		AddTwoWaySpringAttachment(A, E, SpringConstant, 2.0f, {0.5f,0.5f,0.5f}, {0.5f,0.5f,0.5f});
+		AddTwoWaySpringAttachment(A, B, SpringConstant, 2.0f, {-0.5f,0.5f,0.5f}, {0,0,0});
+		AddTwoWaySpringAttachment(A, C, SpringConstant, 2.0f, {0.5f,-0.5f,0.5f}, {0,0,0});
+		AddTwoWaySpringAttachment(A, D, SpringConstant, 2.0f, {0.5f,0.5f,-0.5f}, {0,0,0});
+		AddTwoWaySpringAttachment(A, E, SpringConstant, 2.0f, {0.5f,0.5f,0.5f}, {0,0,0});
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}

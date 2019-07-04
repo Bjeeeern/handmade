@@ -349,14 +349,23 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 																		 GameState->CameraUpdateBounds, 0);
 
 		AddFloor(SimRegion, v3{0, 0, -0.5f} * WorldMap->TileSideInMeters);
-		entity* Fixture = AddFixture(SimRegion, v3{0, 0, 12});
+		entity* Fixture = AddFixture(SimRegion, v3{0, 0, 20});
 
 		f32 SpringConstant = 20.0f;
 
-		entity* A = AddParticle(SimRegion, v3{ 2,0,0}, 20.0f, 2.0f*v3{1,1,1});
-		AddOneWaySpringAttachment(A, Fixture, SpringConstant*0.4f, 2.0f, -v3{0.5f,0.5f,0.5f}, {0,0,0});
-		entity* B = AddParticle(SimRegion, v3{-2,0,0}, 20.0f);
-		AddTwoWaySpringAttachment(A, B, SpringConstant, 2.0f, {0.5f,0.5f,0.5f}, {0.5f,0.5f,0.5f});
+		entity* A = AddParticle(SimRegion, v3{ 0,0,10}, 20.0f, 2.0f*v3{1,1,1});
+		AddOneWaySpringAttachment(A, Fixture, SpringConstant * 4.0f, 2.0f, 
+															-v3{0.5f,0.5f,0.5f}, {0,0,0});
+
+		entity* B = AddParticle(SimRegion, v3{ 1, 1, 1}, 5.0f);
+		entity* C = AddParticle(SimRegion, v3{-1, 1, 1}, 5.0f);
+		entity* D = AddParticle(SimRegion, v3{-1,-1, 1}, 5.0f);
+		entity* E = AddParticle(SimRegion, v3{ 1,-1, 1}, 5.0f);
+
+		AddTwoWaySpringAttachment(A, B, SpringConstant, 2.0f, {-0.5f,0.5f,0.5f}, {0,0,0});
+		AddTwoWaySpringAttachment(A, C, SpringConstant, 2.0f, {0.5f,-0.5f,0.5f}, {0,0,0});
+		AddTwoWaySpringAttachment(A, D, SpringConstant, 2.0f, {0.5f,0.5f,-0.5f}, {0,0,0});
+		AddTwoWaySpringAttachment(A, E, SpringConstant, 2.0f, {0.5f,0.5f,0.5f}, {0,0,0});
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}

@@ -13,7 +13,8 @@ struct move_spec
 	f32 Speed;
 	f32 Drag_k1;
 	f32 Drag_k2;
-	//f32 AngularDrag;
+	f32 AngularDrag_k1;
+	f32 AngularDrag_k2;
 
 	//TODO(bjorn): Could this just be ddP?
 	v3 MovingDirection;
@@ -546,6 +547,9 @@ AddParticle(sim_region* SimRegion, v3 InitP, f32 Mass = 0.01f, v3 Scale = v3{1, 
 	Entity->MoveSpec.Drag_k1 = 0.0f;
 	Entity->MoveSpec.Drag_k2 = 0.5f;
 
+	Entity->MoveSpec.AngularDrag_k1 = 0.2f;
+	Entity->MoveSpec.AngularDrag_k2 = 1.0f;
+
 	return Entity;
 }
 
@@ -570,13 +574,21 @@ MoveEntity(entity* Entity, f32 dT)
 	{ 
 		if(MoveSpec->Drag_k1 || MoveSpec->Drag_k2)
 		{
-			f32 dP_m = Length(dP);
+			f32 dP_m = Magnitude(dP);
 			F -= dP * (MoveSpec->Drag_k1 + MoveSpec->Drag_k2 * dP_m);
 		}
 
 		ddP += F * Body->iM;
 		//TODO(bjorn): Why do i need the gravity to be so heavy? Because of upscaling?
 		ddP += MoveSpec->Gravity;
+
+		//TODO(bjorn): In addition to a general rotational drag, add a drag+impulse
+		//response for twisted attachments.
+		if(MoveSpec->AngularDrag_k1 || MoveSpec->AngularDrag_k2)
+		{
+			f32 dO_m = Magnitude(dO);
+			T -= dO * (MoveSpec->AngularDrag_k1 + MoveSpec->AngularDrag_k2 * dO_m);
+		}
 
 		m33 Rot = QuaternionToRotationMatrix(O);
 		m33 iI_world = Rot * (Body->iI * Transpose(Rot));

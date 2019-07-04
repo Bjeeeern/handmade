@@ -174,7 +174,6 @@ ApplyAttachmentForcesAndImpulses(entity* Entity)
 						//AttachmentPointVector? Are my rotation calculations not
 						//right-handed?
 						v3 Torque = Cross(-AttachmentPointVector, ForceVector);
-
 						Entity->T += Torque;
 					}
 				}

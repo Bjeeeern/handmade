@@ -156,21 +156,24 @@ ApplyAttachmentForcesAndImpulses(entity* Entity)
 
 					v3 PointSeparationNormal = Normalize(PointSeparationVector);
 					v3 ForceVector = (-SpringConstant*Separation) * PointSeparationNormal;
-					//TODO STUDY(bjorn): Why does the springs go out of control without drag?
-					//TODO IMPORTANT(bjorn): Debug this tourqe addition!!!
+
 					if(IsZeroVector(Info.AP1))
 					{
 						Entity->F += ForceVector;
 					}
 					else
 					{
+						//TODO STUDY(bjorn): Why does the springs go out of control without drag?
 						v3 AttachmentPointVector = (AP1 - Entity->P);
 						v3 AttachmentPointNormal = Normalize(AttachmentPointVector);
 
 						//TODO STUDY(bjorn): Why do the author in (Game Physics Millington
 						//2010) apply the force through the center even when parallel??
-						Entity->F += ForceVector * Dot(PointSeparationNormal, -AttachmentPointNormal);
-						v3 Torque = Cross(AttachmentPointVector, -ForceVector);
+						Entity->F += ForceVector * Absolute(Dot(PointSeparationNormal, AttachmentPointNormal));
+						//TODO IMPORTANT(bjorn): Why do I need to negate the
+						//AttachmentPointVector? Are my rotation calculations not
+						//right-handed?
+						v3 Torque = Cross(-AttachmentPointVector, ForceVector);
 
 						Entity->T += Torque;
 					}

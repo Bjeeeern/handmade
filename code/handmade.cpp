@@ -367,7 +367,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 																		 GameState->CameraUpdateBounds, 0);
 
 		AddFloor(SimRegion, v3{0, 0, -0.5f});
-		entity* Fixture = AddFixture(SimRegion, v3{4, 5, 0});
+		entity* Fixture = AddFixture(SimRegion, v3{4, 5, 4});
 
 		entity* A = AddParticle(SimRegion, v3{0,0,0}, 20.0f, v3{1,10,1});
 		AddOneWaySpringAttachment(A, Fixture, 10.0f, 2.0f, v3{0.0f,0.5f,0.0f}, {0,0,0});
@@ -514,7 +514,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				GameState->DEBUG_VisualiseCollisionBox = !GameState->DEBUG_VisualiseCollisionBox;
 			}
 
-			if(Clicked(Keyboard, Space) && 
+			if(Clicked(Keyboard, O) && 
 				 GameState->SimulationSpeedModifier != 1.0f)
 			{
 				DEBUG_UpdateLoopAdvance = true;
@@ -1110,12 +1110,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							v3 AP2 = EndPoint->ObjToWorldTransform * Info.AP2;
 
 							v3 APSize = 0.08f*v3{1,1,1};
-							v4 Color = {0.7f, 0, 0, 1};
 
 							m44 T1 = ConstructTransform(AP1, QuaternionIdentity(), APSize);
-							m44 T2 = ConstructTransform(AP2, QuaternionIdentity(), APSize);
-							PushRenderPieceWireFrame(RenderGroup, T1, Color);
+							PushRenderPieceWireFrame(RenderGroup, T1, {0.7f,0,0,1});
+							v3 n = Normalize(AP2-AP1);
+							m44 T2 = ConstructTransform(AP1 + n*Info.Length, QuaternionIdentity(), APSize);
+							PushRenderPieceWireFrame(RenderGroup, T2, {1,1,1,1});
+
 							PushRenderPieceLineSegment(RenderGroup, M44Identity(), AP1, AP2);
+
+							PushRenderPieceLineSegment(RenderGroup, M44Identity(), Entity->P, AP1, {1,1,1,1});
 						}
 					}
 				}

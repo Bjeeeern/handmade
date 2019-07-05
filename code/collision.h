@@ -117,7 +117,7 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 		v3 C1 = *T_B * (B->Tran * v3{   0,0,0});
 		v3 Q1 = *T_B * (B->Tran * v3{0.5f,0,0});
 
-		b32 Collides = MagnitudeSquared(C1-C0) <= (MagnitudeSquared(Q0-C0) + MagnitudeSquared(Q1-C1));
+		b32 Collides = Magnitude(C1-C0) <= (Magnitude(Q0-C0) + Magnitude(Q1-C1));
 		if(Collides)
 		{
 			AddContact(Contacts, Entity_A, Entity_B, (C0+C1)*0.5f, Normalize(C1-C0), 
@@ -134,6 +134,11 @@ GenerateContacts(entity* A, entity* B)
 
 	b32 BoundingVolumeCollides = false;
 	{
+		//TODO STUDY(bjorn): This just seems horrendously sub-optimal. Can I use
+		//the radian info directly? What about the case where the primitive is
+		//unscaled but the entity is?
+		Assert(A->Body.PrimitiveCount >= 2);
+		Assert(B->Body.PrimitiveCount >= 2);
 		body_primitive* BoundingVolume_A = A->Body.Primitives + 0;
 		body_primitive* BoundingVolume_B = B->Body.Primitives + 0;
 		Assert(BoundingVolume_A->CollisionShape == CollisionShape_Sphere);
@@ -144,8 +149,10 @@ GenerateContacts(entity* A, entity* B)
 		v3 C1 = B->Tran * (BoundingVolume_B->Tran * v3{   0,0,0});
 		v3 Q1 = B->Tran * (BoundingVolume_B->Tran * v3{0.5f,0,0});
 
-		BoundingVolumeCollides = 
-			MagnitudeSquared(C1 - C0) <= (MagnitudeSquared(Q0 - C0) + MagnitudeSquared(Q1 - C1));
+		f32 m0 = Magnitude(C1 - C0);
+		f32 m1 = Magnitude(Q0 - C0);
+		f32 m2 = Magnitude(Q1 - C1);
+		BoundingVolumeCollides = m0 <= (m1 + m2);
 	}
 
 	if(BoundingVolumeCollides)

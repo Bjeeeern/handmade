@@ -404,10 +404,10 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 		AddFloor(SimRegion, v3{0, 0, -0.5f});
 
 		AddSphereParticle(SimRegion, v3{ 0, 0, 6}, 20.0f, 1.0f);
-		AddSphereParticle(SimRegion, v3{ 1, 0, 0}, 20.0f, 1.0f);
-		AddSphereParticle(SimRegion, v3{-1, 0, 0}, 20.0f, 1.0f);
-		AddSphereParticle(SimRegion, v3{ 0, 1, 0}, 20.0f, 1.0f);
-		AddSphereParticle(SimRegion, v3{ 0,-1, 0}, 20.0f, 1.0f);
+		AddSphereParticle(SimRegion, v3{ 1.1f, 0, 0}, 20.0f, 1.0f);
+		AddSphereParticle(SimRegion, v3{-1.1f, 0, 0}, 20.0f, 1.0f);
+		AddSphereParticle(SimRegion, v3{ 0, 1.1f, 0}, 20.0f, 1.0f);
+		AddSphereParticle(SimRegion, v3{ 0,-1.1f, 0}, 20.0f, 1.0f);
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}
@@ -683,77 +683,90 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			//
 			// NOTE(bjorn): Moving / Collision / Game Logic
 			//
-#if HANDMADE_INTERNAL
-			b32 DEBUG_WasInsideAtLeastOnce = false;
-#endif
 			if(Entity->Updates && dT)
 			{
-				entity* OtherEntity = SimRegion->Entities;
-				for(u32 OtherEntityIndex = 0;
-						OtherEntityIndex < SimRegion->EntityCount;
-						OtherEntityIndex++, OtherEntity++)
-				{
-					if(Entity == OtherEntity) { continue; }
-					if(OtherEntity->EntityPairUpdateGenerationIndex == Step) { continue; }
-					if(!OtherEntity->IsSpacial) { continue; }
-
-					contact_result Contacts = GenerateContacts(Entity, OtherEntity);
-					b32 Inside = Contacts.Count > 0; 
-
-					if(Inside &&
-						 Entity->Collides && 
-						 OtherEntity->Collides)
-					{
+				Assert(Entity->Body.PrimitiveCount != 1);
+				if(Entity->Body.PrimitiveCount > 1) 
+				{ 
 #if HANDMADE_INTERNAL
-						DEBUG_WasInsideAtLeastOnce = true;
-						Entity->DEBUG_EntityCollided = true;
-						OtherEntity->DEBUG_EntityCollided = true;
+					b32 DEBUG_WasInsideAtLeastOnce = false;
 #endif
-						for(u32 ContactIndex = 0;
-								ContactIndex < Contacts.Count;
-								ContactIndex++)
-						{
+					entity* OtherEntity = SimRegion->Entities;
+					for(u32 OtherEntityIndex = 0;
+							OtherEntityIndex < SimRegion->EntityCount;
+							OtherEntityIndex++, OtherEntity++)
+					{
+						if(Entity == OtherEntity) { continue; }
+						if(OtherEntity->EntityPairUpdateGenerationIndex == Step) { continue; }
+						if(!OtherEntity->IsSpacial) { continue; }
+						if(OtherEntity->Body.PrimitiveCount <= 1) { continue; }
 
+						contact_result Contacts = GenerateContacts(Entity, OtherEntity);
+						b32 Inside = Contacts.Count > 0; 
+
+						if(Inside &&
+							 Entity->Collides && 
+							 OtherEntity->Collides)
+						{
+#if HANDMADE_INTERNAL
+							//TODO Color during pause is still weird/off.
+							DEBUG_WasInsideAtLeastOnce = true;
+							Entity->DEBUG_EntityCollided = true;
+							OtherEntity->DEBUG_EntityCollided = true;
+#endif
+							for(u32 ContactIndex = 0;
+									ContactIndex < Contacts.Count;
+									ContactIndex++)
+							{
+								//TODO IMPORTANT Do collision response here!
+							}
+
+							Entity->Tran = 
+								ConstructTransform(     Entity->P,      Entity->O,      Entity->Body.S);
+							OtherEntity->Tran = 
+								ConstructTransform(OtherEntity->P, OtherEntity->O, OtherEntity->Body.S);
+						} 
+
+						trigger_state_result TriggerState = 
+							UpdateAndGetCurrentTriggerState(Entity, OtherEntity, dT, Inside);
+
+						//TODO STUDY Doublecheck HMH 69 to see what this was for again.
+#if 0
+						entity* A = Entity;
+						entity* B = OtherEntity;
+						if(Entity->StorageIndex > OtherEntity->StorageIndex)
+						{
+							Swap(A, B, entity*);
+						}
+#endif
+
+						//TODO IMPORTANT(bjorn): Both ForceFieldLogic and FloorLogic needs to be moved
+						//to a trigger handling and a collision handling system respectively. 
+						ForceFieldLogic(Entity, OtherEntity);
+						FloorLogic(Entity, OtherEntity);
+
+						if(TriggerState.OnEnter)
+						{
+							ApplyDamage(Entity, OtherEntity);
 						}
 
-						Entity->Tran = 
-							ConstructTransform(     Entity->P,      Entity->O,      Entity->Body.S);
-						OtherEntity->Tran = 
-							ConstructTransform(OtherEntity->P, OtherEntity->O, OtherEntity->Body.S);
-					} 
+						if(TriggerState.OnLeave)
+						{
+							Bounce(Entity, OtherEntity);
+						}
 
-					trigger_state_result TriggerState = 
-						UpdateAndGetCurrentTriggerState(Entity, OtherEntity, dT, Inside);
-
-					//TODO STUDY Doublecheck HMH 69 to see what this was for again.
-#if 0
-					entity* A = Entity;
-					entity* B = OtherEntity;
-					if(Entity->StorageIndex > OtherEntity->StorageIndex)
-					{
-						Swap(A, B, entity*);
-					}
+#if HANDMADE_INTERNAL
+						if(Step == LastStep)
+						{
+							//TODO(bjorn): Visualize collision.
+						}
 #endif
-
-					//TODO IMPORTANT(bjorn): Both ForceFieldLogic and FloorLogic needs to be moved
-					//to a trigger handling and a collision handling system respectively. 
-					ForceFieldLogic(Entity, OtherEntity);
-					FloorLogic(Entity, OtherEntity);
-
-					if(TriggerState.OnEnter)
-					{
-						ApplyDamage(Entity, OtherEntity);
-					}
-
-					if(TriggerState.OnLeave)
-					{
-						Bounce(Entity, OtherEntity);
 					}
 
 #if HANDMADE_INTERNAL
-					if(Step == LastStep)
+					if(!DEBUG_WasInsideAtLeastOnce)
 					{
-						//TODO(bjorn): Visualize collision.
+						Entity->DEBUG_EntityCollided = false;
 					}
 #endif
 				}
@@ -1122,13 +1135,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				}
 #endif
 			}
-
-#if HANDMADE_INTERNAL
-			if(!DEBUG_WasInsideAtLeastOnce && dT)
-			{
-				Entity->DEBUG_EntityCollided = false;
-			}
-#endif
 		}
 	}
 	EndSim(Input, Entities, WorldArena, SimRegion);

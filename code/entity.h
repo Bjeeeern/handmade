@@ -68,15 +68,8 @@ v3 UnscaledAABB[8] = {{-0.5f,  0.5f, 0.5f},
 											 { 0.5f, -0.5f,-0.5f}, 
 											 {-0.5f, -0.5f,-0.5f}};
 
-enum collision_shape
-{
-	CollisonShape_Circle = 0,
-	CollisonShape_AABB = 1,
-	CollisonShape_Convex = 2,
-};
-
 	internal_function aabb_verts_result
-GetAABBVertices(m44* ObjToWorldTransform)
+GetAABBVertices(m44* Tran)
 {
 	aabb_verts_result Result = {};
 	Result.Count = 8;
@@ -86,12 +79,22 @@ GetAABBVertices(m44* ObjToWorldTransform)
 			CornerIndex++)
 	{
 		v3 Corner = UnscaledAABB[CornerIndex];
-		Result.Verts[CornerIndex] = *ObjToWorldTransform * Corner;
+		Result.Verts[CornerIndex] = *Tran * Corner;
 	}
 
 	return Result;
 }
 
+enum collision_shape
+{
+	CollisionShape_Sphere = 0,
+	CollisionShape_Ellipsoid = 1,
+	CollisionShape_AABB = 2,
+	CollisionShape_Convex = 3,
+};
+
+//TODO(bjorn): Maybe add bodies that are trigger only, for the cases where I
+//want entities hovering above ground for example.
 struct body_primitive
 {
 	union
@@ -100,7 +103,10 @@ struct body_primitive
 		u32 CollisionShapeIndex;
 	};
 
-	m44 Offset;
+	m44 Tran;
+	v3 P;
+	q O;
+	v3 S;
 };
 
 struct physical_body
@@ -110,6 +116,7 @@ struct physical_body
 
 	f32 iM; //NOTE(bjorn): Inverse mass
 	m33 iI; //NOTE(bjorn): Inverse inertia tensor
+	f32 Restitution;
 
 	v3 S;
 };
@@ -134,6 +141,7 @@ struct entity
 
 	b32 IsSpacial : 1;
 	b32 Collides : 1;
+	b32 Rotates : 1;
 	b32 IsFloor : 1;
 	b32 IsCamera : 1;
 	//NOTE(bjorn): CarFrame
@@ -164,20 +172,18 @@ struct entity
 	v3 F;
 
 #if HANDMADE_INTERNAL
+	b32 DEBUG_EntityCollided;
 	v3 DEBUG_MostRecent_F;
 	v3 DEBUG_MostRecent_T;
 #endif
 
-	m44 ObjToWorldTransform;
+	m44 Tran;
 
 	v2 CamRot;
 	f32 CamZoom;
 
 	//TODO(bjorn): Make this settable by an aggregate function
 	physical_body Body;
-
-	f32 Restitution;
-	f32 GroundFriction;
 
 	move_spec MoveSpec;
 
@@ -255,57 +261,164 @@ struct entity
 #include "trigger.h"
 #include "attachment.h"
 
-internal_function physical_body
-CalculatePhysicalBody(f32 Mass, v3 Scale)
+//TODO IMPORTANT(bjorn): Break up CalculatePhysicalBody into:
+// A: Adding primitives to the body
+// B: Calculating final body inertia tensor etc.
+internal_function body_primitive*
+AddBodyPrimitive(physical_body* Body, v3 Offset, q Orientation, v3 Scale)
 {
-	//TODO(bjorn): Multiple bodyparts.
-	//TODO(bjorn): Support other shapes even when scaled.
-	//TODO(bjorn): Support other centers of mass apart from the origin.
-	physical_body Result = {};
+	body_primitive* Result = 0;
 
-	Result.PrimitiveCount = 2;
-
-	body_primitive* Cube = Result.Primitives + 1;
-	Cube->CollisionShape = CollisonShape_AABB;
-	Cube->Offset = ConstructTransform({0,0,0}, QuaternionIdentity(), Scale);
-
-	aabb_verts_result AABB = GetAABBVertices(&Cube->Offset);
-	f32 R = 0;
-	for(u32 VertIndex = 0; 
-			VertIndex < AABB.Count; 
-			VertIndex++)
+	if(Body->PrimitiveCount == 0)
 	{
-		R = Magnitude(AABB.Verts[VertIndex]) > R ? Magnitude(AABB.Verts[VertIndex]) : R;
+		Body->Primitives[0].CollisionShape = CollisionShape_Sphere;
+		Body->PrimitiveCount += 1;
 	}
+	Assert(Body->PrimitiveCount < ArrayCount(Body->Primitives));
+	Result = Body->Primitives + Body->PrimitiveCount++;
 
-	body_primitive* BoundingVolume = Result.Primitives + 0;
-	BoundingVolume->CollisionShape = CollisonShape_Circle;
-	BoundingVolume->Offset = ConstructTransform({0,0,0}, QuaternionIdentity(), 2.0f*v3{R,R,R});
-
-	Result.S = {1,1,1};
-
-	Result.iM = SafeRatio0(1.0f, Mass);
-	if(Result.iM)
-	{
-		Assert(Result.PrimitiveCount == 2 &&
-					 Result.Primitives[1].CollisionShape == CollisonShape_AABB);
-
-		if(Result.PrimitiveCount == 2 &&
-			 Result.Primitives[1].CollisionShape == CollisonShape_AABB)
-		{
-			m33 I = {};
-			I.E_[0] = Square(Scale.Y) + Square(Scale.Z);
-			I.E_[4] = Square(Scale.X) + Square(Scale.Z);
-			I.E_[8] = Square(Scale.X) + Square(Scale.Y);
-			I *= Mass * (1.0f/12.0f);
-
-			inverse_m33_result iI = InverseMatrix(I);
-			Assert(iI.Valid);
-			Result.iI = iI.M;
-		}
-	}
+	Result->P = Offset;
+	Result->O = Orientation;
+	Result->S = Scale;
+	Result->Tran = ConstructTransform(Offset, Orientation, Scale);
 
 	return Result;
+}
+internal_function void
+AddSphereToPhysicalBody(physical_body* Body, v3 Offset, f32 Radius)
+{
+	body_primitive* Primitive = AddBodyPrimitive(Body, 
+																							 Offset, 
+																							 QuaternionIdentity(), 
+																							 (2.0f*Radius)*v3{1,1,1});
+	Assert(Primitive);
+	Primitive->CollisionShape = CollisionShape_Sphere;
+}
+internal_function void
+AddEllipsoidToPhysicalBody(physical_body* Body, v3 Offset, v3 Scale)
+{
+	body_primitive* Primitive = AddBodyPrimitive(Body, 
+																							 Offset, 
+																							 QuaternionIdentity(), 
+																							 Scale);
+	Assert(Primitive);
+	Primitive->CollisionShape = CollisionShape_Ellipsoid;
+}
+internal_function void
+AddAABBToPhysicalBody(physical_body* Body, v3 Offset, q Orientation, v3 Scale)
+{
+	body_primitive* Primitive = AddBodyPrimitive(Body, Offset, Orientation, Scale);
+	Assert(Primitive);
+	Primitive->CollisionShape = CollisionShape_AABB;
+}
+
+internal_function void
+CalibratePhysicalBody(physical_body* Body, f32 Mass, v3 Scale, f32 Restitution)
+{
+	//TODO(bjorn): Support other shapes even when scaled.
+	//TODO(bjorn): Support other centers of mass apart from the origin.
+	Assert(Body->PrimitiveCount > 1);
+
+	{
+		//TODO(bjorn): Smarter bounding collision sphere calculation that moves
+		//the center of the volume.
+		f32 R = 0;
+		for(u32 PrimitiveIndex = 1;
+				PrimitiveIndex < Body->PrimitiveCount;
+				PrimitiveIndex++)
+		{
+			body_primitive* Prim = Body->Primitives + PrimitiveIndex;
+			if(Prim->CollisionShape == CollisionShape_AABB)
+			{
+				aabb_verts_result AABB = GetAABBVertices(&Prim->Tran);
+				for(u32 VertIndex = 0; 
+						VertIndex < AABB.Count; 
+						VertIndex++)
+				{
+					R = Max(Magnitude(AABB.Verts[VertIndex]), R);
+				}
+			}
+			else if(Prim->CollisionShape == CollisionShape_Sphere ||
+							Prim->CollisionShape == CollisionShape_Ellipsoid)
+			{
+				v3 C0 = Prim->P;
+				f32 MaxRadii = Max(Max(Prim->S.X, Prim->S.Y), Prim->S.Z) * 0.5f;
+				f32 DistFromOrigo = Magnitude(C0) + MaxRadii;
+				R = Max(DistFromOrigo, R);
+			}
+			else
+			{
+				//TODO(bjorn): Add system for receiving vertices of more shapes.
+				Assert(!"Invalid code path!");
+			}
+		}
+
+		body_primitive* BoundingVolume = Body->Primitives + 0;
+
+		Assert(BoundingVolume->CollisionShape == CollisionShape_Sphere);
+		BoundingVolume->P = {0,0,0};
+		BoundingVolume->O = QuaternionIdentity();
+		BoundingVolume->S = 2.0f*v3{R,R,R};
+		BoundingVolume->Tran = ConstructTransform(BoundingVolume->P, 
+																							BoundingVolume->O, 
+																							BoundingVolume->S);
+	}
+
+	Body->Restitution = Restitution;
+	Body->S = Scale;
+
+	Body->iM = SafeRatio0(1.0f, Mass);
+	if(Body->iM)
+	{
+		body_primitive* Prim = Body->Primitives + 1;
+
+		Assert(Body->S == v3{1,1,1});
+		if(Body->PrimitiveCount == 2 &&
+			 Body->S == v3{1,1,1})
+		{
+			Assert(Prim->O == QuaternionIdentity());
+			Assert(Prim->P == v3{0,0,0});
+			if(Prim->CollisionShape == CollisionShape_AABB &&
+				 Prim->O == QuaternionIdentity() &&
+				 Prim->P == v3{0,0,0})
+			{
+				m33 I = {};
+				I.E_[0] = Square(Prim->S.Y) + Square(Prim->S.Z);
+				I.E_[4] = Square(Prim->S.X) + Square(Prim->S.Z);
+				I.E_[8] = Square(Prim->S.X) + Square(Prim->S.Y);
+				I *= Mass * (1.0f/12.0f);
+
+				inverse_m33_result iI = InverseMatrix(I);
+				Assert(iI.Valid);
+				Body->iI = iI.M;
+			}
+			else if((Prim->CollisionShape == CollisionShape_Sphere ||
+							 Prim->CollisionShape == CollisionShape_Ellipsoid) &&
+							Prim->O == QuaternionIdentity() &&
+							Prim->P == v3{0,0,0})
+			{
+				m33 I = {};
+				I.E_[0] = Square(Prim->S.Y*0.5f) + Square(Prim->S.Z*0.5f);
+				I.E_[4] = Square(Prim->S.X*0.5f) + Square(Prim->S.Z*0.5f);
+				I.E_[8] = Square(Prim->S.X*0.5f) + Square(Prim->S.Y*0.5f);
+				I *= Mass * (2.0f/5.0f);
+
+				inverse_m33_result iI = InverseMatrix(I);
+				Assert(iI.Valid);
+				Body->iI = iI.M;
+			}
+			else
+			{
+				//TODO(bjorn): More specific inertial tensor calculations.
+				Assert(!"Invalid code path!");
+			}
+		}
+		else
+		{
+			//TODO(bjorn): A catch-all whole body intertial tensor calculation.
+			Assert(!"Invalid code path!");
+		}
+	}
 }
 
 	inline void
@@ -418,8 +531,8 @@ AddSword(sim_region* SimRegion)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Sword);
 
-	Entity->Body = 
-		CalculatePhysicalBody(8.0f, v3{1.5f, 0.4f, 0.1f} * SimRegion->WorldMap->TileSideInMeters);
+	AddAABBToPhysicalBody(&Entity->Body, {0,0,0}, q{1,0,0,0}, v3{1.5f, 0.4f, 0.1f}*SimRegion->WorldMap->TileSideInMeters);
+	CalibratePhysicalBody(&Entity->Body, 8.0f, {1,1,1}, 0.5f);
 
 	Entity->TriggerDamage = 1;
 
@@ -442,8 +555,9 @@ AddPlayer(sim_region* SimRegion, v3 InitP)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Player, InitP);
 
 	//TODO(bjorn): Why does weight differences matter so much in the collision system.
-	Entity->Body = 
-		CalculatePhysicalBody(70.0f, v3{0.5f, 0.3f, 1.0f} * SimRegion->WorldMap->TileSideInMeters);
+	AddAABBToPhysicalBody(&Entity->Body, {0,0,0}, q{1,0,0,0}, v3{0.5f,0.3f,1.0f}*SimRegion->WorldMap->TileSideInMeters);
+	CalibratePhysicalBody(&Entity->Body, 70.0f, {1,1,1}, 1.0f);
+
 	Entity->Collides = true;
 
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
@@ -462,8 +576,9 @@ AddMonstar(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Monstar, InitP);
 
-	Entity->Body = 
-		CalculatePhysicalBody(70.0f, v3{0.5f, 0.3f, 1.0f} * SimRegion->WorldMap->TileSideInMeters);
+	AddAABBToPhysicalBody(&Entity->Body, {0,0,0}, q{1,0,0,0}, v3{0.5f,0.3f,1.0f}*SimRegion->WorldMap->TileSideInMeters);
+	CalibratePhysicalBody(&Entity->Body, 40.0f, {1,1,1}, 1.0f);
+
 	Entity->Collides = true;
 
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
@@ -487,11 +602,10 @@ AddFamiliar(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Familiar, InitP);
 
-	Entity->Body = 
-		CalculatePhysicalBody(5.0f, v3{0.5f, 0.3f, 1.0f} * SimRegion->WorldMap->TileSideInMeters);
-	Entity->Collides = true;
+	AddAABBToPhysicalBody(&Entity->Body, {0,0,0}, q{1,0,0,0}, v3{0.5f,0.3f,1.0f}*SimRegion->WorldMap->TileSideInMeters);
+	CalibratePhysicalBody(&Entity->Body, 5.0f, {1,1,1}, 0.2f);
 
-	Entity->Restitution = 0.5f;
+	Entity->Collides = true;
 
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
 	Entity->MoveSpec.Speed = 85.f * 0.7f;
@@ -504,22 +618,13 @@ AddFamiliar(sim_region* SimRegion, v3 InitP)
 }
 
 	internal_function entity*
-AddGround(sim_region* SimRegion, v3 InitP)
-{
-	entity* Entity = AddEntity(SimRegion, EntityVisualType_Ground, InitP);
-
-	Entity->Body = CalculatePhysicalBody(0.0f, v3{1, 1, 0.1f} * SimRegion->WorldMap->TileSideInMeters);
-	Entity->Collides = false;
-
-	return Entity;
-}
-
-	internal_function entity*
 AddFloor(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered, InitP);
 
-	Entity->Body = CalculatePhysicalBody(0.0f, v3{50, 50, 1} * SimRegion->WorldMap->TileSideInMeters);
+	AddAABBToPhysicalBody(&Entity->Body, {0,0,0}, q{1,0,0,0}, v3{50,50,1}*SimRegion->WorldMap->TileSideInMeters);
+	CalibratePhysicalBody(&Entity->Body, 0.0, {1,1,1}, 0.2f);
+
 	Entity->Collides = true;
 	Entity->IsFloor = true;
 
@@ -531,7 +636,9 @@ AddFixture(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Sword, InitP);
 
-	Entity->Body = CalculatePhysicalBody(0.0f, v3{1, 1, 1} * SimRegion->WorldMap->TileSideInMeters);
+	AddAABBToPhysicalBody(&Entity->Body, {0,0,0}, q{1,0,0,0}, v3{1,1,1}*SimRegion->WorldMap->TileSideInMeters);
+	CalibratePhysicalBody(&Entity->Body, 0.0f, {1,1,1}, 0.0f);
+
 	Entity->Collides = true;
 
 	return Entity;
@@ -542,8 +649,11 @@ AddWall(sim_region* SimRegion, v3 InitP, f32 Mass = 1000.0f)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Wall, InitP);
 
-	Entity->Body = CalculatePhysicalBody(Mass, v3{1, 1, 1} * SimRegion->WorldMap->TileSideInMeters);
+	AddAABBToPhysicalBody(&Entity->Body, {0,0,0}, q{1,0,0,0}, v3{1,1,1}*SimRegion->WorldMap->TileSideInMeters);
+	CalibratePhysicalBody(&Entity->Body, Mass, {1,1,1}, 0.5f);
+
 	Entity->Collides = true;
+	Entity->Rotates = true;
 
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
 	SetStandardFrictionForGroundObjects(&Entity->MoveSpec);
@@ -556,9 +666,8 @@ AddForceField(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Sword, InitP);
 
-	Entity->Body = 
-		CalculatePhysicalBody(0.0f, v3{0.1f, 0.1f, 0.1f} * SimRegion->WorldMap->TileSideInMeters);
-	Entity->Collides = true;
+	AddAABBToPhysicalBody(&Entity->Body, {0,0,0}, q{1,0,0,0}, v3{0.1f, 0.1f, 0.1f});
+	CalibratePhysicalBody(&Entity->Body, 0.0f, {1,1,1}, 0.0f);
 
 	Entity->ForceFieldRadiusSquared = Square(10.0f);
 	Entity->ForceFieldStrenght = 0.0f;
@@ -571,10 +680,32 @@ AddParticle(sim_region* SimRegion, v3 InitP, f32 Mass = 0.01f, v3 Scale = v3{1, 
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Wall, InitP);
 
-	Entity->Body = CalculatePhysicalBody(Mass, Scale);
-	Entity->Collides = true;
+	AddAABBToPhysicalBody(&Entity->Body, {0,0,0}, q{1,0,0,0}, Scale);
+	CalibratePhysicalBody(&Entity->Body, Mass, {1,1,1}, 0.9f);
 
-	Entity->Restitution = 0.9f;
+	Entity->Collides = true;
+	Entity->Rotates = true;
+
+	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 10.0f;
+	Entity->MoveSpec.Drag_k1 = 0.0f;
+	Entity->MoveSpec.Drag_k2 = 0.5f;
+
+	Entity->MoveSpec.AngularDrag_k1 = 0.2f;
+	Entity->MoveSpec.AngularDrag_k2 = 1.0f;
+
+	return Entity;
+}
+
+	internal_function entity*
+AddSphereParticle(sim_region* SimRegion, v3 InitP, f32 Mass, f32 Radius)
+{
+	entity* Entity = AddEntity(SimRegion, EntityVisualType_Wall, InitP);
+
+	AddSphereToPhysicalBody(&Entity->Body, {0,0,0}, Radius);
+	CalibratePhysicalBody(&Entity->Body, Mass, {1,1,1}, 0.9f);
+
+	Entity->Collides = true;
+	Entity->Rotates = true;
 
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 10.0f;
 	Entity->MoveSpec.Drag_k1 = 0.0f;
@@ -650,8 +781,11 @@ MoveEntity(entity* Entity, f32 dT)
 
 	Entity->T = {};
 	Entity->ddO = {};
-	Entity->dO = dO;
-	Entity->O = QuaternionNormalize(O);
+	if(Entity->Rotates)
+	{
+		Entity->dO = dO;
+		Entity->O = QuaternionNormalize(O);
+	}
 }
 
 	internal_function void

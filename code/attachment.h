@@ -139,8 +139,8 @@ ApplyAttachmentForcesAndImpulses(entity* Entity)
 
 			f32 PointSeparationEpsilon = 0.0001f;
 
-			v3 AP1 = Entity->ObjToWorldTransform   * Info.AP1;
-			v3 AP2 = EndPoint->ObjToWorldTransform * Info.AP2;
+			v3 AP1 = Entity->Tran   * Info.AP1;
+			v3 AP2 = EndPoint->Tran * Info.AP2;
 
 			if(Info.Type == AttachmentType_Spring || Info.Type == AttachmentType_Bungee)
 			{
@@ -186,7 +186,7 @@ ApplyAttachmentForcesAndImpulses(entity* Entity)
 					f32 Restitution = 0;
 					if(Info.Type == AttachmentType_Cable)
 					{
-						Restitution = (Info.Restitution + Entity->Restitution) * 0.5f;
+						Restitution = (Info.Restitution + Entity->Body.Restitution) * 0.5f;
 					}
 
 					v3 PointSeparationVector = AP1 - AP2;

@@ -57,126 +57,6 @@ GetClosestPointOnLineSegment(v2 A, v2 B, v2 P)
 	return Result;
 }
 
-struct collision_result
-{
-	b32 Hit;
-	b32 Inside;
-	f32 TimeOfImpact;
-	v2 Normal;
-};
-
-#if 0
-enum minkowski_sum_origin
-{
-	MinkowskiGenus_Target,
-	MinkowskiGenus_Movable,
-};
-struct polygon
-{
-	s32 NodeCount;
-	v2 Nodes[8];
-	v2 OriginalLineSeg[8][2];
-	minkowski_sum_origin Genus[8];
-};
-	internal_function polygon 
-MinkowskiSum(entity* Target, entity* Movable)
-{
-	polygon Result = {};
-	Result.NodeCount = 8;
-
-	v2 MovableP = Movable->P.XY;
-	v2 TargetP  = Target->P.XY;
-
-	vertices TVerts = GetEntityVertices(Target);
-	vertices MVerts = GetEntityVertices(Movable);
-
-	//TODO(bjorn): This sum is _NOT_ made for general polygons atm!
-	s32 MovableStartIndex;
-	{
-		v2 MovableR = Movable->R.XY;
-		v2 TargetR  = Target->R.XY;
-		if(Dot(TargetR, MovableR) > 0)
-		{
-			MovableStartIndex = (Cross((v3)TargetR, (v3)MovableR).Z > 0) ? 1 : 0;
-		}
-		else
-		{
-			MovableStartIndex = (Cross((v3)TargetR, (v3)MovableR).Z > 0) ? 2 : 3;
-		}
-	}
-
-	v2 MovingCorner = TVerts.Verts[0].XY + (MVerts.Verts[MovableStartIndex].XY - MovableP);
-	for(int CornerIndex = 0; 
-			CornerIndex < 4; 
-			CornerIndex++)
-	{
-		{
-			v2 V0 = TVerts.Verts[(CornerIndex+0)%4].XY;
-			v2 V1 = TVerts.Verts[(CornerIndex+1)%4].XY;
-			v2 NodeDiff = (V1 - V0);
-
-			s32 ResultIndex = CornerIndex*2+0;
-
-			Result.Genus[ResultIndex] = MinkowskiGenus_Target;
-			Result.OriginalLineSeg[ResultIndex][0] = V0;
-			Result.OriginalLineSeg[ResultIndex][1] = V1;
-			Result.Nodes[ResultIndex] = MovingCorner;
-
-			MovingCorner += NodeDiff;
-		}
-		{
-			v2 V0 = MVerts.Verts[(MovableStartIndex+CornerIndex+0)%4].XY;
-			v2 V1 = MVerts.Verts[(MovableStartIndex+CornerIndex+1)%4].XY;
-			v2 NodeDiff = (V1 - V0);
-
-			s32 ResultIndex = CornerIndex*2+1;
-
-			Result.Genus[ResultIndex] = MinkowskiGenus_Movable;
-			Result.OriginalLineSeg[ResultIndex][0] = V0;
-			Result.OriginalLineSeg[ResultIndex][1] = V1;
-			Result.Nodes[ResultIndex] = MovingCorner;
-
-			MovingCorner += NodeDiff;
-		}
-	}
-
-	return Result;
-}
-
-#if HANDMADE_INTERNAL
-	internal_function void
-DEBUGMinkowskiSum(game_offscreen_buffer* Buffer, 
-									entity* Target, entity* Movable, 
-									m22 GameSpaceToScreenSpace, v2 ScreenCenter)
-{
-	polygon Sum = MinkowskiSum(Target, Movable);
-
-	for(s32 NodeIndex = 0; 
-			NodeIndex < Sum.NodeCount; 
-			NodeIndex++)
-	{
-		v2 N0 = Sum.Nodes[NodeIndex];
-		v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
-
-		v2 WallNormal = Normalize(CCW90M22() * (N1 - N0));
-
-		DrawLine(Buffer, 
-						 ScreenCenter + GameSpaceToScreenSpace * N0, 
-						 ScreenCenter + GameSpaceToScreenSpace * N1, 
-						 {0, 0, 1});
-
-		v3 NormalColor = {1, 0, 1};
-		if(Sum.Genus[NodeIndex] == MinkowskiGenus_Target) { NormalColor = {0, 1, 1}; }
-
-		DrawLine(Buffer, 
-						 ScreenCenter + GameSpaceToScreenSpace * (N0 + N1) * 0.5f, 
-						 ScreenCenter + GameSpaceToScreenSpace * ((N0 + N1) * 0.5f + WallNormal * 0.2f), 
-						 NormalColor);
-	}
-}
-#endif
-#endif
-
 //STUDY(bjorn): This is from a book about collision. Comeback and make sure you
 //understand what is happening.
 	inline f32 
@@ -190,6 +70,104 @@ SquareDistancePointToLineSegment(v2 A, v2 B, v2 C)
 	f32 f = Dot(AB, AB);
 	if(e >= f) { return Dot(BC, BC); }
 	return Dot(AC, AC) - Square(e) / f;
+}
+
+struct contact
+{
+	//TODO(bjorn): Do I really need to pass the entities here?
+	entity* A;
+	entity* B;
+	v3 P;
+	v3 N;
+	f32 PenetrationDepth;
+	f32 Restitution;
+	//TODO
+	//f32 Friction;
+};
+
+struct contact_result
+{
+	u32 Count;
+	contact E[16];
+};
+
+internal_function void 
+AddContact(contact_result* Contacts, entity* A, entity* B, 
+					 v3 P, v3 N, f32 PenetrationDepth, f32 Restitution)
+{
+	Assert(Contacts->Count < ArrayCount(Contacts->E));
+	if(Contacts->Count < ArrayCount(Contacts->E))
+	{
+		contact* Contact = Contacts->E + Contacts->Count++;
+		*Contact = {A, B, P, N, PenetrationDepth, Restitution};
+	}
+}
+
+	internal_function void
+GenerateContactsFromPrimitivePair(contact_result* Contacts, 
+																	entity* Entity_A, entity* Entity_B,
+																	m44* T_A, m44* T_B,
+																	body_primitive* A, body_primitive* B)
+{
+	if(A->CollisionShape == CollisionShape_Sphere && 
+		 B->CollisionShape == CollisionShape_Sphere)
+	{
+		v3 C0 = *T_A * (A->Tran * v3{   0,0,0});
+		v3 Q0 = *T_A * (A->Tran * v3{0.5f,0,0});
+		v3 C1 = *T_B * (B->Tran * v3{   0,0,0});
+		v3 Q1 = *T_B * (B->Tran * v3{0.5f,0,0});
+
+		b32 Collides = MagnitudeSquared(C1-C0) <= (MagnitudeSquared(Q0-C0) + MagnitudeSquared(Q1-C1));
+		if(Collides)
+		{
+			AddContact(Contacts, Entity_A, Entity_B, (C0+C1)*0.5f, Normalize(C1-C0), 
+								 (Magnitude(Q0-C0)+Magnitude(Q1-C1)) - Magnitude(C1-C0),
+								 (Entity_A->Body.Restitution + Entity_B->Body.Restitution)*0.5f);
+		}
+	}
+}
+
+internal_function contact_result
+GenerateContacts(entity* A, entity* B)
+{
+	contact_result Result = {};
+
+	b32 BoundingVolumeCollides = false;
+	{
+		body_primitive* BoundingVolume_A = A->Body.Primitives + 0;
+		body_primitive* BoundingVolume_B = B->Body.Primitives + 0;
+		Assert(BoundingVolume_A->CollisionShape == CollisionShape_Sphere);
+		Assert(BoundingVolume_B->CollisionShape == CollisionShape_Sphere);
+
+		v3 C0 = A->Tran * (BoundingVolume_A->Tran * v3{   0,0,0});
+		v3 Q0 = A->Tran * (BoundingVolume_A->Tran * v3{0.5f,0,0});
+		v3 C1 = B->Tran * (BoundingVolume_B->Tran * v3{   0,0,0});
+		v3 Q1 = B->Tran * (BoundingVolume_B->Tran * v3{0.5f,0,0});
+
+		BoundingVolumeCollides = 
+			MagnitudeSquared(C1 - C0) <= (MagnitudeSquared(Q0 - C0) + MagnitudeSquared(Q1 - C1));
+	}
+
+	if(BoundingVolumeCollides)
+	{
+		for(u32 PrimitiveIndex_A = 1;
+				PrimitiveIndex_A < A->Body.PrimitiveCount;
+				PrimitiveIndex_A++)
+		{
+			body_primitive* Prim_A = A->Body.Primitives + PrimitiveIndex_A;
+			for(u32 PrimitiveIndex_B = 1;
+					PrimitiveIndex_B < B->Body.PrimitiveCount;
+					PrimitiveIndex_B++)
+			{
+				body_primitive* Prim_B = B->Body.Primitives + PrimitiveIndex_B;
+				GenerateContactsFromPrimitivePair(&Result, A, B, 
+																					&A->Tran, &B->Tran, 
+																					Prim_A, Prim_B);
+			}
+		}
+	}
+
+	return Result;
 }
 
 #define COLLISION_H

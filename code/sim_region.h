@@ -267,7 +267,7 @@ SetAddedSimEntityFlagsAndState(sim_region* SimRegion, entity* Entity)
 	if(Entity->IsSpacial)
 	{
 		Entity->P = GetWorldMapPosDifference(SimRegion->WorldMap, Entity->WorldP, SimRegion->Origin);
-		Entity->ObjToWorldTransform = ConstructTransform(Entity->P, Entity->O, Entity->Body.S);
+		Entity->Tran = ConstructTransform(Entity->P, Entity->O, Entity->Body.S);
 	}
 
 	Entity->EntityPairUpdateGenerationIndex = 0;

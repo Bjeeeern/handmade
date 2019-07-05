@@ -20,7 +20,7 @@ struct render_piece
 
 	v4 Color;
 
-	m44 ObjToWorldTransform;
+	m44 Tran;
 
 	v3 A;
 	v3 B;
@@ -49,7 +49,7 @@ PushRenderPieceRaw(render_group* RenderGroup, m44 T)
 	render_piece* Result = RenderGroup->RenderPieces + RenderGroup->PieceCount++;
 
 	*Result = {};
-	Result->ObjToWorldTransform = T;
+	Result->Tran = T;
 
 	return Result;
 }

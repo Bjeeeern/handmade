@@ -20,6 +20,7 @@
 
 // TODO
 // & Clip lines that are drawn behind the screen instead of not rendering them at all.
+// * Test with object on mouse.
 // * Make it so that I can visually step through a frame of collision collision by collision.
 // * generate world as you drive
 // * car engine that is settable by mouse click and drag
@@ -364,17 +365,17 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 		entity* E = AddParticle(SimRegion, v3{ 1,-1, 1}, 5.0f);
 
 		AddTwoWaySpringAttachment(A, B, SpringConstant, 2.0f, 
-															A->Body.Primitives[1].Offset * v3{-0.5f,0.5f,0.5f}, 
-															A->Body.Primitives[1].Offset * v3{0,0,0});
+															A->Body.Primitives[1].Tran * v3{-0.5f,0.5f,0.5f}, 
+															A->Body.Primitives[1].Tran * v3{0,0,0});
 		AddTwoWaySpringAttachment(A, C, SpringConstant, 2.0f, 
-															A->Body.Primitives[1].Offset * v3{0.5f,-0.5f,0.5f}, 
-															A->Body.Primitives[1].Offset * v3{0,0,0});
+															A->Body.Primitives[1].Tran * v3{0.5f,-0.5f,0.5f}, 
+															A->Body.Primitives[1].Tran * v3{0,0,0});
 		AddTwoWaySpringAttachment(A, D, SpringConstant, 2.0f, 
-															A->Body.Primitives[1].Offset * v3{0.5f,0.5f,-0.5f}, 
-															A->Body.Primitives[1].Offset * v3{0,0,0});
+															A->Body.Primitives[1].Tran * v3{0.5f,0.5f,-0.5f}, 
+															A->Body.Primitives[1].Tran * v3{0,0,0});
 		AddTwoWaySpringAttachment(A, E, SpringConstant, 2.0f, 
-															A->Body.Primitives[1].Offset * v3{0.5f,0.5f,0.5f}, 
-															A->Body.Primitives[1].Offset * v3{0,0,0});
+															A->Body.Primitives[1].Tran * v3{0.5f,0.5f,0.5f}, 
+															A->Body.Primitives[1].Tran * v3{0,0,0});
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}
@@ -389,8 +390,24 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 
 		entity* A = AddParticle(SimRegion, v3{0,0,0}, 20.0f, v3{1,10,1});
 		AddOneWaySpringAttachment(A, Fixture, 10.0f, 2.0f, 
-															A->Body.Primitives[1].Offset * v3{0.0f,0.5f,0.0f}, 
-															A->Body.Primitives[1].Offset * v3{0,0,0});
+															A->Body.Primitives[1].Tran * v3{0.0f,0.5f,0.0f}, 
+															A->Body.Primitives[1].Tran * v3{0,0,0});
+
+		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
+	}
+
+	{ //NOTE(bjorn): Test location 5 setup
+		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, &GameState->TransientArena,
+																		 WorldMap, GameState->DEBUG_TestLocations[5], 
+																		 GameState->CameraUpdateBounds, 0);
+
+		AddFloor(SimRegion, v3{0, 0, -0.5f});
+
+		AddSphereParticle(SimRegion, v3{ 0, 0, 6}, 20.0f, 1.0f);
+		AddSphereParticle(SimRegion, v3{ 1, 0, 0}, 20.0f, 1.0f);
+		AddSphereParticle(SimRegion, v3{-1, 0, 0}, 20.0f, 1.0f);
+		AddSphereParticle(SimRegion, v3{ 0, 1, 0}, 20.0f, 1.0f);
+		AddSphereParticle(SimRegion, v3{ 0,-1, 0}, 20.0f, 1.0f);
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}
@@ -666,12 +683,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			//
 			// NOTE(bjorn): Moving / Collision / Game Logic
 			//
+#if HANDMADE_INTERNAL
+			b32 DEBUG_WasInsideAtLeastOnce = false;
+#endif
 			if(Entity->Updates && dT)
 			{
-				//TODO(bjorn):
-				// Add negative gravity for penetration if relative velocity is >= 0.
-				// Get relevant contact point.
-				// Test with object on mouse.
 				entity* OtherEntity = SimRegion->Entities;
 				for(u32 OtherEntityIndex = 0;
 						OtherEntityIndex < SimRegion->EntityCount;
@@ -681,106 +697,30 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					if(OtherEntity->EntityPairUpdateGenerationIndex == Step) { continue; }
 					if(!OtherEntity->IsSpacial) { continue; }
 
-					b32 Inside = false; 
-					f32 Penetration = 0;
-					v2 n = {};
-					v2 ImpactPoint = {};
-#if 0
-					{
-						f32 BestSquareDistanceToWall = positive_infinity32;
-						s32 RelevantNodeIndex = -1;
-						v2 P = Entity->P.XY;
-						polygon Sum = MinkowskiSum(OtherEntity, Entity);
+					contact_result Contacts = GenerateContacts(Entity, OtherEntity);
+					b32 Inside = Contacts.Count > 0; 
 
-						for(s32 NodeIndex = 0; 
-								NodeIndex < Sum.NodeCount; 
-								NodeIndex++)
-						{
-							v2 N0 = Sum.Nodes[NodeIndex];
-							v2 N1 = Sum.Nodes[(NodeIndex+1) % Sum.NodeCount];
-
-							f32 Det = Determinant(N1-N0, P-N0);
-							if(Inside && (Det >= 0.0f)) 
-							{ 
-								Inside = false; 
-							}
-
-							f32 SquareDistanceToWall = SquareDistancePointToLineSegment(N0, N1, P);
-							if(SquareDistanceToWall < BestSquareDistanceToWall)
-							{
-								BestSquareDistanceToWall = SquareDistanceToWall;
-								RelevantNodeIndex = NodeIndex;
-							}
-						}	
-
-						Assert(RelevantNodeIndex >= 0);
-						{
-							Penetration	= SquareRoot(BestSquareDistanceToWall);
-							Assert(Penetration <= (Length(Entity->Dim) + Length(OtherEntity->Dim)) * 0.5f);
-
-							v2 N0 = Sum.Nodes[RelevantNodeIndex];
-							v2 N1 = Sum.Nodes[(RelevantNodeIndex+1) % Sum.NodeCount];
-							v2 V0 = Sum.OriginalLineSeg[RelevantNodeIndex][0];
-							v2 V1 = Sum.OriginalLineSeg[RelevantNodeIndex][1];
-
-							//TODO(bjorn): This normalization might not be needed.
-							f32 t = Normalize(N1 - N0);
-							n = CCW90M22() * t;
-
-							closest_point_to_line_result ClosestPoint = GetClosestPointOnLineSegment(N0, N1, P);
-
-							ImpactPoint = V0 + (V1-V0) * ClosestPoint.t;
-							v2 ImpactCorrection = n * Penetration * 0.5f;
-							ImpactCorrection *= 
-								Sum.Genus[RelevantNodeIndex] == MinkowskiGenus_Movable ? 1.0f:-1.0f;
-							ImpactPoint += ImpactCorrection;
-						}
-					}
 					if(Inside &&
 						 Entity->Collides && 
 						 OtherEntity->Collides)
 					{
-						//NOTE(bjorn): Normal always points away from other entity.
-						v2 AP = Entity->P.XY;
-						v2 BP = OtherEntity->P.XY;
-						v2 AIt = CW90M22() * (AP - ImpactPoint);
-						v2 BIt = CW90M22() * (BP - ImpactPoint);
-						v2 AdP = Entity->dP.XY      + Entity->dA      * AIt;
-						v2 BdP = OtherEntity->dP.XY + OtherEntity->dA * BIt;
-						v2 ABdP = AdP - BdP;
-						f32 ndotAB = Dot(n, ABdP);
-
-						f32 AInvMass = Entity->iM;
-						f32 BInvMass = OtherEntity->iM;
-						//TODO(bjorn): Automize inertia calculation.
-						f32 AInvMoI  = AInvMass ? 0.08f:0.0f;//GetInverseOrZero(Entity->High->MoI);
-						f32 BInvMoI  = BInvMass ? 0.08f:0.0f;//GetInverseOrZero(OtherEntity->High->MoI);
-
-						f32 Impulse = 0;
-						f32 j = 0;
-
-						if(ndotAB < 0)
+#if HANDMADE_INTERNAL
+						DEBUG_WasInsideAtLeastOnce = true;
+						Entity->DEBUG_EntityCollided = true;
+						OtherEntity->DEBUG_EntityCollided = true;
+#endif
+						for(u32 ContactIndex = 0;
+								ContactIndex < Contacts.Count;
+								ContactIndex++)
 						{
-							f32 e = 0.0f;
-							j = ((-(1+e) * Dot(ABdP, n)) / 
-									 (/*Dot(n, n) * */(AInvMass + BInvMass) + 
-										Square(Dot(AIt, n))*AInvMoI + 
-										Square(Dot(BIt, n))*BInvMoI
-									 )
-									);
 
-							Impulse = j;
 						}
 
-						Entity->dP.XY      += (Impulse * AInvMass) * n;
-						OtherEntity->dP.XY -= (Impulse * BInvMass) * n;
-						Entity->dA         += Dot(AIt, Impulse * n) * AInvMoI;
-						OtherEntity->dA    -= Dot(BIt, Impulse * n) * BInvMoI;
-
-						Entity->P.XY       += n * Penetration * 0.5f;
-						OtherEntity->P.XY  -= n * Penetration * 0.5f;
+						Entity->Tran = 
+							ConstructTransform(     Entity->P,      Entity->O,      Entity->Body.S);
+						OtherEntity->Tran = 
+							ConstructTransform(OtherEntity->P, OtherEntity->O, OtherEntity->Body.S);
 					} 
-#endif
 
 					trigger_state_result TriggerState = 
 						UpdateAndGetCurrentTriggerState(Entity, OtherEntity, dT, Inside);
@@ -996,14 +936,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				}
 			}
 			
-			Entity->ObjToWorldTransform = ConstructTransform(Entity->P, Entity->O, Entity->Body.S);
+			Entity->Tran = ConstructTransform(Entity->P, Entity->O, Entity->Body.S);
 
 			//
 			// NOTE(bjorn): Push to render buffer
 			//
 			if(Step == LastStep)
 			{
-				m44 T = Entity->ObjToWorldTransform; 
+				m44 T = Entity->Tran; 
 
 				if(LengthSquared(Entity->dP) != 0.0f)
 				{
@@ -1101,23 +1041,36 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							PrimitiveIndex++)
 					{
 						body_primitive* Primitive = Entity->Body.Primitives + PrimitiveIndex;
-						if(Primitive->CollisionShape == CollisonShape_Circle)
+						if(Primitive->CollisionShape == CollisionShape_Sphere)
 						{
-							if(!Entity->IsCamera &&
-								 !Entity->IsFloor &&
-								 Entity != MainCamera->FreeMover &&
-								 PrimitiveIndex == 0)
+							v4 Color = {0,0,0.8f,0.05f};
+
+							if(PrimitiveIndex == 0)
 							{
-								//PushRenderPieceSphere(RenderGroup, T * Primitive->Offset, {0,1,0,0.1f});
+								if(!Entity->IsCamera &&
+									 !Entity->IsFloor &&
+									 Entity != MainCamera->FreeMover)
+								{
+									if(Entity->DEBUG_EntityCollided)
+									{
+										Color = {1,0,0,0.1f};
+									}
+									else
+									{
+										continue;
+									}
+								}
+								else
+								{
+									continue;
+								}
 							}
-							else if(PrimitiveIndex != 0)
-							{
-								PushRenderPieceSphere(RenderGroup, T * Primitive->Offset, {0,0.2f,0.8f,0.05f});
-							}
+
+							PushRenderPieceSphere(RenderGroup, T * Primitive->Tran, Color);
 						}
-						else if(Primitive->CollisionShape == CollisonShape_AABB)
+						else if(Primitive->CollisionShape == CollisionShape_AABB)
 						{
-							PushRenderPieceWireFrame(RenderGroup, T * Primitive->Offset);
+							PushRenderPieceWireFrame(RenderGroup, T * Primitive->Tran);
 						}
 					}
 
@@ -1150,8 +1103,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						{
 							attachment_info Info = Entity->AttachmentInfo[AttachmentIndex];
 
-							v3 AP1 = Entity->ObjToWorldTransform   * Info.AP1;
-							v3 AP2 = EndPoint->ObjToWorldTransform * Info.AP2;
+							v3 AP1 = Entity->Tran   * Info.AP1;
+							v3 AP2 = EndPoint->Tran * Info.AP2;
 
 							v3 APSize = 0.08f*v3{1,1,1};
 
@@ -1169,6 +1122,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				}
 #endif
 			}
+
+#if HANDMADE_INTERNAL
+			if(!DEBUG_WasInsideAtLeastOnce && dT)
+			{
+				Entity->DEBUG_EntityCollided = false;
+			}
+#endif
 		}
 	}
 	EndSim(Input, Entities, WorldArena, SimRegion);
@@ -1196,7 +1156,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		{
 			if(RenderPiece->Type == RenderPieceType_Quad)
 			{
-				v3 P = RenderPiece->ObjToWorldTransform * v3{0,0,0};
+				v3 P = RenderPiece->Tran * v3{0,0,0};
 				transform_result Tran = TransformPoint(MainCamera->CamZoom, RotMat, P);
 				if(!Tran.Valid) { continue; }
 
@@ -1224,7 +1184,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			}
 			else if(RenderPiece->Type == RenderPieceType_DimCube)
 			{
-				aabb_verts_result AABB = GetAABBVertices(&RenderPiece->ObjToWorldTransform);
+				aabb_verts_result AABB = GetAABBVertices(&RenderPiece->Tran);
 
 				for(u32 VertIndex = 0; 
 						VertIndex < 4; 
@@ -1262,8 +1222,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			}
 			else if(RenderPiece->Type == RenderPieceType_LineSegment)
 			{
-				v3 V0 = RenderPiece->ObjToWorldTransform * RenderPiece->A;
-				v3 V1 = RenderPiece->ObjToWorldTransform * RenderPiece->B;
+				v3 V0 = RenderPiece->Tran * RenderPiece->A;
+				v3 V1 = RenderPiece->Tran * RenderPiece->B;
 
 				TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
 																						MainCamera->CamZoom, RotMat, V0, V1,
@@ -1319,8 +1279,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			}
 			else if(RenderPiece->Type == RenderPieceType_Sphere)
 			{
-				v3 P0 = RenderPiece->ObjToWorldTransform * v3{0,0,0};
-				v3 P1 = RenderPiece->ObjToWorldTransform * v3{0.5f,0,0};
+				v3 P0 = RenderPiece->Tran * v3{0,0,0};
+				v3 P1 = RenderPiece->Tran * v3{0.5f,0,0};
 
 				transform_result Tran0 = TransformPoint(MainCamera->CamZoom, RotMat, P0);
 				if(!Tran0.Valid) { continue; }

@@ -404,10 +404,10 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 		AddFloor(SimRegion, v3{0, 0, -0.5f});
 
 		AddSphereParticle(SimRegion, v3{ 0, 0, 6}, 20.0f, 1.0f);
-		AddSphereParticle(SimRegion, v3{ 1.1f, 0, 0}, 20.0f, 1.0f);
-		AddSphereParticle(SimRegion, v3{-1.1f, 0, 0}, 20.0f, 1.0f);
-		AddSphereParticle(SimRegion, v3{ 0, 1.1f, 0}, 20.0f, 1.0f);
-		AddSphereParticle(SimRegion, v3{ 0,-1.1f, 0}, 20.0f, 1.0f);
+		AddSphereParticle(SimRegion, v3{ 1.1f, 0, 0}, 20.0f, 0.7f);
+		AddSphereParticle(SimRegion, v3{-1.1f, 0, 0}, 20.0f, 0.7f);
+		AddSphereParticle(SimRegion, v3{ 0, 1.1f, 0}, 20.0f, 0.7f);
+		AddSphereParticle(SimRegion, v3{ 0,-1.1f, 0}, 20.0f, 0.7f);
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}
@@ -486,12 +486,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		{
 			{
 				//SimReq->ddP = Controller->LeftStick.End;
-
-#if 0
-				//TODO IMPORTANT Collect the relevant interpretation of the input and
-				//pass it on to the game logic.
-				ControlledEntity->ddP = InputDirection * 85.0f;
-#endif
 
 				if(Clicked(Controller, Start))
 				{
@@ -697,6 +691,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							OtherEntityIndex++, OtherEntity++)
 					{
 						if(Entity == OtherEntity) { continue; }
+#if HANDMADE_INTERNAL
+						if(OtherEntity->EntityPairUpdateGenerationIndex == Step &&
+							 Entity->DEBUG_EntityCollided  == true &&
+							 OtherEntity->DEBUG_EntityCollided == true) 
+						{ 
+							DEBUG_WasInsideAtLeastOnce = true;
+						}
+#endif
 						if(OtherEntity->EntityPairUpdateGenerationIndex == Step) { continue; }
 						if(!OtherEntity->IsSpacial) { continue; }
 						if(OtherEntity->Body.PrimitiveCount <= 1) { continue; }
@@ -704,23 +706,49 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						contact_result Contacts = GenerateContacts(Entity, OtherEntity);
 						b32 Inside = Contacts.Count > 0; 
 
+#if HANDMADE_INTERNAL
+						if(Inside)
+						{
+							DEBUG_WasInsideAtLeastOnce = true;
+							Entity->DEBUG_EntityCollided = true;
+							OtherEntity->DEBUG_EntityCollided = true;
+						}
+#endif
 						if(Inside &&
 							 Entity->Collides && 
 							 OtherEntity->Collides)
 						{
-#if HANDMADE_INTERNAL
-							//TODO Color during pause is still weird/off.
-							DEBUG_WasInsideAtLeastOnce = true;
-							Entity->DEBUG_EntityCollided = true;
-							OtherEntity->DEBUG_EntityCollided = true;
-#endif
 							for(u32 ContactIndex = 0;
 									ContactIndex < Contacts.Count;
 									ContactIndex++)
 							{
-								//TODO IMPORTANT Do collision response here!
+								contact Contact = Contacts.E[ContactIndex];
+								entity* A = Contact.A;
+								entity* B = Contact.B;
+
+								v3 VelocityDelta = ((Cross(A->dO, Contact.P - A->P) + A->dP) - 
+																		(Cross(B->dO, Contact.P - B->P) + B->dP));
+								f32 SeparatingVelocity = Dot(Contact.N, VelocityDelta);
+
+								f32 Restitution = (A->Body.Restitution + B->Body.Restitution) * 0.5f;
+								f32 iM_iSum = SafeRatio0(1.0f, A->Body.iM + B->Body.iM);
+								Assert(iM_iSum);
+
+								f32 Impulse = -(1+Restitution) * SeparatingVelocity * iM_iSum;
+
+
+								A->dP += Contact.N * (A->Body.iM * Impulse);
+								B->dP -= Contact.N * (B->Body.iM * Impulse);
+								A->dO += {};
+								B->dO += {};
+
+								f32 A_MassRatio = (A->Body.iM * iM_iSum);
+								f32 B_MassRatio = (B->Body.iM * iM_iSum);
+								A->P -= (A_MassRatio * Contact.PenetrationDepth) * Contact.N;
+								B->P += (B_MassRatio * Contact.PenetrationDepth) * Contact.N;
 							}
 
+							//TODO(bjorn): Refactor into a function that updates entity derived state.
 							Entity->Tran = 
 								ConstructTransform(     Entity->P,      Entity->O,      Entity->Body.S);
 							OtherEntity->Tran = 

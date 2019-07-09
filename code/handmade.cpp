@@ -405,13 +405,11 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 
 		AddFloor(SimRegion, v3{0, 0, -2.0f});
 
-#if 0
 		entity* A = AddSphereParticle(SimRegion, v3{ 0, 0, 6}, 20.0f, 1.0f);
 		A->dO = {0,pi32,pi32};
 		AddSphereParticle(SimRegion, v3{ 1.1f, 0, 0}, 20.0f, 0.7f);
 		AddSphereParticle(SimRegion, v3{-1.1f, 0, 0}, 20.0f, 0.7f);
 		AddSphereParticle(SimRegion, v3{ 0, 1.1f, 0}, 20.0f, 0.7f);
-#endif
 		AddSphereParticle(SimRegion, v3{ 0, -1.0f, 6.0}, 20.0f, 1.0f);
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
@@ -741,9 +739,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								v3 VelocityDelta = ((Cross(A->dO, CA) + A->dP) - (Cross(B->dO, CB) + B->dP));
 								f32 SeparatingVelocity = Dot(Contact.N, VelocityDelta);
 
-								f32 Restitution = (A->Body.Restitution + B->Body.Restitution) * 0.5f;
-
-								f32 iM_iSum = SafeRatio0(1.0f, A->Body.iM + B->Body.iM);
+								f32 Restitution = Contact.Restitution;
 
 								v3 A_iI_Temp = {};
 								v3 B_iI_Temp = {};
@@ -757,11 +753,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 									B_iI_Temp = B_iI_world*Cross(CB, Contact.N);
 									Divisor = 
 										SafeRatio0(1.0f, 
-															 iM_iSum +
+															 (A->Body.iM + B->Body.iM) +
 															 Dot(Contact.N, Cross(A_iI_Temp, CA) + Cross(B_iI_Temp, CA)));
 								}
-
-								Assert(iM_iSum);
 								Assert(Divisor);
 
 								f32 Impulse = -(1+Restitution) * SeparatingVelocity * Divisor;
@@ -771,6 +765,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								A->dO += A_iI_Temp * Impulse;
 								A->dO -= B_iI_Temp * Impulse;
 
+								f32 iM_iSum = SafeRatio0(1.0f, A->Body.iM + B->Body.iM);
+								Assert(iM_iSum);
 								f32 A_MassRatio = (A->Body.iM * iM_iSum);
 								f32 B_MassRatio = (B->Body.iM * iM_iSum);
 								A->P -= (A_MassRatio * Contact.PenetrationDepth) * Contact.N;

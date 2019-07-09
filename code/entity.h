@@ -401,7 +401,11 @@ CalibratePhysicalBody(entity* Entity, f32 Mass, v3 Scale, f32 Restitution)
 	Body->S = Scale;
 
 	Body->iM = SafeRatio0(1.0f, Mass);
-	if(Body->iM)
+	if(Body->iM == 0)
+	{
+		Body->iI = {};
+	}
+	else
 	{
 		body_primitive* Prim = Body->Primitives + 1;
 

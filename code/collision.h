@@ -166,7 +166,7 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 
 			m44 UnscaledBObjToWorld = Entity_B->TranUnscaled * B->TranUnscaled;
 			v3 ContactP = UnscaledBObjToWorld * ClosestP;
-			f32 Penetration = Magnitude(ContactP - (UnscaledBObjToWorld * C));
+			f32 Penetration = R - Magnitude(ContactP - (UnscaledBObjToWorld * C));
 			AddContact(Contacts, Entity_A, Entity_B, 
 								 ContactP, 
 								 Normalize(ContactP - Entity_A->P), 

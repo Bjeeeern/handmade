@@ -267,14 +267,13 @@ SetAddedSimEntityFlagsAndState(sim_region* SimRegion, entity* Entity)
 	if(Entity->IsSpacial)
 	{
 		Entity->P = GetWorldMapPosDifference(SimRegion->WorldMap, Entity->WorldP, SimRegion->Origin);
-		Entity->Tran = ConstructTransform(Entity->P, Entity->O, Entity->Body.S);
+		UpdateEntityDerivedMembers(Entity);
 	}
 
 	Entity->EntityPairUpdateGenerationIndex = 0;
 	//TODO(bjorn): Does non-spatial entities update?
 	Entity->Updates = (!Entity->IsSpacial || 
-										 IsInRectangle(SimRegion->UpdateBounds, Entity->P) ||
-										 (IsInRectangle(SimRegion->OuterBounds, Entity->P) && Entity->IsFloor));
+										 IsInRectangle(SimRegion->UpdateBounds, Entity->P));
 }
 
 	internal_function entity*

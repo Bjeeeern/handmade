@@ -117,19 +117,69 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 		v3 C1 = *T_B * (B->Tran * v3{   0,0,0});
 		v3 Q1 = *T_B * (B->Tran * v3{0.5f,0,0});
 
-		b32 Collides = Magnitude(C1-C0) <= (Magnitude(Q0-C0) + Magnitude(Q1-C1));
-		if(Collides)
+		b32 Overlaps = Magnitude(C1-C0) <= (Magnitude(Q0-C0) + Magnitude(Q1-C1));
+		if(Overlaps)
 		{
-			AddContact(Contacts, Entity_A, Entity_B, (C0+C1)*0.5f, Normalize(C1-C0), 
+			AddContact(Contacts, Entity_A, Entity_B, 
+								 (C0+C1)*0.5f, 
+								 Normalize(C1-C0), 
 								 (Magnitude(Q0-C0)+Magnitude(Q1-C1)) - Magnitude(C1-C0),
+								 (Entity_A->Body.Restitution + Entity_B->Body.Restitution)*0.5f);
+		}
+	}
+	if(A->CollisionShape == CollisionShape_AABB && 
+		 B->CollisionShape == CollisionShape_AABB)
+	{
+	}
+	if(A->CollisionShape != B->CollisionShape)
+	{
+		if(A->CollisionShape > B->CollisionShape) 
+		{ 
+			Swap(Entity_A, Entity_B, entity*); 
+			Swap(T_A, T_B, m44*); 
+			Swap(A, B, body_primitive*); 
+		}
+		if(A->CollisionShape == CollisionShape_Sphere && 
+			 B->CollisionShape == CollisionShape_AABB)
+		{
+			m44 AObjToUnscaledBObj = 
+				(B->iTranUnscaled * (Entity_B->iTranUnscaled * (Entity_A->Tran * A->Tran)));
+			v3 C = AObjToUnscaledBObj * v3{   0,0,0};
+			v3 Q = AObjToUnscaledBObj * v3{0.5f,0,0};
+			f32 R_sq = MagnitudeSquared(Q - C);
+			f32 R = Magnitude(Q - C);
+
+			if((Absolute(C.X) - R) > B->S.X*0.5f ||
+				 (Absolute(C.Y) - R) > B->S.Y*0.5f ||
+				 (Absolute(C.Z) - R) > B->S.Z*0.5f)
+			{
+				return;
+			}
+			v3 ClosestP = C;
+			ClosestP.X = Clamp(B->S.X*-0.5f, ClosestP.X, B->S.X*0.5f);
+			ClosestP.Y = Clamp(B->S.Y*-0.5f, ClosestP.Y, B->S.Y*0.5f);
+			ClosestP.Z = Clamp(B->S.Z*-0.5f, ClosestP.Z, B->S.Z*0.5f);
+			if(MagnitudeSquared(ClosestP - C) > R_sq)
+			{
+				return;
+			}
+
+			m44 UnscaledBObjToWorld = Entity_B->TranUnscaled * B->TranUnscaled;
+			v3 ContactP = UnscaledBObjToWorld * ClosestP;
+			f32 Penetration = Magnitude(ContactP - (UnscaledBObjToWorld * C));
+			AddContact(Contacts, Entity_A, Entity_B, 
+								 ContactP, 
+								 Normalize(ContactP - Entity_A->P), 
+								 Penetration,
 								 (Entity_A->Body.Restitution + Entity_B->Body.Restitution)*0.5f);
 		}
 	}
 }
 
-internal_function contact_result
+	internal_function contact_result
 GenerateContacts(entity* A, entity* B)
 {
+	Assert(A->HasBody && B->HasBody);
 	contact_result Result = {};
 
 	b32 BoundingVolumeCollides = false;

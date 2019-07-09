@@ -16,6 +16,7 @@
 
 // QUICK TODO
 //
+// * Trigger-only collision bodies
 // * Add hunting along Z-axis too.
 
 // TODO
@@ -356,6 +357,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 		f32 SpringConstant = 20.0f;
 
 		entity* A = AddParticle(SimRegion, v3{ 0,0,10}, 20.0f, 2.0f*v3{1,1,1});
+		//TODO(bjorn): Test spinning particle A
 		AddOneWaySpringAttachment(A, Fixture, SpringConstant * 4.0f, 2.0f, 
 															-v3{0.5f,0.5f,0.5f}, {0,0,0});
 
@@ -401,13 +403,16 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 																		 WorldMap, GameState->DEBUG_TestLocations[5], 
 																		 GameState->CameraUpdateBounds, 0);
 
-		AddFloor(SimRegion, v3{0, 0, -0.5f});
+		AddFloor(SimRegion, v3{0, 0, -2.0f});
 
-		AddSphereParticle(SimRegion, v3{ 0, 0, 6}, 20.0f, 1.0f);
+#if 0
+		entity* A = AddSphereParticle(SimRegion, v3{ 0, 0, 6}, 20.0f, 1.0f);
+		A->dO = {0,pi32,pi32};
 		AddSphereParticle(SimRegion, v3{ 1.1f, 0, 0}, 20.0f, 0.7f);
 		AddSphereParticle(SimRegion, v3{-1.1f, 0, 0}, 20.0f, 0.7f);
 		AddSphereParticle(SimRegion, v3{ 0, 1.1f, 0}, 20.0f, 0.7f);
-		AddSphereParticle(SimRegion, v3{ 0,-1.1f, 0}, 20.0f, 0.7f);
+#endif
+		AddSphereParticle(SimRegion, v3{ 0, -1.0f, 6.0}, 20.0f, 1.0f);
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}
@@ -703,7 +708,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						if(!OtherEntity->IsSpacial) { continue; }
 						if(OtherEntity->Body.PrimitiveCount <= 1) { continue; }
 
-						contact_result Contacts = GenerateContacts(Entity, OtherEntity);
+						contact_result Contacts = {};
+						if(Entity->HasBody &&
+							 OtherEntity->HasBody)
+						{
+							Contacts = GenerateContacts(Entity, OtherEntity);
+						}
 						b32 Inside = Contacts.Count > 0; 
 
 #if HANDMADE_INTERNAL
@@ -726,21 +736,40 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								entity* A = Contact.A;
 								entity* B = Contact.B;
 
-								v3 VelocityDelta = ((Cross(A->dO, Contact.P - A->P) + A->dP) - 
-																		(Cross(B->dO, Contact.P - B->P) + B->dP));
+								v3 CA = Contact.P - A->P;
+								v3 CB = Contact.P - B->P;
+								v3 VelocityDelta = ((Cross(A->dO, CA) + A->dP) - (Cross(B->dO, CB) + B->dP));
 								f32 SeparatingVelocity = Dot(Contact.N, VelocityDelta);
 
 								f32 Restitution = (A->Body.Restitution + B->Body.Restitution) * 0.5f;
+
 								f32 iM_iSum = SafeRatio0(1.0f, A->Body.iM + B->Body.iM);
+
+								v3 A_iI_Temp = {};
+								v3 B_iI_Temp = {};
+								f32 Divisor = 0;
+								{
+									m33 A_Rot = QuaternionToRotationMatrix(A->O);
+									m33 B_Rot = QuaternionToRotationMatrix(B->O);
+									m33 A_iI_world = A_Rot * (A->Body.iI * Transpose(A_Rot));
+									m33 B_iI_world = B_Rot * (B->Body.iI * Transpose(B_Rot));
+									A_iI_Temp = A_iI_world*Cross(CA, Contact.N);
+									B_iI_Temp = B_iI_world*Cross(CB, Contact.N);
+									Divisor = 
+										SafeRatio0(1.0f, 
+															 iM_iSum +
+															 Dot(Contact.N, Cross(A_iI_Temp, CA) + Cross(B_iI_Temp, CA)));
+								}
+
 								Assert(iM_iSum);
+								Assert(Divisor);
 
-								f32 Impulse = -(1+Restitution) * SeparatingVelocity * iM_iSum;
-
+								f32 Impulse = -(1+Restitution) * SeparatingVelocity * Divisor;
 
 								A->dP += Contact.N * (A->Body.iM * Impulse);
 								B->dP -= Contact.N * (B->Body.iM * Impulse);
-								A->dO += {};
-								B->dO += {};
+								A->dO += A_iI_Temp * Impulse;
+								A->dO -= B_iI_Temp * Impulse;
 
 								f32 A_MassRatio = (A->Body.iM * iM_iSum);
 								f32 B_MassRatio = (B->Body.iM * iM_iSum);
@@ -749,10 +778,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							}
 
 							//TODO(bjorn): Refactor into a function that updates entity derived state.
-							Entity->Tran = 
-								ConstructTransform(     Entity->P,      Entity->O,      Entity->Body.S);
-							OtherEntity->Tran = 
-								ConstructTransform(OtherEntity->P, OtherEntity->O, OtherEntity->Body.S);
+							UpdateEntityDerivedMembers(Entity);
+							UpdateEntityDerivedMembers(OtherEntity);
 						} 
 
 						trigger_state_result TriggerState = 
@@ -771,7 +798,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						//TODO IMPORTANT(bjorn): Both ForceFieldLogic and FloorLogic needs to be moved
 						//to a trigger handling and a collision handling system respectively. 
 						ForceFieldLogic(Entity, OtherEntity);
-						FloorLogic(Entity, OtherEntity);
+						//FloorLogic(Entity, OtherEntity);
 
 						if(TriggerState.OnEnter)
 						{
@@ -977,7 +1004,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				}
 			}
 			
-			Entity->Tran = ConstructTransform(Entity->P, Entity->O, Entity->Body.S);
+			UpdateEntityDerivedMembers(Entity);
 
 			//
 			// NOTE(bjorn): Push to render buffer

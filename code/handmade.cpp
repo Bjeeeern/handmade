@@ -405,12 +405,19 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 
 		AddFloor(SimRegion, v3{0, 0, -2.0f});
 
-		entity* A = AddSphereParticle(SimRegion, v3{ 0, 0, 6}, 20.0f, 1.0f);
+		entity* A = AddSphereParticle(SimRegion, v3{ 0, 0, 6}, 20.0f, 0.8f);
 		A->dO = {0,pi32,pi32};
-		AddSphereParticle(SimRegion, v3{ 1.1f, 0, 0}, 20.0f, 0.7f);
-		AddSphereParticle(SimRegion, v3{-1.1f, 0, 0}, 20.0f, 0.7f);
-		AddSphereParticle(SimRegion, v3{ 0, 1.1f, 0}, 20.0f, 0.7f);
-		AddSphereParticle(SimRegion, v3{ 0, -1.0f, 6.0}, 20.0f, 1.0f);
+		AddSphereParticle(SimRegion, v3{ 1.1f, 0, 0}, 20.0f, 0.8f);
+		AddSphereParticle(SimRegion, v3{-1.1f, 0, 0}, 20.0f, 0.8f);
+		AddSphereParticle(SimRegion, v3{ 0, 1.1f, 0}, 20.0f, 0.8f);
+		AddSphereParticle(SimRegion, v3{ 0, -1.0f, 6.0}, 20.0f, 0.8f);
+
+		entity* B = AddParticle(SimRegion, v3{-1.2f,0,3.0f}, 0.0f, v3{3.0f,6.0f,0.2f});
+		B->Rotates = false;
+		B->O = AngleAxisToQuaternion(tau32*0.125f, {0,1,0});
+		entity* C = AddParticle(SimRegion, v3{1.2f,0,6.0f}, 0.0f, v3{3.0f,6.0f,0.2f});
+		C->Rotates = false;
+		C->O = AngleAxisToQuaternion(tau32*0.125f, {0,-1,0});
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}
@@ -1289,20 +1296,23 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				v3 n = Normalize(V1-V0);
 
+				//TODO(bjorn): Implement a good GetComplimentaryAxes() fuction.
 				v3 t0 = {};
 				v3 t1 = {};
-				f32 e = 0.01f;
-				if(IsWithin(n.X, -e, e) && 
-					 IsWithin(n.Y, -e, e))
 				{
-					t0 = {1,0,0};
+					f32 e = 0.01f;
+					if(IsWithin(n.X, -e, e) && 
+						 IsWithin(n.Y, -e, e))
+					{
+						t0 = {1,0,0};
+					}
+					else
+					{
+						t0 = n + v3{0,0,100};
+					}
+					t1 = Normalize(Cross(n, t0));
+					t0 = Cross(n, t1);
 				}
-				else
-				{
-					t0 = n + v3{0,0,100};
-				}
-				t1 = Normalize(Cross(n, t0));
-				t0 = Cross(n, t1);
 
 				f32 Scale = 0.2f;
 				v3 Verts[5];

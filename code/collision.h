@@ -106,16 +106,15 @@ AddContact(contact_result* Contacts, entity* A, entity* B,
 	internal_function void
 GenerateContactsFromPrimitivePair(contact_result* Contacts, 
 																	entity* Entity_A, entity* Entity_B,
-																	m44* T_A, m44* T_B,
 																	body_primitive* A, body_primitive* B)
 {
 	if(A->CollisionShape == CollisionShape_Sphere && 
 		 B->CollisionShape == CollisionShape_Sphere)
 	{
-		v3 C0 = *T_A * (A->Tran * v3{   0,0,0});
-		v3 Q0 = *T_A * (A->Tran * v3{0.5f,0,0});
-		v3 C1 = *T_B * (B->Tran * v3{   0,0,0});
-		v3 Q1 = *T_B * (B->Tran * v3{0.5f,0,0});
+		v3 C0 = Entity_A->Tran * (A->Tran * v3{   0,0,0});
+		v3 Q0 = Entity_A->Tran * (A->Tran * v3{0.5f,0,0});
+		v3 C1 = Entity_B->Tran * (B->Tran * v3{   0,0,0});
+		v3 Q1 = Entity_B->Tran * (B->Tran * v3{0.5f,0,0});
 
 		b32 Overlaps = Magnitude(C1-C0) <= (Magnitude(Q0-C0) + Magnitude(Q1-C1));
 		if(Overlaps)
@@ -130,13 +129,80 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 	if(A->CollisionShape == CollisionShape_AABB && 
 		 B->CollisionShape == CollisionShape_AABB)
 	{
+		v3 Axes[15];
+		m33 ARot = QuaternionToRotationMatrix(Entity_A->O * A->O);
+		Axes[0] = ARot * v3{1,0,0};
+		Axes[1] = ARot * v3{0,1,0};
+		Axes[2] = ARot * v3{0,0,1};
+		m33 BRot = QuaternionToRotationMatrix(Entity_B->O * B->O);
+		Axes[3] = BRot * v3{1,0,0};
+		Axes[4] = BRot * v3{0,1,0};
+		Axes[5] = BRot * v3{0,0,1};
+		
+		Axes[ 6] = Cross(Axes[0], Axes[3]);
+		Axes[ 7] = Cross(Axes[0], Axes[4]);
+		Axes[ 8] = Cross(Axes[0], Axes[5]);
+		Axes[ 9] = Cross(Axes[1], Axes[3]);
+		Axes[10] = Cross(Axes[1], Axes[4]);
+		Axes[11] = Cross(Axes[1], Axes[5]);
+		Axes[12] = Cross(Axes[2], Axes[3]);
+		Axes[13] = Cross(Axes[2], Axes[4]);
+		Axes[14] = Cross(Axes[2], Axes[5]);
+
+		m44 ObjAToWorld = Entity_A->Tran * A->Tran;
+		v3 A_HalfSize[3]; 
+		A_HalfSize[0] = ObjAToWorld * v3{0.5f,0.0f,0.0f};
+		A_HalfSize[1] = ObjAToWorld * v3{0.0f,0.5f,0.0f};
+		A_HalfSize[2] = ObjAToWorld * v3{0.0f,0.0f,0.5f};
+		m44 ObjBToWorld = Entity_B->Tran * B->Tran;
+		v3 B_HalfSize[3]; 
+		B_HalfSize[0] = ObjBToWorld * v3{0.5f,0.0f,0.0f};
+		B_HalfSize[1] = ObjBToWorld * v3{0.0f,0.5f,0.0f};
+		B_HalfSize[2] = ObjBToWorld * v3{0.0f,0.0f,0.5f};
+
+		v3 DeltaP = Entity_B->P - Entity_A->P;
+		f32 SmallestOverlap = positive_infinity32;
+		SmallestOverlapIndex = -1;
+		for(u32 AxisIndex = 0;
+				AxisIndex < ArrayCount(Axes);
+				AxisIndex++)
+		{
+			v3 Axis = Axes[AxisIndex];
+			if(MagnitudeSquared(Axis) < 0.001f) { continue; }
+			Axis = Normalize(Axis);
+
+			f32 Overlap;
+			{
+        box.halfSize.x * real_abs(axis * box.getAxis(0)) +
+        box.halfSize.y * real_abs(axis * box.getAxis(1)) +
+        box.halfSize.z * real_abs(axis * box.getAxis(2));
+				f32 AProjection = (Absolute(Dot(A_HalfSize[0], Axis)) +
+													 Absolute(Dot(A_HalfSize[1], Axis)) +
+													 Absolute(Dot(A_HalfSize[3], Axis)));
+				f32 BProjection = (Absolute(Dot(B_HalfSize[0], Axis)) +
+													 Absolute(Dot(B_HalfSize[1], Axis)) +
+													 Absolute(Dot(B_HalfSize[3], Axis)));
+				f32 DistanceProjected = Absolute(Dot(DeltaP, Axis));
+
+				Overlap = AProjection + BProjection - DistanceProjected;
+			}
+
+			if(Overlap < 0) { return; }
+			if(Overlap < SmallestOverlap)
+			{
+				SmallestOverlap = Overlap;
+				SmallestOverlapIndex = AxisIndex;
+			}
+		}
+		Assert(SmallestOverlapIndex >= 0);
+
+		//TODO IMPORTANT(bjorn): Create the contact.
 	}
 	if(A->CollisionShape != B->CollisionShape)
 	{
 		if(A->CollisionShape > B->CollisionShape) 
 		{ 
 			Swap(Entity_A, Entity_B, entity*); 
-			Swap(T_A, T_B, m44*); 
 			Swap(A, B, body_primitive*); 
 		}
 		if(A->CollisionShape == CollisionShape_Sphere && 
@@ -218,7 +284,6 @@ GenerateContacts(entity* A, entity* B)
 			{
 				body_primitive* Prim_B = B->Body.Primitives + PrimitiveIndex_B;
 				GenerateContactsFromPrimitivePair(&Result, A, B, 
-																					&A->Tran, &B->Tran, 
 																					Prim_A, Prim_B);
 			}
 		}

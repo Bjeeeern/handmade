@@ -405,19 +405,27 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 
 		AddFloor(SimRegion, v3{0, 0, -2.0f});
 
+#if 0
 		entity* A = AddSphereParticle(SimRegion, v3{ 0, 0, 6}, 20.0f, 0.8f);
 		A->dO = {0,pi32,pi32};
+#endif
+		entity* D = AddParticle(SimRegion, v3{ 0, 0, 8}, 20.0f, v3{1.0f, 1.0f, 1.0f});
+		D->dO = {0,pi32,pi32};
+#if 0
 		AddSphereParticle(SimRegion, v3{ 1.1f, 0, 0}, 20.0f, 0.8f);
 		AddSphereParticle(SimRegion, v3{-1.1f, 0, 0}, 20.0f, 0.8f);
 		AddSphereParticle(SimRegion, v3{ 0, 1.1f, 0}, 20.0f, 0.8f);
 		AddSphereParticle(SimRegion, v3{ 0, -1.0f, 6.0}, 20.0f, 0.8f);
+#endif
 
 		entity* B = AddParticle(SimRegion, v3{-1.2f,0,3.0f}, 0.0f, v3{3.0f,6.0f,0.2f});
 		B->Rotates = false;
 		B->O = AngleAxisToQuaternion(tau32*0.125f, {0,1,0});
+#if 0
 		entity* C = AddParticle(SimRegion, v3{1.2f,0,6.0f}, 0.0f, v3{3.0f,6.0f,0.2f});
 		C->Rotates = false;
 		C->O = AngleAxisToQuaternion(tau32*0.125f, {0,-1,0});
+#endif
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}
@@ -471,10 +479,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	Assert(sizeof(game_state) <= Memory->PermanentStorageSize);
 	game_state *GameState = (game_state *)Memory->PermanentStorage;
 
+#if HANDMADE_INTERNAL
+	u32 DEBUG_SwitchToLocation = 0;
+#endif
 	if(!Memory->IsInitialized)
 	{
 		InitializeGame(Memory, GameState, Input);
 		Memory->IsInitialized = true;
+#if HANDMADE_INTERNAL
+		DEBUG_SwitchToLocation = 5;
+#endif
 	}
 
 	memory_arena* WorldArena = &GameState->WorldArena;
@@ -565,9 +579,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					NumKeyIndex < ArrayCount(Keyboard->Numbers);
 					NumKeyIndex++)
 			{
-				if(Held(Keyboard, Shift) &&
-					 Clicked(Keyboard, Numbers[NumKeyIndex]))
+				if(((NumKeyIndex == 0) && 
+						DEBUG_SwitchToLocation) ||
+					 (Held(Keyboard, Shift) &&
+						Clicked(Keyboard, Numbers[NumKeyIndex])))
 				{
+					NumKeyIndex = DEBUG_SwitchToLocation;
 					sim_region* SimRegion = BeginSim(Input, Entities, TransientArena, WorldMap, 
 																					 GameState->DEBUG_TestLocations[NumKeyIndex], 
 																					 GameState->CameraUpdateBounds, SecondsToUpdate);
@@ -717,7 +734,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						if(Entity->HasBody &&
 							 OtherEntity->HasBody)
 						{
-							Contacts = GenerateContacts(Entity, OtherEntity);
+							Contacts = GenerateContacts(Entity, OtherEntity
+#if HANDMADE_INTERNAL
+																	,RenderGroup
+#endif
+																					);
 						}
 						b32 Inside = Contacts.Count > 0; 
 

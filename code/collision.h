@@ -106,7 +106,11 @@ AddContact(contact_result* Contacts, entity* A, entity* B,
 	internal_function void
 GenerateContactsFromPrimitivePair(contact_result* Contacts, 
 																	entity* Entity_A, entity* Entity_B,
-																	body_primitive* A, body_primitive* B)
+																	body_primitive* A, body_primitive* B
+#if HANDMADE_INTERNAL
+																	,render_group* RenderGroup
+#endif
+																	)
 {
 	if(A->CollisionShape == CollisionShape_Sphere && 
 		 B->CollisionShape == CollisionShape_Sphere)
@@ -150,32 +154,35 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 		Axes[14] = Cross(Axes[2], Axes[5]);
 
 		m44 ObjAToWorld = Entity_A->Tran * A->Tran;
-		v3 A_HalfSize[3]; 
-		A_HalfSize[0] = ObjAToWorld * v3{0.5f,0.0f,0.0f};
-		A_HalfSize[1] = ObjAToWorld * v3{0.0f,0.5f,0.0f};
-		A_HalfSize[2] = ObjAToWorld * v3{0.0f,0.0f,0.5f};
+		v3 A_HalfSize[4]; 
+		A_HalfSize[0] = ObjAToWorld * v3{0.5f,0.0f,0.0f} - Entity_A->P;
+		A_HalfSize[1] = ObjAToWorld * v3{0.0f,0.5f,0.0f} - Entity_A->P;
+		A_HalfSize[2] = ObjAToWorld * v3{0.0f,0.0f,0.5f} - Entity_A->P;
+		A_HalfSize[3] = ObjAToWorld * v3{0.5f,0.5f,0.5f} - Entity_A->P;
 		m44 ObjBToWorld = Entity_B->Tran * B->Tran;
-		v3 B_HalfSize[3]; 
-		B_HalfSize[0] = ObjBToWorld * v3{0.5f,0.0f,0.0f};
-		B_HalfSize[1] = ObjBToWorld * v3{0.0f,0.5f,0.0f};
-		B_HalfSize[2] = ObjBToWorld * v3{0.0f,0.0f,0.5f};
+		v3 B_HalfSize[4]; 
+		B_HalfSize[0] = ObjBToWorld * v3{0.5f,0.0f,0.0f} - Entity_B->P;
+		B_HalfSize[1] = ObjBToWorld * v3{0.0f,0.5f,0.0f} - Entity_B->P;
+		B_HalfSize[2] = ObjBToWorld * v3{0.0f,0.0f,0.5f} - Entity_B->P;
+		B_HalfSize[3] = ObjBToWorld * v3{0.5f,0.5f,0.5f} - Entity_B->P;
 
 		v3 DeltaP = Entity_B->P - Entity_A->P;
 		f32 SmallestOverlap = positive_infinity32;
-		SmallestOverlapIndex = -1;
+		s32 SmallestOverlapIndex = -1;
 		for(u32 AxisIndex = 0;
 				AxisIndex < ArrayCount(Axes);
 				AxisIndex++)
 		{
 			v3 Axis = Axes[AxisIndex];
 			if(MagnitudeSquared(Axis) < 0.001f) { continue; }
-			Axis = Normalize(Axis);
+			if(AxisIndex >= 6)
+			{
+				Axis = Normalize(Axis);
+				Axes[AxisIndex] = Axis;
+			}
 
 			f32 Overlap;
 			{
-        box.halfSize.x * real_abs(axis * box.getAxis(0)) +
-        box.halfSize.y * real_abs(axis * box.getAxis(1)) +
-        box.halfSize.z * real_abs(axis * box.getAxis(2));
 				f32 AProjection = (Absolute(Dot(A_HalfSize[0], Axis)) +
 													 Absolute(Dot(A_HalfSize[1], Axis)) +
 													 Absolute(Dot(A_HalfSize[3], Axis)));
@@ -196,7 +203,126 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 		}
 		Assert(SmallestOverlapIndex >= 0);
 
-		//TODO IMPORTANT(bjorn): Create the contact.
+		b32 IsFaceAxis = SmallestOverlapIndex < 6; 
+		if(IsFaceAxis)
+		{
+			//TODO(bjorn): Maybe find up to eight contacts here.
+			v3 Axis = Axes[SmallestOverlapIndex];
+			if(Dot(DeltaP, Axis) < 0) { Axis *= -1.0f; }
+
+			v3 Vertex;
+			b32 AFaceBVertex = SmallestOverlapIndex < 3;
+			if(AFaceBVertex)
+			{
+				Vertex = B_HalfSize[3];
+				if(Dot(B_HalfSize[0], Axis) > 0) { Vertex -= 2.0f*B_HalfSize[0]; }
+				if(Dot(B_HalfSize[1], Axis) > 0) { Vertex -= 2.0f*B_HalfSize[1]; }
+				if(Dot(B_HalfSize[2], Axis) > 0) { Vertex -= 2.0f*B_HalfSize[2]; }
+				Vertex += Entity_A->P;
+			}
+			else
+			{
+				Vertex = A_HalfSize[3];
+				if(Dot(A_HalfSize[0], Axis) < 0) { Vertex -= 2.0f*A_HalfSize[0]; }
+				if(Dot(A_HalfSize[1], Axis) < 0) { Vertex -= 2.0f*A_HalfSize[1]; }
+				if(Dot(A_HalfSize[2], Axis) < 0) { Vertex -= 2.0f*A_HalfSize[2]; }
+				Vertex += Entity_B->P;
+			}
+
+			AddContact(Contacts, Entity_A, Entity_B, 
+								 Vertex, 
+								 Axis, 
+								 SmallestOverlap,
+								 (Entity_A->Body.Restitution + Entity_B->Body.Restitution)*0.5f);
+		}
+		else
+		{
+			v3 Axis = Axes[SmallestOverlapIndex];
+			if(Dot(DeltaP, Axis) < 0) { Axis *= -1.0f; }
+
+			v3 A_EdgeEnds[2] = {A_HalfSize[3], A_HalfSize[3]};
+			v3 B_EdgeEnds[2] = {B_HalfSize[3], B_HalfSize[3]};
+			u32 A_AxisIndex = (SmallestOverlapIndex-6) / 3;
+			u32 B_AxisIndex = (SmallestOverlapIndex-6) % 3;
+			for(u32 AxisIndex = 0;
+					AxisIndex < 3;
+					AxisIndex++)
+			{
+				if(AxisIndex != A_AxisIndex &&
+					 Dot(A_HalfSize[AxisIndex], Axis) < 0) 
+				{ 
+					A_EdgeEnds[0] -= 2.0f*A_HalfSize[AxisIndex]; 
+					A_EdgeEnds[1] -= 2.0f*A_HalfSize[AxisIndex]; 
+				}
+
+				if(AxisIndex != B_AxisIndex &&
+					 Dot(B_HalfSize[AxisIndex], Axis) > 0) 
+				{ 
+					B_EdgeEnds[0] -= 2.0f*B_HalfSize[AxisIndex]; 
+					B_EdgeEnds[1] -= 2.0f*B_HalfSize[AxisIndex]; 
+				}
+			}
+			A_EdgeEnds[1] -= 2.0f*A_HalfSize[A_AxisIndex]; 
+			B_EdgeEnds[1] -= 2.0f*B_HalfSize[B_AxisIndex]; 
+
+			A_EdgeEnds[0] += Entity_A->P;
+			A_EdgeEnds[1] += Entity_A->P;
+			B_EdgeEnds[0] += Entity_B->P;
+			B_EdgeEnds[1] += Entity_B->P;
+
+#if HANDMADE_INTERNAL
+			PushRenderPieceLineSegment(RenderGroup, M44Identity(), A_EdgeEnds[0], A_EdgeEnds[1], {1,1,0});
+			PushRenderPieceLineSegment(RenderGroup, M44Identity(), B_EdgeEnds[0], B_EdgeEnds[1], {1,1,0});
+#endif
+
+			v3 ContactPoint;
+			{
+				v3 P0 = A_EdgeEnds[0];
+				v3 P1 = A_EdgeEnds[1];
+				v3 U = P1 - P0;
+				v3 Q0 = B_EdgeEnds[0];
+				v3 Q1 = B_EdgeEnds[1];
+				v3 V = Q1 - Q0;
+				v3 W0 = P0 - Q0;
+
+				f32 a = Dot(U,U);
+				f32 b = Dot(U,V);
+				f32 c = Dot(V,V);
+				f32 d = Dot(U,W0);
+				f32 e = Dot(U,W0);
+				f32 iDenom = SafeRatio0(1.0f, a*c - Square(b));
+
+				f32 sc, tc;
+				if(iDenom)
+				{
+					sc = (b*e-c*d) * iDenom;
+					tc = (a*e-b*d) * iDenom;
+				}
+				else
+				{
+					sc = 0.5f;
+					tc = 0.5f;
+				}
+				//Assert(IsWithinInclusive(sc, 0.0f, 1.0f));
+				//Assert(IsWithinInclusive(tc, 0.0f, 1.0f));
+
+				ContactPoint = ((P0 + U*sc) + (Q0 + V*tc))*0.5f;
+			}
+
+#if HANDMADE_INTERNAL
+			{
+				v3 APSize = 0.08f*v3{1,1,1};
+				m44 T = ConstructTransform(ContactPoint, QuaternionIdentity(), APSize);
+				PushRenderPieceWireFrame(RenderGroup, T, {0.7f,0,0,1});
+			}
+#endif
+
+			AddContact(Contacts, Entity_A, Entity_B, 
+								 ContactPoint, 
+								 Axis, 
+								 SmallestOverlap,
+								 (Entity_A->Body.Restitution + Entity_B->Body.Restitution)*0.5f);
+		}
 	}
 	if(A->CollisionShape != B->CollisionShape)
 	{
@@ -243,7 +369,11 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 }
 
 	internal_function contact_result
-GenerateContacts(entity* A, entity* B)
+GenerateContacts(entity* A, entity* B
+#if HANDMADE_INTERNAL
+																	,render_group* RenderGroup
+#endif
+																	)
 {
 	Assert(A->HasBody && B->HasBody);
 	contact_result Result = {};
@@ -284,7 +414,11 @@ GenerateContacts(entity* A, entity* B)
 			{
 				body_primitive* Prim_B = B->Body.Primitives + PrimitiveIndex_B;
 				GenerateContactsFromPrimitivePair(&Result, A, B, 
-																					Prim_A, Prim_B);
+																					Prim_A, Prim_B
+#if HANDMADE_INTERNAL
+																	,RenderGroup
+#endif
+																					);
 			}
 		}
 	}

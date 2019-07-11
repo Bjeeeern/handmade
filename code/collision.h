@@ -229,11 +229,21 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 				Vertex += Entity_B->P;
 			}
 
+#if HANDMADE_INTERNAL
+			{
+				v3 APSize = 0.08f*v3{1,1,1};
+				m44 T = ConstructTransform(Vertex, QuaternionIdentity(), APSize);
+				PushRenderPieceWireFrame(RenderGroup, T, {0.7f,0,0,1});
+			}
+#endif
+
+#if 0
 			AddContact(Contacts, Entity_A, Entity_B, 
 								 Vertex, 
 								 Axis, 
 								 SmallestOverlap,
 								 (Entity_A->Body.Restitution + Entity_B->Body.Restitution)*0.5f);
+#endif
 		}
 		else
 		{
@@ -300,6 +310,7 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 				}
 				else
 				{
+					//TODO(bjorn): Deal with parallel lines in a smarter way.
 					sc = 0.5f;
 					tc = 0.5f;
 				}
@@ -317,11 +328,13 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 			}
 #endif
 
+#if 0
 			AddContact(Contacts, Entity_A, Entity_B, 
 								 ContactPoint, 
 								 Axis, 
 								 SmallestOverlap,
 								 (Entity_A->Body.Restitution + Entity_B->Body.Restitution)*0.5f);
+#endif
 		}
 	}
 	if(A->CollisionShape != B->CollisionShape)
@@ -371,9 +384,9 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 	internal_function contact_result
 GenerateContacts(entity* A, entity* B
 #if HANDMADE_INTERNAL
-																	,render_group* RenderGroup
+								 ,render_group* RenderGroup
 #endif
-																	)
+								)
 {
 	Assert(A->HasBody && B->HasBody);
 	contact_result Result = {};
@@ -416,7 +429,7 @@ GenerateContacts(entity* A, entity* B
 				GenerateContactsFromPrimitivePair(&Result, A, B, 
 																					Prim_A, Prim_B
 #if HANDMADE_INTERNAL
-																	,RenderGroup
+																					,RenderGroup
 #endif
 																					);
 			}

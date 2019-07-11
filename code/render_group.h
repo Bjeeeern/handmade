@@ -24,6 +24,10 @@ struct render_piece
 
 	v3 A;
 	v3 B;
+
+#if HANDMADE_INTERNAL
+	b32 DEBUG_IsDebug;
+#endif
 };
 
 struct render_group
@@ -79,6 +83,9 @@ PushRenderPieceWireFrame(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.
 	render_piece* RenderPiece = PushRenderPieceRaw(RenderGroup, T);
 	RenderPiece->Type = RenderPieceType_DimCube;
 	RenderPiece->Color = Color;
+#if HANDMADE_INTERNAL
+	RenderPiece->DEBUG_IsDebug = true;
+#endif
 }
 internal_function void
 PushRenderPieceWireFrame(render_group* RenderGroup, rectangle3 Rect, v4 Color = {0,0,1,1})
@@ -97,6 +104,9 @@ PushRenderPieceLineSegment(render_group* RenderGroup, m44 T, v3 A, v3 B, v4 Colo
 	RenderPiece->A = A;
 	RenderPiece->B = B;
 	RenderPiece->Color = Color;
+#if HANDMADE_INTERNAL
+	RenderPiece->DEBUG_IsDebug = true;
+#endif
 }
 internal_function void
 PushRenderPieceSphere(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.8f,1})
@@ -104,6 +114,9 @@ PushRenderPieceSphere(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.8f,
 	render_piece* RenderPiece = PushRenderPieceRaw(RenderGroup, T);
 	RenderPiece->Type = RenderPieceType_Sphere;
 	RenderPiece->Color = Color;
+#if HANDMADE_INTERNAL
+	RenderPiece->DEBUG_IsDebug = true;
+#endif
 }
 
 struct transform_result
@@ -114,12 +127,12 @@ struct transform_result
 };
 
 internal_function transform_result
-TransformPoint(f32 dp, m33 RotMat, v3 P)
+TransformPoint(f32 dp, m44 CamTrans, v3 P)
 {
 	transform_result Result = {};
 
 	//TODO(bjorn): "de" should probably be grouped together with the other data defining the camera.
-	v3 Pos = (RotMat * P);
+	v3 Pos = (CamTrans * P);
 	f32 de = 20.0f;
 	f32 s = -Pos.Z + (de+dp);
 

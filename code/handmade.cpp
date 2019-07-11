@@ -51,6 +51,7 @@ struct game_state
 	memory_arena WorldArena;
 	world_map* WorldMap;
 
+	memory_arena FrameBoundedTransientArena;
 	memory_arena TransientArena;
 
 	//TODO(bjorn): Should we allow split-screen?
@@ -71,6 +72,13 @@ struct game_state
 #if HANDMADE_INTERNAL
 	b32 DEBUG_VisualiseCollisionBox;
 	world_map_position DEBUG_TestLocations[10];
+	world_map_position DEBUG_MainCameraOffsetDuringPause;
+
+	temporary_memory DEBUG_RenderGroupTempMem;
+	render_group* DEBUG_OldRenderGroup;
+
+	u32 DEBUG_PauseStep;
+	u32 DEBUG_SkipXSteps;
 #endif
 
 	f32 GroundStaticFriction;
@@ -154,8 +162,6 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 
 	InitializeArena(&GameState->WorldArena, Memory->PermanentStorageSize - sizeof(game_state),
 									(u8*)Memory->PermanentStorage + sizeof(game_state));
-	InitializeArena(&GameState->TransientArena, Memory->TransientStorageSize, 
-									(u8*)Memory->TransientStorage);
 
 	GameState->WorldMap = PushStruct(&GameState->WorldArena, world_map);
 
@@ -164,10 +170,12 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	WorldMap->TileSideInMeters = 1.4f;
 	WorldMap->ChunkSideInMeters = WorldMap->TileSideInMeters * TILES_PER_CHUNK;
 
-	InitializeArena(&GameState->TransientArena, Memory->TransientStorageSize, 
+	InitializeArena(&GameState->FrameBoundedTransientArena, Memory->TransientStorageSize>>1, 
 									(u8*)Memory->TransientStorage);
+	InitializeArena(&GameState->TransientArena, Memory->TransientStorageSize>>1, 
+									(u8*)Memory->TransientStorage + (Memory->TransientStorageSize>>1));
 
-	temporary_memory TempMem = BeginTemporaryMemory(&GameState->TransientArena);
+	temporary_memory TempMem = BeginTemporaryMemory(&GameState->FrameBoundedTransientArena);
 
 	u32 RoomWidthInTiles = 17;
 	u32 RoomHeightInTiles = 9;
@@ -175,6 +183,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	v3s RoomOrigin = (v3s)RoundV2ToV2S((v2)v2u{RoomWidthInTiles, RoomHeightInTiles} / 2.0f);
 	world_map_position RoomOriginWorldPos = GetChunkPosFromAbsTile(WorldMap, RoomOrigin);
 #if HANDMADE_INTERNAL
+	GameState->DEBUG_VisualiseCollisionBox = true;
 	for(s32 Index = 0;
 			Index < 10;
 			Index++)
@@ -188,9 +197,9 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 																								v3{2, 2, 2} * WorldMap->ChunkSideInMeters);
 
 	{
-		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, &GameState->TransientArena,
-																		 WorldMap, RoomOriginWorldPos, GameState->CameraUpdateBounds, 
-																		 0);
+		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, 
+																		 &GameState->FrameBoundedTransientArena, WorldMap,
+																		 RoomOriginWorldPos, GameState->CameraUpdateBounds, 0);
 
 		entity* MainCamera = AddCamera(SimRegion, v3{0, 0, 0});
 		//TODO Is there a less cheesy (and safer!) way to do this assignment of the
@@ -278,8 +287,9 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 
 #if HANDMADE_INTERNAL
 	{ //NOTE(bjorn): Test location 1 setup
-		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, &GameState->TransientArena,
-																		 WorldMap, GameState->DEBUG_TestLocations[1], 
+		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, 
+																		 &GameState->FrameBoundedTransientArena, WorldMap, 
+																		 GameState->DEBUG_TestLocations[1], 
 																		 GameState->CameraUpdateBounds, 0);
 
 		AddFloor(SimRegion, v3{0, 0, -0.5f} * WorldMap->TileSideInMeters);
@@ -300,8 +310,9 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	}
 
 	{ //NOTE(bjorn): Test location 2 setup
-		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, &GameState->TransientArena,
-																		 WorldMap, GameState->DEBUG_TestLocations[2], 
+		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, 
+																		 &GameState->FrameBoundedTransientArena, WorldMap, 
+																		 GameState->DEBUG_TestLocations[2], 
 																		 GameState->CameraUpdateBounds, 0);
 
 		AddFloor(SimRegion, v3{0, 0, -0.5f} * WorldMap->TileSideInMeters);
@@ -347,8 +358,9 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	}
 
 	{ //NOTE(bjorn): Test location 3 setup
-		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, &GameState->TransientArena,
-																		 WorldMap, GameState->DEBUG_TestLocations[3], 
+		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, 
+																		 &GameState->FrameBoundedTransientArena, WorldMap, 
+																		 GameState->DEBUG_TestLocations[3], 
 																		 GameState->CameraUpdateBounds, 0);
 
 		AddFloor(SimRegion, v3{0, 0, -0.5f} * WorldMap->TileSideInMeters);
@@ -383,8 +395,9 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	}
 
 	{ //NOTE(bjorn): Test location 4 setup
-		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, &GameState->TransientArena,
-																		 WorldMap, GameState->DEBUG_TestLocations[4], 
+		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, 
+																		 &GameState->FrameBoundedTransientArena, WorldMap, 
+																		 GameState->DEBUG_TestLocations[4], 
 																		 GameState->CameraUpdateBounds, 0);
 
 		AddFloor(SimRegion, v3{0, 0, -0.5f});
@@ -399,8 +412,9 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	}
 
 	{ //NOTE(bjorn): Test location 5 setup
-		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, &GameState->TransientArena,
-																		 WorldMap, GameState->DEBUG_TestLocations[5], 
+		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, 
+																		 &GameState->FrameBoundedTransientArena, WorldMap, 
+																		 GameState->DEBUG_TestLocations[5], 
 																		 GameState->CameraUpdateBounds, 0);
 
 		AddFloor(SimRegion, v3{0, 0, -2.0f});
@@ -410,7 +424,10 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 		A->dO = {0,pi32,pi32};
 #endif
 		entity* D = AddParticle(SimRegion, v3{ 0, 0, 8}, 20.0f, v3{1.0f, 1.0f, 1.0f});
-		D->dO = {0,pi32,pi32};
+		D->O = 
+			AngleAxisToQuaternion(tau32*0.05f, {0,1,0}) * AngleAxisToQuaternion(tau32*0.125f, {1,0,0});
+
+		//D->dO = {0,pi32,pi32};
 #if 0
 		AddSphereParticle(SimRegion, v3{ 1.1f, 0, 0}, 20.0f, 0.8f);
 		AddSphereParticle(SimRegion, v3{-1.1f, 0, 0}, 20.0f, 0.8f);
@@ -418,14 +435,12 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 		AddSphereParticle(SimRegion, v3{ 0, -1.0f, 6.0}, 20.0f, 0.8f);
 #endif
 
-		entity* B = AddParticle(SimRegion, v3{-1.2f,0,3.0f}, 0.0f, v3{3.0f,6.0f,0.2f});
+		entity* B = AddParticle(SimRegion, v3{-1.8f,0,3.0f}, 0.0f, v3{3.0f,6.0f,0.2f});
 		B->Rotates = false;
-		B->O = AngleAxisToQuaternion(tau32*0.125f, {0,1,0});
-#if 0
-		entity* C = AddParticle(SimRegion, v3{1.2f,0,6.0f}, 0.0f, v3{3.0f,6.0f,0.2f});
-		C->Rotates = false;
-		C->O = AngleAxisToQuaternion(tau32*0.125f, {0,-1,0});
-#endif
+		//B->O = AngleAxisToQuaternion(tau32*0.125f, {0,1,0});
+		//entity* C = AddParticle(SimRegion, v3{1.2f,0,6.0f}, 0.0f, v3{3.0f,6.0f,0.2f});
+		//C->Rotates = false;
+		//C->O = AngleAxisToQuaternion(tau32*0.125f, {0,-1,0});
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}
@@ -436,12 +451,12 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 
 internal_function void
 TransformLineToScreenSpaceAndRender(game_offscreen_buffer* Buffer, render_piece* RenderPiece,
-																		f32 CamDist, m33 RotMat, v3 V0, v3 V1,
+																		f32 CamDist, m44 CamTrans, v3 V0, v3 V1,
 																		v2 ScreenCenter, m22 GameSpaceToScreenSpace,
 																		v3 RGB)
 {
-	transform_result Tran0 = TransformPoint(CamDist, RotMat, V0);
-	transform_result Tran1 = TransformPoint(CamDist, RotMat, V1);
+	transform_result Tran0 = TransformPoint(CamDist, CamTrans, V0);
+	transform_result Tran1 = TransformPoint(CamDist, CamTrans, V1);
 
 	if(Tran0.Valid && Tran1.Valid)
 	{
@@ -494,9 +509,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	memory_arena* WorldArena = &GameState->WorldArena;
 	world_map* WorldMap = GameState->WorldMap;
 	stored_entities* Entities = &GameState->Entities;
+	memory_arena* FrameBoundedTransientArena = &GameState->FrameBoundedTransientArena;
 	memory_arena* TransientArena = &GameState->TransientArena;
 
-	temporary_memory TempMem = BeginTemporaryMemory(TransientArena);
+	temporary_memory TempMem = BeginTemporaryMemory(FrameBoundedTransientArena);
 
 	//
 	//NOTE(bjorn): General input logic unrelated to individual entities.
@@ -557,10 +573,26 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				if(GameState->SimulationSpeedModifier)
 				{
 					GameState->SimulationSpeedModifier = 0;
+
+#if HANDMADE_INTERNAL
+					//NOTE(bjorn): I am playing with freed memory here!!!
+					render_group* OldRenderGroup = GameState->DEBUG_OldRenderGroup;
+
+					GameState->DEBUG_RenderGroupTempMem = BeginTemporaryMemory(TransientArena);
+					GameState->DEBUG_OldRenderGroup = AllocateRenderGroup(TransientArena);
+
+					*GameState->DEBUG_OldRenderGroup = *OldRenderGroup;
+					GameState->DEBUG_PauseStep = 1;
+#endif
 				}
 				else
 				{
 					GameState->SimulationSpeedModifier = 1;
+
+#if HANDMADE_INTERNAL
+					EndTemporaryMemory(GameState->DEBUG_RenderGroupTempMem);
+					CheckMemoryArena(TransientArena);
+#endif
 				}
 			}
 #if HANDMADE_INTERNAL
@@ -569,10 +601,23 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				GameState->DEBUG_VisualiseCollisionBox = !GameState->DEBUG_VisualiseCollisionBox;
 			}
 
-			if(Clicked(Keyboard, O) && 
-				 GameState->SimulationSpeedModifier != 1.0f)
+			if((Clicked(Keyboard, O) || (!Held(Keyboard, O) && GameState->DEBUG_SkipXSteps)) && 
+				 GameState->SimulationSpeedModifier == 0.0f)
 			{
 				DEBUG_UpdateLoopAdvance = true;
+
+				EndTemporaryMemory(GameState->DEBUG_RenderGroupTempMem);
+				CheckMemoryArena(TransientArena);
+				GameState->DEBUG_RenderGroupTempMem = BeginTemporaryMemory(TransientArena);
+				GameState->DEBUG_OldRenderGroup = AllocateRenderGroup(TransientArena);
+				GameState->DEBUG_PauseStep = Modulate(GameState->DEBUG_PauseStep+1, 1, 9);
+
+				GameState->DEBUG_SkipXSteps = 
+					GameState->DEBUG_SkipXSteps ? GameState->DEBUG_SkipXSteps-1 : 0;
+				if(Held(Keyboard, Shift))
+				{
+					GameState->DEBUG_SkipXSteps = 8;
+				}
 			}
 
 			for(s32 NumKeyIndex = 0;
@@ -585,7 +630,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						Clicked(Keyboard, Numbers[NumKeyIndex])))
 				{
 					NumKeyIndex = DEBUG_SwitchToLocation;
-					sim_region* SimRegion = BeginSim(Input, Entities, TransientArena, WorldMap, 
+					sim_region* SimRegion = BeginSim(Input, Entities, FrameBoundedTransientArena, WorldMap, 
 																					 GameState->DEBUG_TestLocations[NumKeyIndex], 
 																					 GameState->CameraUpdateBounds, SecondsToUpdate);
 
@@ -629,6 +674,24 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		}
 	}
 
+	render_group* RenderGroup;
+#if HANDMADE_INTERNAL
+	if(GameState->SimulationSpeedModifier == 0)
+	{
+		RenderGroup = GameState->DEBUG_OldRenderGroup;
+	}
+	else
+#endif
+	{
+		RenderGroup = AllocateRenderGroup(FrameBoundedTransientArena);
+#if HANDMADE_INTERNAL
+		GameState->DEBUG_OldRenderGroup = RenderGroup;
+		stored_entity* StoredMainCamera = 
+			GetStoredEntityByIndex(Entities, GameState->MainCameraStorageIndex);
+		GameState->DEBUG_MainCameraOffsetDuringPause = StoredMainCamera->Sim.WorldP;
+#endif
+	}
+
 	//
 	// NOTE(bjorn): Moving and Rendering
 	//
@@ -650,14 +713,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 	sim_region* SimRegion = 0;
 	{
-		u64 MainCamIndex = GameState->MainCameraStorageIndex;
-		stored_entity* StoredMainCamera = GetStoredEntityByIndex(Entities, MainCamIndex);
-		SimRegion = BeginSim(Input, Entities, TransientArena, WorldMap, 
+		stored_entity* StoredMainCamera = 
+			GetStoredEntityByIndex(Entities, GameState->MainCameraStorageIndex);
+		SimRegion = BeginSim(Input, Entities, FrameBoundedTransientArena, WorldMap, 
 												 StoredMainCamera->Sim.WorldP, GameState->CameraUpdateBounds, 
 												 SecondsToUpdate);
 	}
-
-	render_group* RenderGroup = AllocateRenderGroup(TransientArena);
+	Assert(SimRegion);
 
 	PushRenderPieceWireFrame(RenderGroup, SimRegion->UpdateBounds, v4{0,1,1,1});
 	PushRenderPieceWireFrame(RenderGroup, SimRegion->OuterBounds, v4{1,1,0,1});
@@ -667,12 +729,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//TODO(bjorn): Add some asserts and some limits to velocities related to the
 	//delta time so that tunneling becomes virtually impossible.
 	u32 Steps = 8; 
-	//NOTE(bjorn): Guarantees at least one iteration to find the main camera entity pointer.
-	Assert(Steps > 1);
 
 	entity* MainCamera = AddEntityToSimRegionManually(Input, Entities, SimRegion, 
 																										GameState->MainCameraStorageIndex);
 	Assert(MainCamera);
+#if HANDMADE_INTERNAL
+	b32 DEBUG_IsPaused = GameState->SimulationSpeedModifier == 0;
+#endif
 
 	u32 LastStep = Steps;
 	for(u32 Step = 1;
@@ -701,6 +764,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				dT *= GameState->SimulationSpeedModifier;
 #endif
 			}
+#if HANDMADE_INTERNAL
+			u32 DEBUG_RenderGroupCount = RenderGroup->PieceCount;
+
+			if(!CameraOrAssociates && 
+				 DEBUG_IsPaused &&
+				 GameState->DEBUG_PauseStep != Step) { continue; }
+#endif
+
 			//
 			// NOTE(bjorn): Moving / Collision / Game Logic
 			//
@@ -736,7 +807,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						{
 							Contacts = GenerateContacts(Entity, OtherEntity
 #if HANDMADE_INTERNAL
-																	,RenderGroup
+																					,RenderGroup
 #endif
 																					);
 						}
@@ -1033,7 +1104,15 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			//
 			// NOTE(bjorn): Push to render buffer
 			//
+#if HANDMADE_INTERNAL
+			if((!DEBUG_IsPaused && 
+					Step == LastStep) ||
+				 (DEBUG_IsPaused &&
+					GameState->DEBUG_PauseStep == Step &&
+					DEBUG_UpdateLoopAdvance))
+#elif
 			if(Step == LastStep)
+#endif
 			{
 				m44 T = Entity->Tran; 
 
@@ -1126,7 +1205,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				}
 
 #if HANDMADE_INTERNAL
-				if(GameState->DEBUG_VisualiseCollisionBox)
+				//TODO(bjorn): Do I need to always push these just to enable toggling when paused?
+				//if(GameState->DEBUG_VisualiseCollisionBox)
 				{
 					for(u32 PrimitiveIndex = 0;
 							PrimitiveIndex < Entity->Body.PrimitiveCount;
@@ -1214,6 +1294,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				}
 #endif
 			}
+#if HANDMADE_INTERNAL
+			else
+			{
+				RenderGroup->PieceCount = DEBUG_RenderGroupCount;
+			}
+#endif
 		}
 	}
 	EndSim(Input, Entities, WorldArena, SimRegion);
@@ -1225,8 +1311,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		//TODO(bjorn): Rewrite this to use the entity orientation later when I
 		//rewrite/extend the rendering system.
 		Assert(MainCamera);
+		v3 Offset = GetWorldMapPosDifference(WorldMap, 
+																				 GameState->DEBUG_MainCameraOffsetDuringPause, 
+																				 MainCamera->WorldP);
 		m33 XRot = XRotationMatrix(MainCamera->CamRot.Y);
 		m33 RotMat = AxisRotationMatrix(MainCamera->CamRot.X, GetMatCol(XRot, 2)) * XRot;
+		m44 CamTrans = ConstructTransform(RotMat*Offset, RotMat);
 
 		v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
 
@@ -1239,10 +1329,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				RenderPieceIndex < RenderGroup->PieceCount;
 				RenderPiece++, RenderPieceIndex++)
 		{
+#if HANDMADE_INTERNAL
+			if(RenderPiece->DEBUG_IsDebug && !GameState->DEBUG_VisualiseCollisionBox) { continue; }
+#endif
+
 			if(RenderPiece->Type == RenderPieceType_Quad)
 			{
 				v3 P = RenderPiece->Tran * v3{0,0,0};
-				transform_result Tran = TransformPoint(MainCamera->CamZoom, RotMat, P);
+				transform_result Tran = TransformPoint(MainCamera->CamZoom, CamTrans, P);
 				if(!Tran.Valid) { continue; }
 
 				f32 f = Tran.f;
@@ -1278,7 +1372,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					v3 V0 = AABB.Verts[(VertIndex+0)%4];
 					v3 V1 = AABB.Verts[(VertIndex+1)%4];
 					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
-																							MainCamera->CamZoom, RotMat, V0, V1,
+																							MainCamera->CamZoom, CamTrans, V0, V1,
 																							ScreenCenter, GameSpaceToScreenSpace, 
 																							RenderPiece->Color.RGB);
 				}
@@ -1289,7 +1383,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					v3 V0 = AABB.Verts[(VertIndex+0)%4 + 4];
 					v3 V1 = AABB.Verts[(VertIndex+1)%4 + 4];
 					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
-																							MainCamera->CamZoom, RotMat, V0, V1,
+																							MainCamera->CamZoom, CamTrans, V0, V1,
 																							ScreenCenter, GameSpaceToScreenSpace, 
 																							RenderPiece->Color.RGB);
 				}
@@ -1300,7 +1394,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					v3 V0 = AABB.Verts[VertIndex];
 					v3 V1 = AABB.Verts[VertIndex + 4];
 					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
-																							MainCamera->CamZoom, RotMat, V0, V1,
+																							MainCamera->CamZoom, CamTrans, V0, V1,
 																							ScreenCenter, GameSpaceToScreenSpace, 
 																							RenderPiece->Color.RGB);
 				}
@@ -1311,7 +1405,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				v3 V1 = RenderPiece->Tran * RenderPiece->B;
 
 				TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
-																						MainCamera->CamZoom, RotMat, V0, V1,
+																						MainCamera->CamZoom, CamTrans, V0, V1,
 																						ScreenCenter, GameSpaceToScreenSpace, 
 																						RenderPiece->Color.RGB);
 
@@ -1349,7 +1443,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					V0 = Verts[(VertIndex+0)%4];
 					V1 = Verts[(VertIndex+1)%4];
 					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
-																							MainCamera->CamZoom, RotMat, V0, V1,
+																							MainCamera->CamZoom, CamTrans, V0, V1,
 																							ScreenCenter, GameSpaceToScreenSpace, 
 																							RenderPiece->Color.RGB);
 				}
@@ -1360,7 +1454,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					V0 = Verts[VertIndex];
 					V1 = Verts[4];
 					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
-																							MainCamera->CamZoom, RotMat, V0, V1,
+																							MainCamera->CamZoom, CamTrans, V0, V1,
 																							ScreenCenter, GameSpaceToScreenSpace, 
 																							RenderPiece->Color.RGB);
 				}
@@ -1370,7 +1464,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				v3 P0 = RenderPiece->Tran * v3{0,0,0};
 				v3 P1 = RenderPiece->Tran * v3{0.5f,0,0};
 
-				transform_result Tran0 = TransformPoint(MainCamera->CamZoom, RotMat, P0);
+				transform_result Tran0 = TransformPoint(MainCamera->CamZoom, CamTrans, P0);
 				if(!Tran0.Valid) { continue; }
 
 				f32 PixR = PixelsPerMeter * Magnitude(P1 - P0) * Tran0.f;
@@ -1382,7 +1476,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	}
 
 	EndTemporaryMemory(TempMem);
-	CheckMemoryArena(TransientArena);
+	CheckMemoryArena(FrameBoundedTransientArena);
 }
 
 	internal_function void

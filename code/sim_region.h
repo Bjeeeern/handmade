@@ -267,7 +267,7 @@ SetAddedSimEntityFlagsAndState(sim_region* SimRegion, entity* Entity)
 	if(Entity->IsSpacial)
 	{
 		Entity->P = GetWorldMapPosDifference(SimRegion->WorldMap, Entity->WorldP, SimRegion->Origin);
-		UpdateEntityDerivedMembers(Entity);
+		UpdateEntityDerivedMembers(Entity, SimRegion->OuterBounds);
 	}
 
 	Entity->EntityPairUpdateGenerationIndex = 0;
@@ -316,7 +316,7 @@ BeginSim(game_input* Input, stored_entities* StoredEntities, memory_arena* SimAr
 
 	//TODO: Tradeoff with not having huge single entites. But Huge entities
 	//should maybe be made-up out of smaller constituents anyways.
-	Result->MaxEntityRadius = 30.0f;
+	Result->MaxEntityRadius = 40.0f;
 	Result->MaxEntityVelocity = 100.0f;
 	f32 SafetyUpdateMargin = Result->MaxEntityRadius + Result->MaxEntityVelocity * dT;
 

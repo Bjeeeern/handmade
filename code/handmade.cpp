@@ -15,14 +15,15 @@
 // on how I want to do the collision this migt be a nice tool.
 
 // QUICK TODO
-//
-// * Trigger-only collision bodies
-// * Add hunting along Z-axis too.
+// BUG The first location floor and some random walls are not getting unloaded
+//		 because of cascading trigger references.
+// BUG Hunting is super shaky.
 
 // TODO
+// * Trigger-only collision bodies
 // & Clip lines that are drawn behind the screen instead of not rendering them at all.
 // * Test with object on mouse.
-// * Make it so that I can visually step through a frame of collision collision by collision.
+// * Make it so that I can visually step through a frame of collision, collision by collision.
 // * generate world as you drive
 // * car engine that is settable by mouse click and drag
 // * ai cars
@@ -196,7 +197,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	GameState->CameraUpdateBounds = RectCenterDim(v3{0, 0, 0}, 
 																								v3{2, 2, 2} * WorldMap->ChunkSideInMeters);
 
-	{
+	{ //NOTE(bjorn): Test location 0 setup
 		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, 
 																		 &GameState->FrameBoundedTransientArena, WorldMap,
 																		 RoomOriginWorldPos, GameState->CameraUpdateBounds, 0);
@@ -727,6 +728,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	Assert(SimRegion);
 
 #if HANDMADE_INTERNAL
+	//DEBUG_VisualizeCollisionGrid(RenderGroup, SimRegion->OuterBounds);
 	b32 DEBUG_IsPaused = GameState->SimulationSpeedModifier == 0;
 
 	if(!DEBUG_IsPaused ||
@@ -757,7 +759,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				EntityIndex < SimRegion->EntityCount;
 				EntityIndex++, Entity++)
 		{
-			Entity->EntityPairUpdateGenerationIndex = Step;
+			if(Entity->Updates) { Entity->EntityPairUpdateGenerationIndex = Step; }
 			//TODO Do non-spacial entities ever do logic/Render? Do they affect other entities then? 
 			if(!Entity->IsSpacial) { continue; }
 
@@ -810,6 +812,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						if(OtherEntity->EntityPairUpdateGenerationIndex == Step) { continue; }
 						if(!OtherEntity->IsSpacial) { continue; }
 						if(OtherEntity->Body.PrimitiveCount <= 1) { continue; }
+						if(!CollisionFilterCheck(Entity, OtherEntity)) 
+						{ 
+							//TODO(bjorn): Actually test if the filter did speed up anything.
+							continue; 
+						}
 
 						contact_result Contacts = {};
 						if(Entity->HasBody &&
@@ -884,8 +891,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							}
 
 							//TODO(bjorn): Refactor into a function that updates entity derived state.
-							UpdateEntityDerivedMembers(Entity);
-							UpdateEntityDerivedMembers(OtherEntity);
+							UpdateEntityDerivedMembers(Entity, SimRegion->OuterBounds);
+							UpdateEntityDerivedMembers(OtherEntity, SimRegion->OuterBounds);
 						} 
 #if HANDMADE_INTERNAL
 						if(Inside &&
@@ -912,6 +919,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 						//TODO IMPORTANT(bjorn): Both ForceFieldLogic and FloorLogic needs to be moved
 						//to a trigger handling and a collision handling system respectively. 
+						//NOTE(bjorn): CollisionFiltering makes this call now non-global.
 						ForceFieldLogic(Entity, OtherEntity);
 						//FloorLogic(Entity, OtherEntity);
 
@@ -1022,7 +1030,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 						//TODO(bjorn): Use the relevant body primitive scale instead.
 						v3 P = (Sword->IsSpacial ?  
-										Sword->P : (Entity->P + ArrowKeysDirection * Sword->Body.S.Y));
+										Sword->P : (Entity->P + ArrowKeysDirection * Sword->Body.Primitives[1].S.Y));
 
 						MakeEntitySpacial(Sword, P, ArrowKeysDirection * 1.0f, 
 															AngleAxisToQuaternion(ArrowKeysDirection, Normalize(v3{0,0.8f,-1})),
@@ -1085,7 +1093,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				{
 					Assert(LengthSquared(Entity->dP) <= Square(SimRegion->MaxEntityVelocity));
 
-					f32 S1 = LengthSquared(Entity->Body.S * 0.5f);
+					f32 S1 = Square(Entity->Body.Primitives[0].S.X * 0.5f * Entity->Body.S);
 					f32 S2 = Square(SimRegion->MaxEntityRadius);
 					Assert(S1 <= S2);
 				}
@@ -1112,7 +1120,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				}
 			}
 			
-			UpdateEntityDerivedMembers(Entity);
+			UpdateEntityDerivedMembers(Entity, SimRegion->OuterBounds);
 
 			//
 			// NOTE(bjorn): Push to render buffer
@@ -1221,6 +1229,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				//TODO(bjorn): Do I need to always push these just to enable toggling when paused?
 				//if(GameState->DEBUG_VisualiseCollisionBox)
 				{
+					if(Entity->IsFloor)
+					{
+						DEBUG_VisualizeCollisionTag(RenderGroup, SimRegion->OuterBounds, Entity);
+					}
+
 					for(u32 PrimitiveIndex = 0;
 							PrimitiveIndex < Entity->Body.PrimitiveCount;
 							PrimitiveIndex++)
@@ -1230,7 +1243,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						{
 							v4 Color = {0,0,0.8f,0.05f};
 
-							if(PrimitiveIndex == 0)
+							if(PrimitiveIndex == 0 &&
+								 Entity->StorageIndex != 2)
 							{
 								if(!Entity->IsCamera &&
 									 !Entity->IsFloor &&

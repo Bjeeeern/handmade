@@ -315,11 +315,7 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 				f32 Epsilon = 0.001f;
 				//Assert(IsWithinInclusive(sc, -Epsilon, 1.0f + Epsilon));
 				//Assert(IsWithinInclusive(tc, -Epsilon, 1.0f + Epsilon));
-				//TODO IMPORTANT(bjorn): This feels like a dumb bruteforce solution
-				//that might come back and bite me in future debugging. But since this
-				//code is temporary anyway and since the physics seems to behave stably
-				//on aggregate frames with me just clamping the variables I will leave
-				//this in for now.
+				//TODO IMPORTANT(bjorn): This feels like a dumb bruteforce solution that might come back and bite me in future debugging. But since this code is temporary anyway and since the physics seems to behave stably on aggregate frames with me just clamping the variables I will leave this in for now.
 				sc = Clamp(0.0f, sc, 1.0f);
 				tc = Clamp(0.0f, tc, 1.0f);
 

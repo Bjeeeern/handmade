@@ -122,7 +122,7 @@ struct physical_body
 	m33 iI; //NOTE(bjorn): Inverse inertia tensor
 	f32 Restitution;
 
-	v3 S;
+	f32 S;
 };
 
 struct entity;
@@ -190,8 +190,14 @@ struct entity
 	v2 CamRot;
 	f32 CamZoom;
 
-	//TODO(bjorn): Make this settable by an aggregate function
 	physical_body Body;
+#define COLLISION_TAG_X 8
+#define COLLISION_TAG_Y 8
+#define COLLISION_TAG_Z 8
+#define COLLISION_TAG_BITS_PER_VARIABLE (sizeof(u64) * 8)
+#define COLLISION_TAG_COUNT ((COLLISION_TAG_X*COLLISION_TAG_Y*COLLISION_TAG_Z)/ \
+														 COLLISION_TAG_BITS_PER_VARIABLE)
+	u64 CollisionTag[COLLISION_TAG_COUNT];
 
 	move_spec MoveSpec;
 
@@ -266,23 +272,172 @@ struct entity
 	f32 ForceFieldStrenght;
 };
 
+#if HANDMADE_INTERNAL
 internal_function void
-UpdateEntityDerivedMembers(entity* Entity)
+DEBUG_VisualizeCollisionTag(render_group* RenderGroup, rectangle3 CollisionRegion, entity* Entity)
 {
-	if(Entity->HasBody && Entity->Body.S != v3{1,1,1})
+	Assert(COLLISION_TAG_X == COLLISION_TAG_Y && COLLISION_TAG_Y == COLLISION_TAG_Z);
+	Assert(COLLISION_TAG_COUNT == 8);
+	v3 Dim = (CollisionRegion.Max - CollisionRegion.Min) * (1.0f/8.0f);
+	v3 HalfDim = Dim * 0.5f;
+
+	for(u32 Z = 0;
+			Z < COLLISION_TAG_Z;
+			Z++)
 	{
-		Entity->Tran = ConstructTransform(Entity->P, Entity->O, Entity->Body.S);
-		Entity->TranUnscaled = ConstructTransform(Entity->P, Entity->O);
-		Entity->iTran = InverseTransform(Entity->Tran);
-		Entity->iTranUnscaled = InverseUnscaledTransform(Entity->TranUnscaled);
+		for(u32 Y = 0;
+				Y < COLLISION_TAG_Y;
+				Y++)
+		{
+			for(u32 X = 0;
+					X < COLLISION_TAG_X;
+					X++)
+			{
+				u64 XYMask = (1ull << (Y*COLLISION_TAG_X + X));
+				if(Entity->CollisionTag[Z] & XYMask)
+				{
+					v3 Center = (CollisionRegion.Min + HalfDim + 
+											 (v3{Dim.X * X,
+													 Dim.Y * Y,
+													 Dim.Z * Z}));
+
+					m44 Tran = ConstructTransform(Center, QuaternionIdentity(), Dim);
+					PushRenderPieceWireFrame(RenderGroup, Tran, {0,0,1,1});
+				}
+			}
+		}
 	}
-	else
+}
+
+internal_function void
+DEBUG_VisualizeCollisionGrid(render_group* RenderGroup, rectangle3 CollisionRegion)
+{
+	Assert(COLLISION_TAG_X == COLLISION_TAG_Y && COLLISION_TAG_Y == COLLISION_TAG_Z);
+	Assert(COLLISION_TAG_COUNT == 8);
+	v3 Dim = (CollisionRegion.Max - CollisionRegion.Min) * (1.0f/8.0f);
+	v3 HalfDim = Dim * 0.5f;
+
+	for(u32 Z = 0;
+			Z < COLLISION_TAG_Z;
+			Z++)
 	{
-		Entity->Tran = ConstructTransform(Entity->P, Entity->O);
-		Entity->TranUnscaled = Entity->Tran;
-		Entity->iTran = InverseUnscaledTransform(Entity->Tran);
-		Entity->iTranUnscaled = Entity->iTran;
+		for(u32 Y = 0;
+				Y < COLLISION_TAG_Y;
+				Y++)
+		{
+			for(u32 X = 0;
+					X < COLLISION_TAG_X;
+					X++)
+			{
+				v3 Center = (CollisionRegion.Min + HalfDim + 
+										 (v3{Dim.X * X,
+											   Dim.Y * Y,
+											   Dim.Z * Z}));
+
+				m44 Tran = ConstructTransform(Center, QuaternionIdentity(), Dim);
+				PushRenderPieceWireFrame(RenderGroup, Tran, {0,1,0,1});
+			}
+		}
 	}
+}
+#endif
+
+internal_function void
+UpdateEntityDerivedMembers(entity* Entity, rectangle3 CollisionRegion)
+{
+	if(Entity->IsSpacial)
+	{
+		if(Entity->HasBody && Entity->Body.S != 1)
+		{
+			Entity->Tran = ConstructTransform(Entity->P, Entity->O, Entity->Body.S);
+			Entity->TranUnscaled = ConstructTransform(Entity->P, Entity->O);
+			Entity->iTran = InverseTransform(Entity->Tran);
+			Entity->iTranUnscaled = InverseUnscaledTransform(Entity->TranUnscaled);
+		}
+		else
+		{
+			Entity->Tran = ConstructTransform(Entity->P, Entity->O);
+			Entity->TranUnscaled = Entity->Tran;
+			Entity->iTran = InverseUnscaledTransform(Entity->Tran);
+			Entity->iTranUnscaled = Entity->iTran;
+		}
+
+		if(Entity->HasBody)
+		{
+			//TODO(bjorn): Maybe use AABB instead of bounding sphere? Or in addition.
+			//TODO(bjorn): Big objects like the big floor is checking way to many
+			//boxes even outside of their bounding sphere.
+			//TODO(bjorn):This code does not work for offset bounding sphere.
+			Assert(Entity->Body.Primitives[0].P == v3{0,0,0});
+
+			v3 Dim = (CollisionRegion.Max - CollisionRegion.Min) * (1.0f/8.0f);
+			v3 HalfDim = Dim * 0.5f;
+			v3 R = Entity->Body.S * Entity->Body.Primitives[0].S;
+
+			//TODO(bjorn): Its not sticking to the size of the entity perfectly. This
+			//code might need some revision and debugging.
+			v3s Min = (RoundV3ToV3S(HadamardDiv(Entity->P - R - HalfDim, Dim)) + 
+								 v3s{COLLISION_TAG_X>>1,COLLISION_TAG_Y>>1,COLLISION_TAG_Z>>1});
+			v3s Max = (RoundV3ToV3S(HadamardDiv(Entity->P + R - HalfDim, Dim)) +
+								 v3s{COLLISION_TAG_X>>1,COLLISION_TAG_Y>>1,COLLISION_TAG_Z>>1});
+
+			Assert(COLLISION_TAG_X == COLLISION_TAG_Y && COLLISION_TAG_Y == COLLISION_TAG_Z);
+			v3u uMin = Clamp0(Min, COLLISION_TAG_X-1);
+			v3u uMax = Clamp0(Max, COLLISION_TAG_X-1);
+			Assert(COLLISION_TAG_COUNT == 8);
+
+			u64 XYMask = 0;
+			for(u32 Y = uMin.Y;
+					Y <= uMax.Y;
+					Y++)
+			{
+				for(u32 X = uMin.X;
+						X <= uMax.X;
+						X++)
+				{
+					XYMask = XYMask | (1ull << (Y*COLLISION_TAG_X + X));
+				}
+			}
+			u64* TagChunk = Entity->CollisionTag;
+			for(u32 TagChunkIndex = 0;
+					TagChunkIndex < COLLISION_TAG_COUNT;
+					TagChunkIndex++, TagChunk++)
+			{
+				u32 Z = TagChunkIndex;
+				if(uMin.Z <= Z && Z <= uMax.Z)
+				{
+					*TagChunk = XYMask;
+				}
+				else
+				{
+					*TagChunk = 0;
+				}
+			}
+		}
+		else
+		{
+			u64* TagChunk = Entity->CollisionTag;
+			for(u32 TagChunkIndex = 0;
+					TagChunkIndex < COLLISION_TAG_COUNT;
+					TagChunkIndex++, TagChunk++)
+			{
+				*TagChunk = 0;
+			}
+		}
+	}
+}
+b32 inline
+CollisionFilterCheck(entity* A, entity* B)
+{
+	u64* TagChunkA = A->CollisionTag;
+	u64* TagChunkB = B->CollisionTag;
+	for(u32 TagChunkIndex = 0;
+			TagChunkIndex < COLLISION_TAG_COUNT;
+			TagChunkIndex++, TagChunkA++, TagChunkB++)
+	{
+		if(*TagChunkA & *TagChunkB) { return true; }
+	}
+	return false;
 }
 
 #include "trigger.h"
@@ -291,7 +446,7 @@ UpdateEntityDerivedMembers(entity* Entity)
 //TODO IMPORTANT(bjorn): Break up CalculatePhysicalBody into:
 // A: Adding primitives to the body
 // B: Calculating final body inertia tensor etc.
-internal_function body_primitive*
+	internal_function body_primitive*
 AddBodyPrimitive(entity* Entity, v3 Offset, q Orientation, v3 Scale)
 {
 	body_primitive* Result = 0;
@@ -317,7 +472,7 @@ AddBodyPrimitive(entity* Entity, v3 Offset, q Orientation, v3 Scale)
 	Entity->HasBody = true;
 	return Result;
 }
-internal_function void
+	internal_function void
 AddSphereToPhysicalBody(entity* Entity, v3 Offset, f32 Radius)
 {
 	body_primitive* Primitive = AddBodyPrimitive(Entity, 
@@ -343,7 +498,7 @@ AddAABBToPhysicalBody(entity* Entity, v3 Offset, q Orientation, v3 Scale)
 }
 
 internal_function void
-CalibratePhysicalBody(entity* Entity, f32 Mass, v3 Scale, f32 Restitution)
+CalibratePhysicalBody(entity* Entity, f32 Mass, f32 Restitution, f32 Scale = 1.0f)
 {
 	Assert(Entity->HasBody);
 	physical_body* Body = &Entity->Body;
@@ -409,9 +564,9 @@ CalibratePhysicalBody(entity* Entity, f32 Mass, v3 Scale, f32 Restitution)
 	{
 		body_primitive* Prim = Body->Primitives + 1;
 
-		Assert(Body->S == v3{1,1,1});
+		Assert(Body->S == 1);
 		if(Body->PrimitiveCount == 2 &&
-			 Body->S == v3{1,1,1})
+			 Body->S == 1)
 		{
 			Assert(Prim->O == QuaternionIdentity());
 			Assert(Prim->P == v3{0,0,0});
@@ -570,7 +725,7 @@ AddSword(sim_region* SimRegion)
 
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, 
 												v3{1.5f, 0.4f, 0.1f}*SimRegion->WorldMap->TileSideInMeters);
-	CalibratePhysicalBody(Entity, 8.0f, {1,1,1}, 0.5f);
+	CalibratePhysicalBody(Entity, 8.0f, 0.5f);
 
 	Entity->TriggerDamage = 1;
 
@@ -594,7 +749,7 @@ AddPlayer(sim_region* SimRegion, v3 InitP)
 
 	//TODO(bjorn): Why does weight differences matter so much in the collision system.
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{0.5f,0.3f,1.0f}*SimRegion->WorldMap->TileSideInMeters);
-	CalibratePhysicalBody(Entity, 70.0f, {1,1,1}, 1.0f);
+	CalibratePhysicalBody(Entity, 70.0f, 1.0f);
 
 	Entity->Collides = true;
 
@@ -615,7 +770,7 @@ AddMonstar(sim_region* SimRegion, v3 InitP)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Monstar, InitP);
 
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{0.5f,0.3f,1.0f}*SimRegion->WorldMap->TileSideInMeters);
-	CalibratePhysicalBody(Entity, 40.0f, {1,1,1}, 1.0f);
+	CalibratePhysicalBody(Entity, 40.0f, 1.0f);
 
 	Entity->Collides = true;
 
@@ -641,7 +796,7 @@ AddFamiliar(sim_region* SimRegion, v3 InitP)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Familiar, InitP);
 
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{0.5f,0.3f,1.0f}*SimRegion->WorldMap->TileSideInMeters);
-	CalibratePhysicalBody(Entity, 5.0f, {1,1,1}, 0.2f);
+	CalibratePhysicalBody(Entity, 5.0f, 0.2f);
 
 	Entity->Collides = true;
 
@@ -661,7 +816,7 @@ AddFloor(sim_region* SimRegion, v3 InitP)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered, InitP);
 
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{50,50,1});
-	CalibratePhysicalBody(Entity, 0.0, {1,1,1}, 0.2f);
+	CalibratePhysicalBody(Entity, 0.0, 0.2f);
 
 	Entity->Collides = true;
 	Entity->IsFloor = true;
@@ -675,7 +830,7 @@ AddFixture(sim_region* SimRegion, v3 InitP)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Sword, InitP);
 
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{1,1,1}*SimRegion->WorldMap->TileSideInMeters);
-	CalibratePhysicalBody(Entity, 0.0f, {1,1,1}, 0.0f);
+	CalibratePhysicalBody(Entity, 0.0f, 0.0f);
 
 	Entity->Collides = true;
 
@@ -688,7 +843,7 @@ AddWall(sim_region* SimRegion, v3 InitP, f32 Mass = 1000.0f)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Wall, InitP);
 
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{1,1,1}*SimRegion->WorldMap->TileSideInMeters);
-	CalibratePhysicalBody(Entity, Mass, {1,1,1}, 0.5f);
+	CalibratePhysicalBody(Entity, Mass, 0.5f);
 
 	Entity->Collides = true;
 	Entity->Rotates = true;
@@ -705,7 +860,7 @@ AddForceField(sim_region* SimRegion, v3 InitP)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Sword, InitP);
 
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{0.1f, 0.1f, 0.1f});
-	CalibratePhysicalBody(Entity, 0.0f, {1,1,1}, 0.0f);
+	CalibratePhysicalBody(Entity, 0.0f, 0.0f);
 
 	Entity->ForceFieldRadiusSquared = Square(10.0f);
 	Entity->ForceFieldStrenght = 0.0f;
@@ -719,7 +874,7 @@ AddParticle(sim_region* SimRegion, v3 InitP, f32 Mass = 0.01f, v3 Scale = v3{1, 
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered, InitP);
 
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, Scale);
-	CalibratePhysicalBody(Entity, Mass, {1,1,1}, 0.4f);
+	CalibratePhysicalBody(Entity, Mass, 0.4f);
 
 	Entity->Collides = true;
 	Entity->Rotates = true;
@@ -740,7 +895,7 @@ AddSphereParticle(sim_region* SimRegion, v3 InitP, f32 Mass, f32 Radius)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered, InitP);
 
 	AddSphereToPhysicalBody(Entity, {0,0,0}, Radius);
-	CalibratePhysicalBody(Entity, Mass, {1,1,1}, 0.4f);
+	CalibratePhysicalBody(Entity, Mass, 0.4f);
 
 	Entity->Collides = true;
 	Entity->Rotates = true;
@@ -868,23 +1023,6 @@ ForceFieldLogic(entity* A, entity* B)
 	if(B->ForceFieldRadiusSquared && !A->ForceFieldRadiusSquared) { ForceFieldLogicRaw(B, A); }
 }
 
-	//TODO(bjorn): Think harder about how to implement the ground.
-	internal_function void
-FloorLogicRaw(entity* Floor, entity* Other)
-{
-	if(Other->P.Z < Floor->P.Z)
-	{
-		Other->P.Z = Floor->P.Z;
-		Other->dP.Z = 0;
-	}
-}
-
-	internal_function void
-FloorLogic(entity* A, entity* B)
-{
-	if(A->IsFloor && !B->IsFloor) { FloorLogicRaw(A, B); }
-	if(B->IsFloor && !A->IsFloor) { FloorLogicRaw(B, A); }
-}
 
 //TODO IMPORTANT: What is the best way to apply a force over time to make this a smooth bounce?
 	internal_function void

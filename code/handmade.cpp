@@ -419,28 +419,29 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 
 		AddFloor(SimRegion, v3{0, 0, -2.0f});
 
-#if 0
-		entity* A = AddSphereParticle(SimRegion, v3{ 0, 0, 6}, 20.0f, 0.8f);
-		A->dO = {0,pi32,pi32};
-#endif
-		entity* D = AddParticle(SimRegion, v3{ 0, 0, 8}, 20.0f, v3{1.0f, 1.0f, 1.0f});
-		D->O = 
-			AngleAxisToQuaternion(tau32*0.05f, {0,1,0}) * AngleAxisToQuaternion(tau32*0.125f, {1,0,0});
+		entity* A = AddParticle(SimRegion, v3{ 0, 0, 6}, 20.0f, v3{1.0f, 1.0f, 1.0f});
+		A->O = AngleAxisToQuaternion(tau32*0.125f, {0,1,0}) * AngleAxisToQuaternion(tau32*0.125f, {1,0,0});
+		A->dO = {0,pi32,0};
 
-		//D->dO = {0,pi32,pi32};
-#if 0
-		AddSphereParticle(SimRegion, v3{ 1.1f, 0, 0}, 20.0f, 0.8f);
-		AddSphereParticle(SimRegion, v3{-1.1f, 0, 0}, 20.0f, 0.8f);
-		AddSphereParticle(SimRegion, v3{ 0, 1.1f, 0}, 20.0f, 0.8f);
-		AddSphereParticle(SimRegion, v3{ 0, -1.0f, 6.0}, 20.0f, 0.8f);
-#endif
+		AddParticle(SimRegion, v3{ 0, 0, 8}, 20.0f, v3{1.0f, 1.0f, 1.0f});
+		AddParticle(SimRegion, v3{ 0, 0, 10}, 20.0f, v3{1.0f, 1.0f, 1.0f});
+		AddParticle(SimRegion, v3{ 0, 0, 12}, 20.0f, v3{1.0f, 1.0f, 1.0f});
 
-		entity* B = AddParticle(SimRegion, v3{-1.8f,0,3.0f}, 0.0f, v3{3.0f,6.0f,0.2f});
+		entity* B = AddParticle(SimRegion, v3{-1.2f,0,3.0f}, 0.0f, v3{3.0f,6.0f,0.2f});
 		B->Rotates = false;
-		//B->O = AngleAxisToQuaternion(tau32*0.125f, {0,1,0});
-		//entity* C = AddParticle(SimRegion, v3{1.2f,0,6.0f}, 0.0f, v3{3.0f,6.0f,0.2f});
-		//C->Rotates = false;
-		//C->O = AngleAxisToQuaternion(tau32*0.125f, {0,-1,0});
+		B->O = AngleAxisToQuaternion(tau32*0.125f, {0,1,0});
+		entity* C = AddParticle(SimRegion, v3{1.2f,0,6.0f}, 0.0f, v3{3.0f,6.0f,0.2f});
+		C->Rotates = false;
+		C->O = AngleAxisToQuaternion(tau32*0.125f, {0,-1,0});
+
+		entity* Q = AddParticle(SimRegion, v3{-2.0f,0,0}, 0.0f, v3{0.2f,4.0f,2.0f});
+		Q->Rotates = false;
+		entity* D = AddParticle(SimRegion, v3{ 2.0f,0,0}, 0.0f, v3{0.2f,4.0f,2.0f});
+		D->Rotates = false;
+		entity* E = AddParticle(SimRegion, v3{0, 2.1f,0}, 0.0f, v3{4.0f,0.2f,2.0f});
+		E->Rotates = false;
+		entity* F = AddParticle(SimRegion, v3{0,-2.1f,0}, 0.0f, v3{4.0f,0.2f,2.0f});
+		F->Rotates = false;
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}
@@ -624,12 +625,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					NumKeyIndex < ArrayCount(Keyboard->Numbers);
 					NumKeyIndex++)
 			{
-				if(((NumKeyIndex == 0) && 
-						DEBUG_SwitchToLocation) ||
+				b32 DEBUG_ManualSwitch = ((NumKeyIndex == 0) && 
+																	DEBUG_SwitchToLocation);
+				if(DEBUG_ManualSwitch ||
 					 (Held(Keyboard, Shift) &&
 						Clicked(Keyboard, Numbers[NumKeyIndex])))
 				{
-					NumKeyIndex = DEBUG_SwitchToLocation;
+					if(DEBUG_ManualSwitch)
+					{
+						NumKeyIndex = DEBUG_SwitchToLocation;
+					}
 					sim_region* SimRegion = BeginSim(Input, Entities, FrameBoundedTransientArena, WorldMap, 
 																					 GameState->DEBUG_TestLocations[NumKeyIndex], 
 																					 GameState->CameraUpdateBounds, SecondsToUpdate);
@@ -721,8 +726,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	}
 	Assert(SimRegion);
 
-	PushRenderPieceWireFrame(RenderGroup, SimRegion->UpdateBounds, v4{0,1,1,1});
-	PushRenderPieceWireFrame(RenderGroup, SimRegion->OuterBounds, v4{1,1,0,1});
+#if HANDMADE_INTERNAL
+	b32 DEBUG_IsPaused = GameState->SimulationSpeedModifier == 0;
+
+	if(!DEBUG_IsPaused ||
+		 (DEBUG_IsPaused && DEBUG_UpdateLoopAdvance))
+#endif
+	{
+		PushRenderPieceWireFrame(RenderGroup, SimRegion->UpdateBounds, v4{0,1,1,1});
+		PushRenderPieceWireFrame(RenderGroup, SimRegion->OuterBounds, v4{1,1,0,1});
+	}
 
 	//TODO(bjorn): Implement step 2 in J.Blows framerate independence video.
 	// https://www.youtube.com/watch?v=fdAOPHgW7qM
@@ -733,9 +746,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	entity* MainCamera = AddEntityToSimRegionManually(Input, Entities, SimRegion, 
 																										GameState->MainCameraStorageIndex);
 	Assert(MainCamera);
-#if HANDMADE_INTERNAL
-	b32 DEBUG_IsPaused = GameState->SimulationSpeedModifier == 0;
-#endif
 
 	u32 LastStep = Steps;
 	for(u32 Step = 1;
@@ -814,12 +824,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						b32 Inside = Contacts.Count > 0; 
 
 #if HANDMADE_INTERNAL
-						if(Inside)
-						{
-							DEBUG_WasInsideAtLeastOnce = true;
-							Entity->DEBUG_EntityCollided = true;
-							OtherEntity->DEBUG_EntityCollided = true;
-						}
+						b32 DEBUG_OneOfTheEntitiesHadMass = false;
 #endif
 						if(Inside &&
 							 Entity->Collides && 
@@ -833,9 +838,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								entity* A = Contact.A;
 								entity* B = Contact.B;
 
-								v3 CA = Contact.P - A->P;
-								v3 CB = Contact.P - B->P;
-								v3 VelocityDelta = ((Cross(A->dO, CA) + A->dP) - (Cross(B->dO, CB) + B->dP));
+								f32 iM_iSum = SafeRatio0(1.0f, A->Body.iM + B->Body.iM);
+								//TODO(bjorn): Should I even generate contacts for massless entities.
+								if(iM_iSum == 0) { continue; }
+#if HANDMADE_INTERNAL
+								DEBUG_OneOfTheEntitiesHadMass = true;
+#endif
+
+								v3 AP = Contact.P - A->P;
+								v3 BP = Contact.P - B->P;
+								v3 VelocityDelta = ((Cross(A->dO, AP) + A->dP) - (Cross(B->dO, BP) + B->dP));
 								f32 SeparatingVelocity = Dot(Contact.N, VelocityDelta);
 
 								f32 Restitution = Contact.Restitution;
@@ -848,12 +860,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 									m33 B_Rot = QuaternionToRotationMatrix(B->O);
 									m33 A_iI_world = A_Rot * (A->Body.iI * Transpose(A_Rot));
 									m33 B_iI_world = B_Rot * (B->Body.iI * Transpose(B_Rot));
-									A_iI_Temp = A_iI_world*Cross(CA, Contact.N);
-									B_iI_Temp = B_iI_world*Cross(CB, Contact.N);
+									A_iI_Temp = A_iI_world*Cross(AP, Contact.N);
+									B_iI_Temp = B_iI_world*Cross(BP, Contact.N);
 									Divisor = 
 										SafeRatio0(1.0f, 
 															 (A->Body.iM + B->Body.iM) +
-															 Dot(Contact.N, Cross(A_iI_Temp, CA) + Cross(B_iI_Temp, CA)));
+															 Dot(Contact.N, Cross(A_iI_Temp, AP) + Cross(B_iI_Temp, BP)));
 								}
 								Assert(Divisor);
 
@@ -862,9 +874,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								A->dP += Contact.N * (A->Body.iM * Impulse);
 								B->dP -= Contact.N * (B->Body.iM * Impulse);
 								A->dO += A_iI_Temp * Impulse;
-								A->dO -= B_iI_Temp * Impulse;
+								B->dO -= B_iI_Temp * Impulse;
 
-								f32 iM_iSum = SafeRatio0(1.0f, A->Body.iM + B->Body.iM);
 								Assert(iM_iSum);
 								f32 A_MassRatio = (A->Body.iM * iM_iSum);
 								f32 B_MassRatio = (B->Body.iM * iM_iSum);
@@ -876,6 +887,15 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							UpdateEntityDerivedMembers(Entity);
 							UpdateEntityDerivedMembers(OtherEntity);
 						} 
+#if HANDMADE_INTERNAL
+						if(Inside &&
+							 DEBUG_OneOfTheEntitiesHadMass)
+						{
+							DEBUG_WasInsideAtLeastOnce = true;
+							Entity->DEBUG_EntityCollided = true;
+							OtherEntity->DEBUG_EntityCollided = true;
+						}
+#endif
 
 						trigger_state_result TriggerState = 
 							UpdateAndGetCurrentTriggerState(Entity, OtherEntity, dT, Inside);
@@ -904,13 +924,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						{
 							Bounce(Entity, OtherEntity);
 						}
-
-#if HANDMADE_INTERNAL
-						if(Step == LastStep)
-						{
-							//TODO(bjorn): Visualize collision.
-						}
-#endif
 					}
 
 #if HANDMADE_INTERNAL

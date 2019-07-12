@@ -716,10 +716,10 @@ AddForceField(sim_region* SimRegion, v3 InitP)
 	internal_function entity*
 AddParticle(sim_region* SimRegion, v3 InitP, f32 Mass = 0.01f, v3 Scale = v3{1, 1, 1})
 {
-	entity* Entity = AddEntity(SimRegion, EntityVisualType_Wall, InitP);
+	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered, InitP);
 
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, Scale);
-	CalibratePhysicalBody(Entity, Mass, {1,1,1}, 0.9f);
+	CalibratePhysicalBody(Entity, Mass, {1,1,1}, 0.4f);
 
 	Entity->Collides = true;
 	Entity->Rotates = true;
@@ -737,10 +737,10 @@ AddParticle(sim_region* SimRegion, v3 InitP, f32 Mass = 0.01f, v3 Scale = v3{1, 
 	internal_function entity*
 AddSphereParticle(sim_region* SimRegion, v3 InitP, f32 Mass, f32 Radius)
 {
-	entity* Entity = AddEntity(SimRegion, EntityVisualType_Wall, InitP);
+	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered, InitP);
 
 	AddSphereToPhysicalBody(Entity, {0,0,0}, Radius);
-	CalibratePhysicalBody(Entity, Mass, {1,1,1}, 0.9f);
+	CalibratePhysicalBody(Entity, Mass, {1,1,1}, 0.4f);
 
 	Entity->Collides = true;
 	Entity->Rotates = true;

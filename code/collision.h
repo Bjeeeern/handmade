@@ -133,15 +133,27 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 	if(A->CollisionShape == CollisionShape_AABB && 
 		 B->CollisionShape == CollisionShape_AABB)
 	{
+		m44 ObjAToWorld = Entity_A->Tran * A->Tran;
+		v3 A_HalfSize[4]; 
+		A_HalfSize[0] = ObjAToWorld * v3{0.5f,0.0f,0.0f} - ObjAToWorld * v3{0,0,0};
+		A_HalfSize[1] = ObjAToWorld * v3{0.0f,0.5f,0.0f} - ObjAToWorld * v3{0,0,0};
+		A_HalfSize[2] = ObjAToWorld * v3{0.0f,0.0f,0.5f} - ObjAToWorld * v3{0,0,0};
+		A_HalfSize[3] = ObjAToWorld * v3{0.5f,0.5f,0.5f} - ObjAToWorld * v3{0,0,0};
+		m44 ObjBToWorld = Entity_B->Tran * B->Tran;
+		v3 B_HalfSize[4]; 
+		B_HalfSize[0] = ObjBToWorld * v3{0.5f,0.0f,0.0f} - ObjBToWorld * v3{0,0,0};
+		B_HalfSize[1] = ObjBToWorld * v3{0.0f,0.5f,0.0f} - ObjBToWorld * v3{0,0,0};
+		B_HalfSize[2] = ObjBToWorld * v3{0.0f,0.0f,0.5f} - ObjBToWorld * v3{0,0,0};
+		B_HalfSize[3] = ObjBToWorld * v3{0.5f,0.5f,0.5f} - ObjBToWorld * v3{0,0,0};
+
+		//TODO(bjorn): Non origin center of mass probably messes these calculations up.
 		v3 Axes[15];
-		m33 ARot = QuaternionToRotationMatrix(Entity_A->O * A->O);
-		Axes[0] = ARot * v3{1,0,0};
-		Axes[1] = ARot * v3{0,1,0};
-		Axes[2] = ARot * v3{0,0,1};
-		m33 BRot = QuaternionToRotationMatrix(Entity_B->O * B->O);
-		Axes[3] = BRot * v3{1,0,0};
-		Axes[4] = BRot * v3{0,1,0};
-		Axes[5] = BRot * v3{0,0,1};
+		Axes[0] = Normalize(A_HalfSize[0]);
+		Axes[1] = Normalize(A_HalfSize[1]);
+		Axes[2] = Normalize(A_HalfSize[2]);
+		Axes[3] = Normalize(B_HalfSize[0]);
+		Axes[4] = Normalize(B_HalfSize[1]);
+		Axes[5] = Normalize(B_HalfSize[2]);
 		
 		Axes[ 6] = Cross(Axes[0], Axes[3]);
 		Axes[ 7] = Cross(Axes[0], Axes[4]);
@@ -152,19 +164,6 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 		Axes[12] = Cross(Axes[2], Axes[3]);
 		Axes[13] = Cross(Axes[2], Axes[4]);
 		Axes[14] = Cross(Axes[2], Axes[5]);
-
-		m44 ObjAToWorld = Entity_A->Tran * A->Tran;
-		v3 A_HalfSize[4]; 
-		A_HalfSize[0] = ObjAToWorld * v3{0.5f,0.0f,0.0f} - Entity_A->P;
-		A_HalfSize[1] = ObjAToWorld * v3{0.0f,0.5f,0.0f} - Entity_A->P;
-		A_HalfSize[2] = ObjAToWorld * v3{0.0f,0.0f,0.5f} - Entity_A->P;
-		A_HalfSize[3] = ObjAToWorld * v3{0.5f,0.5f,0.5f} - Entity_A->P;
-		m44 ObjBToWorld = Entity_B->Tran * B->Tran;
-		v3 B_HalfSize[4]; 
-		B_HalfSize[0] = ObjBToWorld * v3{0.5f,0.0f,0.0f} - Entity_B->P;
-		B_HalfSize[1] = ObjBToWorld * v3{0.0f,0.5f,0.0f} - Entity_B->P;
-		B_HalfSize[2] = ObjBToWorld * v3{0.0f,0.0f,0.5f} - Entity_B->P;
-		B_HalfSize[3] = ObjBToWorld * v3{0.5f,0.5f,0.5f} - Entity_B->P;
 
 		v3 DeltaP = Entity_B->P - Entity_A->P;
 		f32 SmallestOverlap = positive_infinity32;
@@ -185,10 +184,10 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 			{
 				f32 AProjection = (Absolute(Dot(A_HalfSize[0], Axis)) +
 													 Absolute(Dot(A_HalfSize[1], Axis)) +
-													 Absolute(Dot(A_HalfSize[3], Axis)));
+													 Absolute(Dot(A_HalfSize[2], Axis)));
 				f32 BProjection = (Absolute(Dot(B_HalfSize[0], Axis)) +
 													 Absolute(Dot(B_HalfSize[1], Axis)) +
-													 Absolute(Dot(B_HalfSize[3], Axis)));
+													 Absolute(Dot(B_HalfSize[2], Axis)));
 				f32 DistanceProjected = Absolute(Dot(DeltaP, Axis));
 
 				Overlap = AProjection + BProjection - DistanceProjected;
@@ -218,7 +217,7 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 				if(Dot(B_HalfSize[0], Axis) > 0) { Vertex -= 2.0f*B_HalfSize[0]; }
 				if(Dot(B_HalfSize[1], Axis) > 0) { Vertex -= 2.0f*B_HalfSize[1]; }
 				if(Dot(B_HalfSize[2], Axis) > 0) { Vertex -= 2.0f*B_HalfSize[2]; }
-				Vertex += Entity_A->P;
+				Vertex += Entity_B->P;
 			}
 			else
 			{
@@ -226,7 +225,7 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 				if(Dot(A_HalfSize[0], Axis) < 0) { Vertex -= 2.0f*A_HalfSize[0]; }
 				if(Dot(A_HalfSize[1], Axis) < 0) { Vertex -= 2.0f*A_HalfSize[1]; }
 				if(Dot(A_HalfSize[2], Axis) < 0) { Vertex -= 2.0f*A_HalfSize[2]; }
-				Vertex += Entity_B->P;
+				Vertex += Entity_A->P;
 			}
 
 #if HANDMADE_INTERNAL
@@ -237,13 +236,11 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 			}
 #endif
 
-#if 0
 			AddContact(Contacts, Entity_A, Entity_B, 
 								 Vertex, 
 								 Axis, 
 								 SmallestOverlap,
 								 (Entity_A->Body.Restitution + Entity_B->Body.Restitution)*0.5f);
-#endif
 		}
 		else
 		{
@@ -299,7 +296,7 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 				f32 b = Dot(U,V);
 				f32 c = Dot(V,V);
 				f32 d = Dot(U,W0);
-				f32 e = Dot(U,W0);
+				f32 e = Dot(V,W0);
 				f32 iDenom = SafeRatio0(1.0f, a*c - Square(b));
 
 				f32 sc, tc;
@@ -314,8 +311,17 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 					sc = 0.5f;
 					tc = 0.5f;
 				}
-				//Assert(IsWithinInclusive(sc, 0.0f, 1.0f));
-				//Assert(IsWithinInclusive(tc, 0.0f, 1.0f));
+				//TODO(bjorn):Decide on a reasonable 32-bit epsilon.
+				f32 Epsilon = 0.001f;
+				//Assert(IsWithinInclusive(sc, -Epsilon, 1.0f + Epsilon));
+				//Assert(IsWithinInclusive(tc, -Epsilon, 1.0f + Epsilon));
+				//TODO IMPORTANT(bjorn): This feels like a dumb bruteforce solution
+				//that might come back and bite me in future debugging. But since this
+				//code is temporary anyway and since the physics seems to behave stably
+				//on aggregate frames with me just clamping the variables I will leave
+				//this in for now.
+				sc = Clamp(0.0f, sc, 1.0f);
+				tc = Clamp(0.0f, tc, 1.0f);
 
 				ContactPoint = ((P0 + U*sc) + (Q0 + V*tc))*0.5f;
 			}
@@ -328,13 +334,11 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 			}
 #endif
 
-#if 0
 			AddContact(Contacts, Entity_A, Entity_B, 
 								 ContactPoint, 
 								 Axis, 
 								 SmallestOverlap,
 								 (Entity_A->Body.Restitution + Entity_B->Body.Restitution)*0.5f);
-#endif
 		}
 	}
 	if(A->CollisionShape != B->CollisionShape)

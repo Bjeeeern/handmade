@@ -81,8 +81,7 @@ struct contact
 	v3 N;
 	f32 PenetrationDepth;
 	f32 Restitution;
-	//TODO
-	//f32 Friction;
+	f32 Friction;
 };
 
 struct contact_result
@@ -93,13 +92,15 @@ struct contact_result
 
 internal_function void 
 AddContact(contact_result* Contacts, entity* A, entity* B, 
-					 v3 P, v3 N, f32 PenetrationDepth, f32 Restitution)
+					 v3 P, v3 N, f32 PenetrationDepth, f32 Restitution, f32 Friction)
 {
+	Assert(IsWithinInclusive(Restitution, 0, 1));
+	Assert(IsWithinInclusive(Friction, 0, 1));
 	Assert(Contacts->Count < ArrayCount(Contacts->E));
 	if(Contacts->Count < ArrayCount(Contacts->E))
 	{
 		contact* Contact = Contacts->E + Contacts->Count++;
-		*Contact = {A, B, P, N, PenetrationDepth, Restitution};
+		*Contact = {A, B, P, N, PenetrationDepth, Restitution, Friction};
 	}
 }
 
@@ -127,7 +128,8 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 								 (C0+C1)*0.5f, 
 								 Normalize(C1-C0), 
 								 (Magnitude(Q0-C0)+Magnitude(Q1-C1)) - Magnitude(C1-C0),
-								 (Entity_A->Body.Restitution + Entity_B->Body.Restitution)*0.5f);
+								 (Entity_A->Body.Restitution + Entity_B->Body.Restitution)*0.5f,
+								 Entity_A->Body.Friction * Entity_B->Body.Friction);
 		}
 	}
 	if(A->CollisionShape == CollisionShape_AABB && 
@@ -240,7 +242,8 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 								 Vertex, 
 								 Axis, 
 								 SmallestOverlap,
-								 (Entity_A->Body.Restitution + Entity_B->Body.Restitution)*0.5f);
+								 (Entity_A->Body.Restitution + Entity_B->Body.Restitution)*0.5f,
+								 Entity_A->Body.Friction * Entity_B->Body.Friction);
 		}
 		else
 		{
@@ -334,7 +337,8 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 								 ContactPoint, 
 								 Axis, 
 								 SmallestOverlap,
-								 (Entity_A->Body.Restitution + Entity_B->Body.Restitution)*0.5f);
+								 (Entity_A->Body.Restitution + Entity_B->Body.Restitution)*0.5f,
+								 Entity_A->Body.Friction * Entity_B->Body.Friction);
 		}
 	}
 	if(A->CollisionShape != B->CollisionShape)
@@ -376,7 +380,8 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 								 ContactP, 
 								 Normalize(ContactP - Entity_A->P), 
 								 Penetration,
-								 (Entity_A->Body.Restitution + Entity_B->Body.Restitution)*0.5f);
+								 (Entity_A->Body.Restitution + Entity_B->Body.Restitution)*0.5f,
+								 Entity_A->Body.Friction * Entity_B->Body.Friction);
 		}
 	}
 }

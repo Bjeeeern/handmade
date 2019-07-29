@@ -82,9 +82,6 @@ struct game_state
 	u32 DEBUG_SkipXSteps;
 #endif
 
-	f32 GroundStaticFriction;
-	f32 GroundDynamicFriction;
-
 	f32 NoteTone;
 	f32 NoteDuration;
 	f32 NoteSecondsPassed;
@@ -95,8 +92,6 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 {
 	GameState->SimulationSpeedModifier = 1;
 
-	GameState->GroundStaticFriction = 2.1f; 
-	GameState->GroundDynamicFriction = 2.0f; 
 	GameState->Backdrop = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
 																		 "data/test/test_background.bmp");
 
@@ -427,6 +422,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 		AddParticle(SimRegion, v3{ 0, 0, 8}, 20.0f, v3{1.0f, 1.0f, 1.0f});
 		AddParticle(SimRegion, v3{ 0, 0, 10}, 20.0f, v3{1.0f, 1.0f, 1.0f});
 		AddParticle(SimRegion, v3{ 0, 0, 12}, 20.0f, v3{1.0f, 1.0f, 1.0f});
+		AddSphereParticle(SimRegion, v3{ 0, 0, 14}, 20.0f, 0.5f);
 
 		entity* B = AddParticle(SimRegion, v3{-1.2f,0,3.0f}, 0.0f, v3{3.0f,6.0f,0.2f});
 		B->Rotates = false;
@@ -437,8 +433,8 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 
 		entity* Q = AddParticle(SimRegion, v3{-2.0f,0,0}, 0.0f, v3{0.2f,4.0f,2.0f});
 		Q->Rotates = false;
-		entity* D = AddParticle(SimRegion, v3{ 2.0f,0,0}, 0.0f, v3{0.2f,4.0f,2.0f});
-		D->Rotates = false;
+		//entity* D = AddParticle(SimRegion, v3{ 2.0f,0,0}, 0.0f, v3{0.2f,4.0f,2.0f});
+		//D->Rotates = false;
 		entity* E = AddParticle(SimRegion, v3{0, 2.1f,0}, 0.0f, v3{4.0f,0.2f,2.0f});
 		E->Rotates = false;
 		entity* F = AddParticle(SimRegion, v3{0,-2.1f,0}, 0.0f, v3{4.0f,0.2f,2.0f});
@@ -855,33 +851,63 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								v3 AP = Contact.P - A->P;
 								v3 BP = Contact.P - B->P;
 								v3 VelocityDelta = ((Cross(A->dO, AP) + A->dP) - (Cross(B->dO, BP) + B->dP));
+
+								//TODO (bjorn): Use coordinates local to the collision point and
+								//treat both the velocity and the impulse as a 3d vector.
+								//TODO IMPORTANT(bjorn): Friction is working but due to only
+								//one contact at a time getting generated boxes slightly
+								//displace and spin around when not being acted upon.
 								f32 SeparatingVelocity = Dot(Contact.N, VelocityDelta);
+								v3 PlanarVelocity = VelocityDelta - (Contact.N * SeparatingVelocity);
+								v3 T = Normalize(PlanarVelocity);
 
 								f32 Restitution = Contact.Restitution;
+								f32 Friction = Contact.Friction;
 
-								v3 A_iI_Temp = {};
-								v3 B_iI_Temp = {};
-								f32 Divisor = 0;
+								v3 A_iI_Temp_N = {};
+								v3 B_iI_Temp_N = {};
+								v3 A_iI_Temp_T = {};
+								v3 B_iI_Temp_T = {};
 								{
 									m33 A_Rot = QuaternionToRotationMatrix(A->O);
 									m33 B_Rot = QuaternionToRotationMatrix(B->O);
 									m33 A_iI_world = A_Rot * (A->Body.iI * Transpose(A_Rot));
 									m33 B_iI_world = B_Rot * (B->Body.iI * Transpose(B_Rot));
-									A_iI_Temp = A_iI_world*Cross(AP, Contact.N);
-									B_iI_Temp = B_iI_world*Cross(BP, Contact.N);
-									Divisor = 
+
+									A_iI_Temp_N = A_iI_world*Cross(AP, Contact.N);
+									B_iI_Temp_N = B_iI_world*Cross(BP, Contact.N);
+									A_iI_Temp_T = A_iI_world*Cross(AP, T);
+									B_iI_Temp_T = B_iI_world*Cross(BP, T);
+								}
+
+								f32 Divisor_N = 0;
+								{
+									Divisor_N = 
 										SafeRatio0(1.0f, 
 															 (A->Body.iM + B->Body.iM) +
-															 Dot(Contact.N, Cross(A_iI_Temp, AP) + Cross(B_iI_Temp, BP)));
+															 Dot(Contact.N, Cross(A_iI_Temp_N, AP) + Cross(B_iI_Temp_N, BP)));
 								}
-								Assert(Divisor);
+								Assert(Divisor_N);
 
-								f32 Impulse = -(1+Restitution) * SeparatingVelocity * Divisor;
+								f32 Divisor_T = 0;
+								{
+									Divisor_T = 
+										SafeRatio0(1.0f, 
+															 (A->Body.iM + B->Body.iM) +
+															 Dot(T, Cross(A_iI_Temp_T, AP) + Cross(B_iI_Temp_T, BP)));
+								}
+								Assert(Divisor_T);
 
-								A->dP += Contact.N * (A->Body.iM * Impulse);
-								B->dP -= Contact.N * (B->Body.iM * Impulse);
-								A->dO += A_iI_Temp * Impulse;
-								B->dO -= B_iI_Temp * Impulse;
+								f32 Impulse = -SeparatingVelocity * Divisor_N * (1+Restitution);
+								f32 PlanarImpulse = -Magnitude(PlanarVelocity) * Divisor_T * Friction;
+								PlanarImpulse = (Sign(PlanarImpulse) * 
+																 Clamp0(Absolute(PlanarImpulse), Absolute(Impulse)));
+
+								A->dP += Contact.N * (A->Body.iM * Impulse) + T * (A->Body.iM * PlanarImpulse);
+								B->dP -= Contact.N * (B->Body.iM * Impulse) + T * (B->Body.iM * PlanarImpulse);
+
+								A->dO += A_iI_Temp_N * Impulse + A_iI_Temp_T * PlanarImpulse;
+								B->dO -= B_iI_Temp_N * Impulse + B_iI_Temp_T * PlanarImpulse;
 
 								Assert(iM_iSum);
 								f32 A_MassRatio = (A->Body.iM * iM_iSum);
@@ -890,7 +916,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								B->P += (B_MassRatio * Contact.PenetrationDepth) * Contact.N;
 							}
 
-							//TODO(bjorn): Refactor into a function that updates entity derived state.
 							UpdateEntityDerivedMembers(Entity, SimRegion->OuterBounds);
 							UpdateEntityDerivedMembers(OtherEntity, SimRegion->OuterBounds);
 						} 
@@ -1229,7 +1254,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				//TODO(bjorn): Do I need to always push these just to enable toggling when paused?
 				//if(GameState->DEBUG_VisualiseCollisionBox)
 				{
-					if(Entity->IsFloor)
+					if(false)//Entity->IsFloor)
 					{
 						DEBUG_VisualizeCollisionTag(RenderGroup, SimRegion->OuterBounds, Entity);
 					}

@@ -121,6 +121,7 @@ struct physical_body
 	f32 iM; //NOTE(bjorn): Inverse mass
 	m33 iI; //NOTE(bjorn): Inverse inertia tensor
 	f32 Restitution;
+	f32 Friction;
 
 	f32 S;
 };
@@ -443,9 +444,6 @@ CollisionFilterCheck(entity* A, entity* B)
 #include "trigger.h"
 #include "attachment.h"
 
-//TODO IMPORTANT(bjorn): Break up CalculatePhysicalBody into:
-// A: Adding primitives to the body
-// B: Calculating final body inertia tensor etc.
 	internal_function body_primitive*
 AddBodyPrimitive(entity* Entity, v3 Offset, q Orientation, v3 Scale)
 {
@@ -498,7 +496,7 @@ AddAABBToPhysicalBody(entity* Entity, v3 Offset, q Orientation, v3 Scale)
 }
 
 internal_function void
-CalibratePhysicalBody(entity* Entity, f32 Mass, f32 Restitution, f32 Scale = 1.0f)
+CalibratePhysicalBody(entity* Entity, f32 Mass, f32 Restitution, f32 Friction, f32 Scale = 1.0f)
 {
 	Assert(Entity->HasBody);
 	physical_body* Body = &Entity->Body;
@@ -553,6 +551,7 @@ CalibratePhysicalBody(entity* Entity, f32 Mass, f32 Restitution, f32 Scale = 1.0
 	}
 
 	Body->Restitution = Restitution;
+	Body->Friction = Friction;
 	Body->S = Scale;
 
 	Body->iM = SafeRatio0(1.0f, Mass);
@@ -725,7 +724,7 @@ AddSword(sim_region* SimRegion)
 
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, 
 												v3{1.5f, 0.4f, 0.1f}*SimRegion->WorldMap->TileSideInMeters);
-	CalibratePhysicalBody(Entity, 8.0f, 0.5f);
+	CalibratePhysicalBody(Entity, 8.0f, 0.5f, 0.9f);
 
 	Entity->TriggerDamage = 1;
 
@@ -749,7 +748,7 @@ AddPlayer(sim_region* SimRegion, v3 InitP)
 
 	//TODO(bjorn): Why does weight differences matter so much in the collision system.
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{0.5f,0.3f,1.0f}*SimRegion->WorldMap->TileSideInMeters);
-	CalibratePhysicalBody(Entity, 70.0f, 1.0f);
+	CalibratePhysicalBody(Entity, 70.0f, 1.0f, 1.0f);
 
 	Entity->Collides = true;
 
@@ -770,7 +769,7 @@ AddMonstar(sim_region* SimRegion, v3 InitP)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Monstar, InitP);
 
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{0.5f,0.3f,1.0f}*SimRegion->WorldMap->TileSideInMeters);
-	CalibratePhysicalBody(Entity, 40.0f, 1.0f);
+	CalibratePhysicalBody(Entity, 40.0f, 1.0f, 0.9f);
 
 	Entity->Collides = true;
 
@@ -796,7 +795,7 @@ AddFamiliar(sim_region* SimRegion, v3 InitP)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Familiar, InitP);
 
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{0.5f,0.3f,1.0f}*SimRegion->WorldMap->TileSideInMeters);
-	CalibratePhysicalBody(Entity, 5.0f, 0.2f);
+	CalibratePhysicalBody(Entity, 5.0f, 0.2f, 0.9f);
 
 	Entity->Collides = true;
 
@@ -816,7 +815,7 @@ AddFloor(sim_region* SimRegion, v3 InitP)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered, InitP);
 
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{50,50,1});
-	CalibratePhysicalBody(Entity, 0.0, 0.2f);
+	CalibratePhysicalBody(Entity, 0.0, 0.2f, 1.0f);
 
 	Entity->Collides = true;
 	Entity->IsFloor = true;
@@ -830,7 +829,7 @@ AddFixture(sim_region* SimRegion, v3 InitP)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Sword, InitP);
 
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{1,1,1}*SimRegion->WorldMap->TileSideInMeters);
-	CalibratePhysicalBody(Entity, 0.0f, 0.0f);
+	CalibratePhysicalBody(Entity, 0.0f, 0.0f, 0.0f);
 
 	Entity->Collides = true;
 
@@ -843,7 +842,7 @@ AddWall(sim_region* SimRegion, v3 InitP, f32 Mass = 1000.0f)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Wall, InitP);
 
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{1,1,1}*SimRegion->WorldMap->TileSideInMeters);
-	CalibratePhysicalBody(Entity, Mass, 0.5f);
+	CalibratePhysicalBody(Entity, Mass, 0.5f, 0.5f);
 
 	Entity->Collides = true;
 	Entity->Rotates = true;
@@ -860,7 +859,7 @@ AddForceField(sim_region* SimRegion, v3 InitP)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Sword, InitP);
 
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{0.1f, 0.1f, 0.1f});
-	CalibratePhysicalBody(Entity, 0.0f, 0.0f);
+	CalibratePhysicalBody(Entity, 0.0f, 0.0f, 0.0f);
 
 	Entity->ForceFieldRadiusSquared = Square(10.0f);
 	Entity->ForceFieldStrenght = 0.0f;
@@ -874,7 +873,7 @@ AddParticle(sim_region* SimRegion, v3 InitP, f32 Mass = 0.01f, v3 Scale = v3{1, 
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered, InitP);
 
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, Scale);
-	CalibratePhysicalBody(Entity, Mass, 0.4f);
+	CalibratePhysicalBody(Entity, Mass, 0.4f, 0.9f);
 
 	Entity->Collides = true;
 	Entity->Rotates = true;
@@ -895,7 +894,7 @@ AddSphereParticle(sim_region* SimRegion, v3 InitP, f32 Mass, f32 Radius)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered, InitP);
 
 	AddSphereToPhysicalBody(Entity, {0,0,0}, Radius);
-	CalibratePhysicalBody(Entity, Mass, 0.4f);
+	CalibratePhysicalBody(Entity, Mass, 0.4f, 1.0f);
 
 	Entity->Collides = true;
 	Entity->Rotates = true;

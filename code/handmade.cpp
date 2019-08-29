@@ -221,7 +221,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 																				 GameState->UTF16Buffer_Kanji, 
 																				 ArrayCount(GameState->UTF16Buffer_Kanji)).Count;
 
-#if 1
+#if 0
 	debug_read_file_result TTF = Memory->DEBUGPlatformReadEntireFile("data/MSMINCHO.TTF");
 	font* Font = TrueTypeFontToFont(&GameState->TransientArena, (true_type_font*)TTF.Content);
 	Memory->DEBUGPlatformWriteEntireFile("data/MSMINCHO.font", 
@@ -336,12 +336,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	for(s32 i = 0; i < 20; i++)
 	{
-		for(s32 j = 0; j < 10; j++)
+		for(s32 j = 0; j < 12; j++)
 		{
-			s32 Index = (10-j) * 20 + i;
+			s32 Index = (11-j) * 20 + i;
 			if(Index < GameState->UTF16Buffer_PrimitivesCount)
 			{
-				rectangle2 Rect = RectCenterDim(v2{i * 30.0f + 10.0f, j * 30.0f + 10.0f}, v2{25.0f, 25.0f});
+				rectangle2 Rect = RectCenterDim(v2{i * 30.0f + 10.0f, j * 30.0f + 100.0f}, v2{25.0f, 25.0f});
 				DrawUTF16Glyph(Buffer, GameState->Font, GameState->UTF16Buffer_Primitives[Index], Rect);
 			}
 		}

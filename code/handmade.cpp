@@ -46,9 +46,11 @@ DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCod
 											 rectangle2 DrawRect)
 {
 	s32 Lef = (s32)(DrawRect.Min.X - 1.0f);
-	s32 Top = (s32)(DrawRect.Min.Y - 1.0f);
-	s32 Rig = (s32)(DrawRect.Max.X - 1.0f);
-	s32 Bot = (s32)(DrawRect.Max.Y - 1.0f);
+	s32 Top = (s32)(DrawRect.Max.Y + 1.0f);
+	s32 Rig = (s32)(DrawRect.Max.X + 1.0f);
+	s32 Bot = (s32)(DrawRect.Min.Y - 1.0f);
+	Top = Buffer->Height - Top;
+	Bot = Buffer->Height - Bot;
 
 	v2 Scale = DrawRect.Max - DrawRect.Min;
 	unicode_to_glyph_data *Entries = (unicode_to_glyph_data *)(Font + 1);
@@ -62,6 +64,7 @@ DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCod
 			{
 				quadratic_curve *Curves = 
 					(quadratic_curve *)((u8 *)Font + Entries[EntryIndex].OffsetToGlyphData);
+				s32 CurveCount = Entries[EntryIndex].QuadraticCurveCount;
 
 				s32 PixelPitch = Buffer->Width;
 				u32 *UpperLeftPixel = (u32 *)Buffer->Memory + Lef + Top * PixelPitch;
@@ -82,15 +85,19 @@ DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCod
 							s32 RayCastCount = 0;
 							f32 ShortestSquareDist = positive_infinity32;
 							for(s32 CurveIndex = 0;
-									CurveIndex < Entries[EntryIndex].QuadraticCurveCount;
+									CurveIndex < CurveCount;
 									CurveIndex++)
 							{
 								quadratic_curve Curve = Curves[CurveIndex];
 
-								v2 QCS = Hadamard(Curve.Srt, Scale) + DrawRect.Min;
-								v2 QCE = Hadamard(Curve.End, Scale) + DrawRect.Min;
-								//QCS.Y = Buffer->Height - QCS.Y;
-								//QCE.Y = Buffer->Height - QCE.Y;
+								Curve.Srt.Y += 0.1f;
+								Curve.Con.Y += 0.1f;
+								Curve.End.Y += 0.1f;
+								Curve.Srt.Y = 1.0f - Curve.Srt.Y;
+								Curve.Con.Y = 1.0f - Curve.Con.Y;
+								Curve.End.Y = 1.0f - Curve.End.Y;
+								v2 QCS = Hadamard(Curve.Srt, Scale) + (v2)v2s{Lef, Top};
+								v2 QCE = Hadamard(Curve.End, Scale) + (v2)v2s{Lef, Top};
 
 								v2 PixPos = (v2)v2s{X, Y};
 								v2 ScanLineS = (v2)v2s{0, Y};
@@ -134,7 +141,7 @@ DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCod
 						}
 						else if(IsInside)
 						{
-							Color = 0x00FFFFFF;
+							//Color = 0x00FFFFFF;
 						}
 						*Pixel++ = Color;
 					}
@@ -297,7 +304,12 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	Memory->DEBUGPlatformWriteEntireFile("data/MSMINCHO.font", 
 																			 (u32)GameState->TransientArena.Used, Font);
 #endif
+#if 1
+	debug_read_file_result FontFile = 
+		Memory->DEBUGPlatformReadEntireFile("data/nukamiso_2004_beta09.font");
+#else
 	debug_read_file_result FontFile = Memory->DEBUGPlatformReadEntireFile("data/MSMINCHO.font");
+#endif
 	GameState->Font = (font *)FontFile.Content;
 
 }
@@ -404,6 +416,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	// NOTE(bjorn): Rendering
 	//
+
+	rectangle2 Rect = RectCenterDim(v2{Buffer->Width * 0.5f, Buffer->Height * 0.5f + 100}, 
+																	v2{300.0f, 300.0f});
+	DrawUTF16GlyphPolyfill(Buffer, GameState->Font, GameState->UTF16Buffer_Kanji[401], Rect);
+#if 0
 	for(s32 i = 0; i < 20; i++)
 	{
 		for(s32 j = 0; j < 12; j++)
@@ -417,6 +434,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			}
 		}
 	}
+#endif
 
 	EndTemporaryMemory(TempMem);
 	CheckMemoryArena(FrameBoundedTransientArena);

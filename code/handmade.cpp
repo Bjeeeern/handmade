@@ -42,8 +42,14 @@
 //4 Apply the constraint velocities and simulate the resulting motion.
 
 internal_function void
-DrawUTF16Glyph(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCodePoint, rectangle2 DrawRect)
+DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCodePoint, 
+											 rectangle2 DrawRect)
 {
+	s32 Lef = (s32)(DrawRect.Min.X - 1.0f);
+	s32 Top = (s32)(DrawRect.Min.Y - 1.0f);
+	s32 Rig = (s32)(DrawRect.Max.X - 1.0f);
+	s32 Bot = (s32)(DrawRect.Max.Y - 1.0f);
+
 	v2 Scale = DrawRect.Max - DrawRect.Min;
 	unicode_to_glyph_data *Entries = (unicode_to_glyph_data *)(Font + 1);
 	for(s32 EntryIndex = 0;
@@ -56,20 +62,84 @@ DrawUTF16Glyph(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCodePoint, 
 			{
 				quadratic_curve *Curves = 
 					(quadratic_curve *)((u8 *)Font + Entries[EntryIndex].OffsetToGlyphData);
-				for(s32 CurveIndex = 0;
-						CurveIndex < Entries[EntryIndex].QuadraticCurveCount;
-						CurveIndex++)
+
+				s32 PixelPitch = Buffer->Width;
+				u32 *UpperLeftPixel = (u32 *)Buffer->Memory + Lef + Top * PixelPitch;
+
+				for(s32 Y = Top;
+						Y < Bot;
+						++Y)
 				{
-					quadratic_curve Curve = Curves[CurveIndex];
+					u32 *Pixel = UpperLeftPixel;
 
-					v2 Start = Hadamard(Curve.Srt, Scale) + DrawRect.Min;
-					v2 End = Hadamard(Curve.End, Scale) + DrawRect.Min;
+					for(s32 X = Lef;
+							X < Rig;
+							++X)
+					{
+						b32 IsInside = false;
+						f32 ShortestDist = positive_infinity32;
+						{
+							s32 RayCastCount = 0;
+							f32 ShortestSquareDist = positive_infinity32;
+							for(s32 CurveIndex = 0;
+									CurveIndex < Entries[EntryIndex].QuadraticCurveCount;
+									CurveIndex++)
+							{
+								quadratic_curve Curve = Curves[CurveIndex];
 
-					Start.Y = Buffer->Height - Start.Y;
+								v2 QCS = Hadamard(Curve.Srt, Scale) + DrawRect.Min;
+								v2 QCE = Hadamard(Curve.End, Scale) + DrawRect.Min;
+								//QCS.Y = Buffer->Height - QCS.Y;
+								//QCE.Y = Buffer->Height - QCE.Y;
 
-					End.Y = Buffer->Height - End.Y;
+								v2 PixPos = (v2)v2s{X, Y};
+								v2 ScanLineS = (v2)v2s{0, Y};
+								v2 ScanLineE = (v2)v2s{Buffer->Width-1, Y};
 
-					DrawLine(Buffer, Start, End, {1.0f, 1.0f, 1.0f});
+								intersection_result ToI = 
+									GetTimeOfIntersectionWithLineSegment(QCS, QCE, ScanLineS, ScanLineE);
+								if(ToI.Valid)
+								{
+									v2 P = QCS + ToI.t * QCE;
+									if(P.X < PixPos.X) { RayCastCount += 1; }
+								}
+
+								f32 NewSquareDist = SquareDistancePointToLineSegment(QCS, QCE, PixPos);
+								if(NewSquareDist < ShortestSquareDist)
+								{
+									ShortestSquareDist = NewSquareDist;
+								}
+							}
+							IsInside = RayCastCount & 0x000001;
+							ShortestDist = SquareRoot(ShortestSquareDist);
+						}
+
+						u32 Color = 0x00000000;
+						if(0.0f <= ShortestDist && ShortestDist <= 0.5f)
+						{
+							if(IsInside)
+							{
+								ShortestDist += 0.5f;
+							}
+							else
+							{
+								ShortestDist = 0.5f - ShortestDist;
+							}
+							f32 R = ShortestDist;
+							f32 G = ShortestDist;
+							f32 B = ShortestDist;
+							Color = ((RoundF32ToS32(R * 255.0f) << 16) |
+											 (RoundF32ToS32(G * 255.0f) << 8) |
+											 (RoundF32ToS32(B * 255.0f) << 0));
+						}
+						else if(IsInside)
+						{
+							Color = 0x00FFFFFF;
+						}
+						*Pixel++ = Color;
+					}
+
+					UpperLeftPixel += PixelPitch;
 				}
 			}
 		}
@@ -342,7 +412,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 			if(Index < GameState->UTF16Buffer_PrimitivesCount)
 			{
 				rectangle2 Rect = RectCenterDim(v2{i * 30.0f + 10.0f, j * 30.0f + 100.0f}, v2{25.0f, 25.0f});
-				DrawUTF16Glyph(Buffer, GameState->Font, GameState->UTF16Buffer_Primitives[Index], Rect);
+				DrawUTF16GlyphPolyfill(Buffer, GameState->Font, 
+															 GameState->UTF16Buffer_Primitives[Index], Rect);
 			}
 		}
 	}

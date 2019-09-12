@@ -80,10 +80,11 @@ DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCod
 							++X)
 					{
 						b32 IsInside = false;
-						f32 ShortestDist = positive_infinity32;
+						//f32 ShortestDist = positive_infinity32;
+						s32 BezierFlipCount = 0;
 						{
 							s32 RayCastCount = 0;
-							f32 ShortestSquareDist = positive_infinity32;
+							//f32 ShortestSquareDist = positive_infinity32;
 							for(s32 CurveIndex = 0;
 									CurveIndex < CurveCount;
 									CurveIndex++)
@@ -97,6 +98,7 @@ DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCod
 								Curve.Con.Y = 1.0f - Curve.Con.Y;
 								Curve.End.Y = 1.0f - Curve.End.Y;
 								v2 QCS = Hadamard(Curve.Srt, Scale) + (v2)v2s{Lef, Top};
+								v2 QCM = Hadamard(Curve.Con, Scale) + (v2)v2s{Lef, Top};
 								v2 QCE = Hadamard(Curve.End, Scale) + (v2)v2s{Lef, Top};
 
 								v2 PixPos = (v2)v2s{X, Y};
@@ -111,17 +113,29 @@ DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCod
 									if(P.X < PixPos.X) { RayCastCount += 1; }
 								}
 
+#if 0
 								f32 NewSquareDist = SquareDistancePointToLineSegment(QCS, QCE, PixPos);
 								if(NewSquareDist < ShortestSquareDist)
 								{
 									ShortestSquareDist = NewSquareDist;
 								}
+#endif
+
+								m22 Base = M22ByCol(QCM - QCS, QCM - QCE);
+								{
+									v2 P = Base * (PixPos - v2{QCS.X, QCE.Y});
+									if(IsWithinInclusive(Magnitude(P), 0.0f, 1.0f))
+									{
+										BezierFlipCount += 1;
+									}
+								}
 							}
 							IsInside = RayCastCount & 0x000001;
-							ShortestDist = SquareRoot(ShortestSquareDist);
+							//ShortestDist = SquareRoot(ShortestSquareDist);
 						}
 
 						u32 Color = 0x00000000;
+#if 0
 						if(0.0f <= ShortestDist && ShortestDist <= 0.5f)
 						{
 							if(IsInside)
@@ -139,9 +153,15 @@ DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCod
 											 (RoundF32ToS32(G * 255.0f) << 8) |
 											 (RoundF32ToS32(B * 255.0f) << 0));
 						}
-						else if(IsInside)
+						else 
+#endif
+						if(IsInside)
 						{
 							Color = 0x00FFFFFF;
+						}
+						if(BezierFlipCount > 0)
+						{
+							Color = Color ? 0x00000000 : 0x00FFFFFF;
 						}
 						*Pixel++ = Color;
 					}

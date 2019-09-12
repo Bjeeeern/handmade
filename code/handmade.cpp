@@ -105,9 +105,9 @@ DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCod
 
 								intersection_result ToI = 
 									GetTimeOfIntersectionWithLineSegment(QCS, QCE, ScanLineS, ScanLineE);
-								if(ToI.Valid)
+								if(ToI.Valid && IsWithinInclusive(ToI.t, 0.0f, 1.0f))
 								{
-									v2 P = QCS + ToI.t * QCE;
+									v2 P = QCS + ToI.t * (QCE - QCS);
 									if(P.X < PixPos.X) { RayCastCount += 1; }
 								}
 
@@ -141,7 +141,7 @@ DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCod
 						}
 						else if(IsInside)
 						{
-							//Color = 0x00FFFFFF;
+							Color = 0x00FFFFFF;
 						}
 						*Pixel++ = Color;
 					}

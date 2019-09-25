@@ -65,6 +65,9 @@ DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCod
 				quadratic_curve *Curves = 
 					(quadratic_curve *)((u8 *)Font + Entries[EntryIndex].OffsetToGlyphData);
 				s32 CurveCount = Entries[EntryIndex].QuadraticCurveCount;
+        local_persist u32 LocalCount = 0;
+        LocalCount = (LocalCount+1)%(CurveCount+1);
+        CurveCount = LocalCount;
 
 				s32 PixelPitch = Buffer->Width;
 				u32 *UpperLeftPixel = (u32 *)Buffer->Memory + Lef + Top * PixelPitch;
@@ -98,6 +101,7 @@ DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCod
 								Curve.Con.Y = 1.0f - Curve.Con.Y;
 								Curve.End.Y = 1.0f - Curve.End.Y;
 								v2 QCS = Hadamard(Curve.Srt, Scale) + (v2)v2s{Lef, Top};
+
 								v2 QCM = Hadamard(Curve.Con, Scale) + (v2)v2s{Lef, Top};
 								v2 QCE = Hadamard(Curve.End, Scale) + (v2)v2s{Lef, Top};
 
@@ -121,10 +125,16 @@ DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCod
 								}
 #endif
 
-								m22 Base = M22ByCol(QCM - QCS, QCM - QCE);
-								{
-									v2 P = Base * (PixPos - v2{QCS.X, QCE.Y});
-									if(IsWithinInclusive(Magnitude(P), 0.0f, 1.0f))
+								inverse_m33_result Base = InverseMatrix(M33TransformByCol(QCM - QCS, 
+                                                                          QCM - QCE, 
+                                                                          v2{QCS.X, QCE.Y}));
+								if(Base.Valid)
+                {
+									v2 P = Base.M * PixPos;
+									if(IsWithinInclusive(P.X,                  0.0f, 1.0f) &&
+                     IsWithinInclusive(P.Y,                  0.0f, 1.0f) &&
+                     IsWithinInclusive(MagnitudeSquared(P),  0.0f, 1.0f) &&
+                     IsWithinInclusive(P.X+P.Y,              1.0f, 2.0f))
 									{
 										BezierFlipCount += 1;
 									}
@@ -161,7 +171,7 @@ DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCod
 						}
 						if(BezierFlipCount > 0)
 						{
-							Color = Color ? 0x00000000 : 0x00FFFFFF;
+							Color = Color ? 0x000000FF : 0x00FFFF00;
 						}
 						*Pixel++ = Color;
 					}
@@ -324,7 +334,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	Memory->DEBUGPlatformWriteEntireFile("data/MSMINCHO.font", 
 																			 (u32)GameState->TransientArena.Used, Font);
 #endif
-#if 1
+#if 0
 	debug_read_file_result FontFile = 
 		Memory->DEBUGPlatformReadEntireFile("data/nukamiso_2004_beta09.font");
 #else

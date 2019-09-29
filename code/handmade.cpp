@@ -43,7 +43,7 @@
 
 internal_function void
 DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCodePoint, 
-											 rectangle2 DrawRect)
+											 rectangle2 DrawRect, game_input* Input)
 {
 	s32 Lef = (s32)(DrawRect.Min.X - 1.0f);
 	s32 Top = (s32)(DrawRect.Max.Y + 1.0f);
@@ -67,7 +67,7 @@ DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCod
 				s32 CurveCount = Entries[EntryIndex].QuadraticCurveCount;
         local_persist u32 LocalCount = 0;
         LocalCount = (LocalCount+1)%(CurveCount+1);
-        CurveCount = LocalCount;
+        //CurveCount = LocalCount;
 
 				s32 PixelPitch = Buffer->Width;
 				u32 *UpperLeftPixel = (u32 *)Buffer->Memory + Lef + Top * PixelPitch;
@@ -101,9 +101,14 @@ DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCod
 								Curve.Con.Y = 1.0f - Curve.Con.Y;
 								Curve.End.Y = 1.0f - Curve.End.Y;
 								v2 QCS = Hadamard(Curve.Srt, Scale) + (v2)v2s{Lef, Top};
-
 								v2 QCM = Hadamard(Curve.Con, Scale) + (v2)v2s{Lef, Top};
 								v2 QCE = Hadamard(Curve.End, Scale) + (v2)v2s{Lef, Top};
+
+#if 0
+                v2 MouseP = GetMouse(Input, 1)->P;
+                v2 MousePxP = Hadamard(MouseP, Buffer->Dim);
+                QCM = MousePxP;
+#endif
 
 								v2 PixPos = (v2)v2s{X, Y};
 								v2 ScanLineS = (v2)v2s{0, Y};
@@ -117,28 +122,29 @@ DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCod
 									if(P.X < PixPos.X) { RayCastCount += 1; }
 								}
 
-#if 0
-								f32 NewSquareDist = SquareDistancePointToLineSegment(QCS, QCE, PixPos);
-								if(NewSquareDist < ShortestSquareDist)
-								{
-									ShortestSquareDist = NewSquareDist;
-								}
-#endif
-
-								inverse_m33_result Base = InverseMatrix(M33TransformByCol(QCM - QCS, 
-                                                                          QCM - QCE, 
-                                                                          v2{QCS.X, QCE.Y}));
-								if(Base.Valid)
+                m33 TriToPixel = M33TransformByCol(QCS - QCM, QCE - QCM, QCM);
+                //TODO(bjorn): This breaks when just doing the
+                //InverseTransform. Is InverseTransform broken or am I thinking
+                //about this in a wrong way?
+								m33 Base = InverseMatrix(TriToPixel).M;
+								//if(Base.Valid)
                 {
-									v2 P = Base.M * PixPos;
+									v2 P = Base * PixPos;
 									if(IsWithinInclusive(P.X,                  0.0f, 1.0f) &&
                      IsWithinInclusive(P.Y,                  0.0f, 1.0f) &&
-                     IsWithinInclusive(MagnitudeSquared(P),  0.0f, 1.0f) &&
-                     IsWithinInclusive(P.X+P.Y,              1.0f, 2.0f))
+                     IsWithinInclusive(MagnitudeSquared(P-v2{1,1}),  0.0f, 1.0f) &&
+                     IsWithinInclusive(P.X+P.Y,              0.0f, 1.0f))
 									{
 										BezierFlipCount += 1;
 									}
 								}
+#if 0
+								f32 NewSquareDist = SquareDistancePointToLineSegment(QCS, QCE, PixPos);
+								if(NewSquareDitst < ShortestSquareDist)
+								{
+									ShortestSquareDist = NewSquareDist;
+								}
+#endif
 							}
 							IsInside = RayCastCount & 0x000001;
 							//ShortestDist = SquareRoot(ShortestSquareDist);
@@ -171,14 +177,42 @@ DrawUTF16GlyphPolyfill(game_offscreen_buffer* Buffer, font* Font, u16 UnicodeCod
 						}
 						if(BezierFlipCount > 0)
 						{
-							Color = Color ? 0x000000FF : 0x00FFFF00;
+							//Color = Color ? 0x000000FF : 0x00FFFF00;
+							Color = Color ? 0x00000000 : 0x00FFFFFF;
 						}
 						*Pixel++ = Color;
 					}
 
 					UpperLeftPixel += PixelPitch;
 				}
-			}
+
+#if 0
+        for(s32 CurveIndex = 0;
+            CurveIndex < CurveCount;
+            CurveIndex++)
+        {
+          quadratic_curve Curve = Curves[CurveIndex];
+
+          Curve.Srt.Y += 0.1f;
+          Curve.Con.Y += 0.1f;
+          Curve.End.Y += 0.1f;
+          Curve.Srt.Y = 1.0f - Curve.Srt.Y;
+          Curve.Con.Y = 1.0f - Curve.Con.Y;
+          Curve.End.Y = 1.0f - Curve.End.Y;
+          v2 QCS = Hadamard(Curve.Srt, Scale) + (v2)v2s{Lef, Top};
+          v2 QCM = Hadamard(Curve.Con, Scale) + (v2)v2s{Lef, Top};
+          v2 QCE = Hadamard(Curve.End, Scale) + (v2)v2s{Lef, Top};
+
+          v2 MouseP = GetMouse(Input, 1)->P;
+          v2 MousePxP = Hadamard(MouseP, Buffer->Dim);
+          QCM = MousePxP;
+
+          DrawLine(Buffer, QCS, QCM, v3{1,0.5f,0});
+          DrawLine(Buffer, QCM, QCE, v3{1,0,0.5f});
+          DrawLine(Buffer, QCE, QCS, v3{0.5f,0,0});
+        }
+#endif
+      }
 		}
 	}
 }
@@ -334,7 +368,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	Memory->DEBUGPlatformWriteEntireFile("data/MSMINCHO.font", 
 																			 (u32)GameState->TransientArena.Used, Font);
 #endif
-#if 0
+#if 1
 	debug_read_file_result FontFile = 
 		Memory->DEBUGPlatformReadEntireFile("data/nukamiso_2004_beta09.font");
 #else
@@ -449,7 +483,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 	rectangle2 Rect = RectCenterDim(v2{Buffer->Width * 0.5f, Buffer->Height * 0.5f + 100}, 
 																	v2{300.0f, 300.0f});
-	DrawUTF16GlyphPolyfill(Buffer, GameState->Font, GameState->UTF16Buffer_Kanji[401], Rect);
+  local_persist u32 KanjiIndex = 0;
+  if(Held(GetKeyboard(Input, 1), Space))
+  {
+    KanjiIndex += 1;
+  }
+	DrawUTF16GlyphPolyfill(Buffer, GameState->Font, GameState->UTF16Buffer_Kanji[KanjiIndex], 
+                         Rect, Input);
 #if 0
 	for(s32 i = 0; i < 20; i++)
 	{

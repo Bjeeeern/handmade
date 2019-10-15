@@ -242,6 +242,7 @@ struct game_state
 	s32 UTF16Buffer_KanjiCount;
 	u16 UTF16Buffer_Primitives[1024];
 	s32 UTF16Buffer_PrimitivesCount;
+  u16 UTF16Buffer_ASCII[94];
 
 	loaded_bitmap Backdrop;
 	loaded_bitmap Rock;
@@ -267,6 +268,12 @@ struct game_state
 	f32 NoteTone;
 	f32 NoteDuration;
 	f32 NoteSecondsPassed;
+};
+
+struct SubTexture
+struct bitmap_font
+{
+  s32 GlyphCount;
 };
 
 	internal_function void
@@ -362,6 +369,19 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 																				 GameState->UTF16Buffer_Kanji, 
 																				 ArrayCount(GameState->UTF16Buffer_Kanji)).Count;
 
+
+  {
+    temporary_memory TempMem = BeginTemporaryMemory(GameState->TransientArena);
+    for(s32 CharIndex = 32; 
+        CharIndex < ArrayCount(GameState->UTF16Buffer_ASCII); 
+        CharIndex++)
+    {
+      GameState->UTF16Buffer_ASCII[CharIndex] = (u16)CharIndex;
+    }
+    EndTemporaryMemory(TempMem);
+    CheckMemoryArena(GameState->TransientArena);
+  }
+
 #if 0
 	debug_read_file_result TTF = Memory->DEBUGPlatformReadEntireFile("data/MSMINCHO.TTF");
 	font* Font = TrueTypeFontToFont(&GameState->TransientArena, (true_type_font*)TTF.Content);
@@ -377,23 +397,6 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	GameState->Font = (font *)FontFile.Content;
 
 }
-
-	internal_function void
-TransformLineToScreenSpaceAndRender(game_offscreen_buffer* Buffer, render_piece* RenderPiece,
-																		f32 CamDist, m44 CamTrans, v3 V0, v3 V1,
-																		v2 ScreenCenter, m22 GameSpaceToScreenSpace,
-																		v3 RGB)
-{
-	transform_result Tran0 = TransformPoint(CamDist, CamTrans, V0);
-	transform_result Tran1 = TransformPoint(CamDist, CamTrans, V1);
-
-	if(Tran0.Valid && Tran1.Valid)
-	{
-		v2 PixelV0 = ScreenCenter + (GameSpaceToScreenSpace * Tran0.P) * Tran0.f;
-		v2 PixelV1 = ScreenCenter + (GameSpaceToScreenSpace * Tran1.P) * Tran1.f;
-		DrawLine(Buffer, PixelV0, PixelV1, RGB);
-	}
-};
 
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
@@ -481,15 +484,21 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// NOTE(bjorn): Rendering
 	//
 
-	rectangle2 Rect = RectCenterDim(v2{Buffer->Width * 0.5f, Buffer->Height * 0.5f + 100}, 
-																	v2{300.0f, 300.0f});
-  local_persist u32 KanjiIndex = 0;
+  local_persist u32 KanjiIndex = 32;
   if(Held(GetKeyboard(Input, 1), Space))
   {
     KanjiIndex += 1;
   }
-	DrawUTF16GlyphPolyfill(Buffer, GameState->Font, GameState->UTF16Buffer_Kanji[KanjiIndex], 
-                         Rect, Input);
+	// DrawUTF16GlyphPolyfill(Buffer, GameState->Font, GameState->UTF16Buffer_ASCII[KanjiIndex], 
+  //                        Rect, Input);
+  for(s32 Index = 0;
+      Index < 10;
+      Index++)
+  {
+    rectangle2 Rect = RectCenterDim(v2{Buffer->Width * 0.2f, Buffer->Height * 0.5f}, 
+                                    v2{300.0f, 300.0f} * (1.0f/(f32)(1<<Index)));
+    DrawBitmapGlyph(Buffer, GameState->BitmapFont, 'E', Rect);
+  }
 #if 0
 	for(s32 i = 0; i < 20; i++)
 	{

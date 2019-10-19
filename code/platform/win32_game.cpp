@@ -5,6 +5,7 @@
 #include <windows.h>
 #include <xinput.h>
 #include <dsound.h>
+#include <d3d11.h>
 
 //IMPORTANT TODO(bjorn): This is for the swprintf function. Remove this in the future.
 #include <stdio.h>
@@ -1342,21 +1343,50 @@ WinMain(HINSTANCE Instance,
 		f32 GameUpdateHz = ((f32)MonitorRefreshHz / 2.0f);
 		f32 TargetSecondsPerFrame = 1.0f / GameUpdateHz;
 
-		win32_sound_output SoundOutput = {};
+    ID3D11Device* GPUDevice = 0;
+    ID3D11DeviceContext* GPUContext = 0;
+    {
+      u32 DeviceFlags = (D3D11_CREATE_DEVICE_BGRA_SUPPORT |
+#if HANDMADE_INTERNAL
+                         D3D11_CREATE_DEVICE_DEBUG
+#endif
+                        );
+      D3D_FEATURE_LEVEL AquiredFeatureLevel;
+      if(SUCCEEDED( D3D11CreateDevice(
+                                      0,
+                                      D3D_DRIVER_TYPE_HARDWARE,
+                                      0,
+                                      DeviceFlags,
+                                      0,
+                                      0,
+                                      D3D11_SDK_VERSION,
+                                      &GPUDevice,
+                                      &AquiredFeatureLevel,
+                                      &GPUContext)))
+      {
+        Assert(AquiredFeatureLevel == D3D_FEATURE_LEVEL_11_0);
+      }
+      else
+      {
+        //TODO(bjorn): Handle d3d11 not being supported?
+      }
+    }
 
-		// TODO(bjorn): Maybe make the soundbuffer a minute long instead of a second.
-		SoundOutput.SamplesPerSecond = 48000;
-		SoundOutput.BytesPerSample = sizeof(s16)*2;
-		SoundOutput.SecondaryBufferSize = (SoundOutput.SamplesPerSecond * 
-																			 SoundOutput.BytesPerSample);
-		SoundOutput.SafetyBytes = (s32)((((f32)SoundOutput.SamplesPerSecond*
-																			(f32)SoundOutput.BytesPerSample) / 
-																		 (f32)GameUpdateHz) / 2.0f);
-		// TODO(bjorn): Handle sound startup.
-		b32 SoundFirstTimeAround = true;
+    win32_sound_output SoundOutput = {};
 
-		LPDIRECTSOUNDBUFFER SecondarySoundBuffer = 
-			Win32InitDSound(WindowHandle, 
+    // TODO(bjorn): Maybe make the soundbuffer a minute long instead of a second.
+    SoundOutput.SamplesPerSecond = 48000;
+    SoundOutput.BytesPerSample = sizeof(s16)*2;
+    SoundOutput.SecondaryBufferSize = (SoundOutput.SamplesPerSecond * 
+                                       SoundOutput.BytesPerSample);
+    SoundOutput.SafetyBytes = (s32)((((f32)SoundOutput.SamplesPerSecond*
+                                      (f32)SoundOutput.BytesPerSample) / 
+                                     (f32)GameUpdateHz) / 2.0f);
+    // TODO(bjorn): Handle sound startup.
+    b32 SoundFirstTimeAround = true;
+
+    LPDIRECTSOUNDBUFFER SecondarySoundBuffer = 
+      Win32InitDSound(WindowHandle, 
 											SoundOutput.SamplesPerSecond, 
 											SoundOutput.SecondaryBufferSize);
 		Win32ClearSoundBuffer(&SoundOutput, SecondarySoundBuffer);

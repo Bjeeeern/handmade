@@ -5,6 +5,8 @@
 #include <windows.h>
 #include <xinput.h>
 #include <dsound.h>
+#include <d3d11.h>
+#include <dxgi1_2.h>
 
 //IMPORTANT TODO(bjorn): This is for the swprintf function. Remove this in the future.
 #include <stdio.h>
@@ -1339,24 +1341,134 @@ WinMain(HINSTANCE Instance,
 		{
 			MonitorRefreshHz = Win32RefreshRate;
 		}
+#if HANDMADE_INTERNAL
 		f32 GameUpdateHz = ((f32)MonitorRefreshHz / 2.0f);
+#endif
 		f32 TargetSecondsPerFrame = 1.0f / GameUpdateHz;
 
-		win32_sound_output SoundOutput = {};
+    ID3D11Device* D3D11Device = 0;
+    ID3D11DeviceContext* D3D11Context = 0;
+    IDXGISwapChain1* WindowedSwapChain = 0;
+    IDXGISwapChain1* FullscreenSwapChain = 0;
+    {
+      u32 DeviceFlags = (D3D11_CREATE_DEVICE_BGRA_SUPPORT |
+#if HANDMADE_INTERNAL
+                         D3D11_CREATE_DEVICE_DEBUG
+#endif
+                        );
+      D3D_FEATURE_LEVEL AquiredFeatureLevel;
+      if(SUCCEEDED( D3D11CreateDevice(
+                                      0,
+                                      D3D_DRIVER_TYPE_HARDWARE,
+                                      0,
+                                      DeviceFlags,
+                                      0,
+                                      0,
+                                      D3D11_SDK_VERSION,
+                                      &D3D11Device,
+                                      &AquiredFeatureLevel,
+                                      &D3D11Context)))
+      {
+        Assert(AquiredFeatureLevel == D3D_FEATURE_LEVEL_11_0);
+      }
+      else
+      {
+        //TODO(bjorn): Handle d3d11 not being supported?
+      }
 
-		// TODO(bjorn): Maybe make the soundbuffer a minute long instead of a second.
-		SoundOutput.SamplesPerSecond = 48000;
-		SoundOutput.BytesPerSample = sizeof(s16)*2;
-		SoundOutput.SecondaryBufferSize = (SoundOutput.SamplesPerSecond * 
-																			 SoundOutput.BytesPerSample);
-		SoundOutput.SafetyBytes = (s32)((((f32)SoundOutput.SamplesPerSecond*
-																			(f32)SoundOutput.BytesPerSample) / 
-																		 (f32)GameUpdateHz) / 2.0f);
-		// TODO(bjorn): Handle sound startup.
-		b32 SoundFirstTimeAround = true;
+      DXGI_SWAP_CHAIN_DESC1 SwapChainDesc = {};
+      SwapChainDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+      SwapChainDesc.Stereo = TRUE; //TODO(bjorn): What does this actually do?
+      //NOTE(bjorn): I can probably ignore this.
+      //SwapChainDesc.SampleDesc.Count = 1;
+      //SwapChainDesc.SampleDesc.Quality = 0;
+      //NOTE(msdn):You don’t need to pass DXGI_USAGE_BACK_BUFFER when you create a swap chain.
+      //TODO(bjorn): Does this mean that I can't set it to DXGI_USAGE_BACK_BUFFER?
+      SwapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+      SwapChainDesc.BufferCount = 1;
+      //NOTE(bjorn): Having scaling turned off is nicer for debugging but not
+      //supported on win7 according to
+      //https://docs.microsoft.com/en-us/windows/win32/direct3darticles/platform-update-for-windows-7?redirectedfrom=MSDN
+      //SwapChainDesc.Scaling = DXGI_SCALING_NONE;
+      SwapChainDesc.Scaling = DXGI_SCALING_STRETCH;
+      SwapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+      //TODO(bjorn): Maybe turn this on after I lean about it in HMH.
+      //SwapChainDesc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
+      //TODO(bjorn): Is this flag relevant instead of creating two swap chains? 
+      //DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH
+      IDXGIDevice2* DXGIDevice2;
+      if(SUCCEEDED(D3D11Device->QueryInterface(__uuidof(IDXGIDevice2), (void**)&DXGIDevice2)))
+      {
+        IDXGIAdapter* DXGIAdapter;
+        if(SUCCEEDED(DXGIDevice2->GetAdapter(&DXGIAdapter)))
+        {
+          IDXGIFactory2* DXGIFactory2;
+          if(SUCCEEDED(DXGIAdapter->GetParent(__uuidof(IDXGIFactory2), (void**)&DXGIFactory2)))
+          {
+            if(SUCCEEDED(DXGIFactory2->CreateSwapChainForHwnd(D3D11Device,
+                                                               WindowHandle,
+                                                               &SwapChainDesc,
+                                                               0,
+                                                               0,
+                                                               &WindowedSwapChain)))
+            {
+              Assert(WindowedSwapChain);
+            }
+            else
+            {
+              //TODO(bjorn): Handle error.
+            }
 
-		LPDIRECTSOUNDBUFFER SecondarySoundBuffer = 
-			Win32InitDSound(WindowHandle, 
+            DXGI_SWAP_CHAIN_FULLSCREEN_DESC SwapChainFullscreenDesc = {};
+            SwapChainFullscreenDesc.RefreshRate = {1, 30};
+            //SwapChainFullscreenDesc.ScanlineOrdering;
+            //SwapChainFullscreenDesc.Scaling;
+            SwapChainFullscreenDesc.Windowed = TRUE;
+            if(SUCCEEDED(DXGIFactory2->CreateSwapChainForHwnd(D3D11Device,
+                                                              WindowHandle,
+                                                              &SwapChainDesc,
+                                                              &SwapChainFullscreenDesc,
+                                                              0,
+                                                              &FullscreenSwapChain)))
+            {
+              Assert(FullscreenSwapChain);
+            }
+            else
+            {
+              //TODO(bjorn): Handle error.
+            }
+          }
+          else
+          {
+            //TODO(bjorn): Handle error.
+          }
+        }
+        else
+        {
+          //TODO(bjorn): Handle error.
+        }
+      }
+      else
+      {
+        //TODO(bjorn): Handle error.
+      }
+    }
+
+    win32_sound_output SoundOutput = {};
+
+    // TODO(bjorn): Maybe make the soundbuffer a minute long instead of a second.
+    SoundOutput.SamplesPerSecond = 48000;
+    SoundOutput.BytesPerSample = sizeof(s16)*2;
+    SoundOutput.SecondaryBufferSize = (SoundOutput.SamplesPerSecond * 
+                                       SoundOutput.BytesPerSample);
+    SoundOutput.SafetyBytes = (s32)((((f32)SoundOutput.SamplesPerSecond*
+                                      (f32)SoundOutput.BytesPerSample) / 
+                                     (f32)GameUpdateHz) / 2.0f);
+    // TODO(bjorn): Handle sound startup.
+    b32 SoundFirstTimeAround = true;
+
+    LPDIRECTSOUNDBUFFER SecondarySoundBuffer = 
+      Win32InitDSound(WindowHandle, 
 											SoundOutput.SamplesPerSecond, 
 											SoundOutput.SecondaryBufferSize);
 		Win32ClearSoundBuffer(&SoundOutput, SecondarySoundBuffer);

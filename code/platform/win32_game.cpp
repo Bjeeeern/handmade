@@ -1348,8 +1348,7 @@ WinMain(HINSTANCE Instance,
 
     ID3D11Device* D3D11Device = 0;
     ID3D11DeviceContext* D3D11Context = 0;
-    IDXGISwapChain1* WindowedSwapChain = 0;
-    IDXGISwapChain1* FullscreenSwapChain = 0;
+    IDXGISwapChain1* SwapChainWindowed = 0;
     {
       u32 DeviceFlags = (D3D11_CREATE_DEVICE_BGRA_SUPPORT |
 #if HANDMADE_INTERNAL
@@ -1369,33 +1368,13 @@ WinMain(HINSTANCE Instance,
                                       &AquiredFeatureLevel,
                                       &D3D11Context)))
       {
-        Assert(AquiredFeatureLevel == D3D_FEATURE_LEVEL_11_0);
       }
       else
       {
         //TODO(bjorn): Handle d3d11 not being supported?
       }
+      Assert(AquiredFeatureLevel == D3D_FEATURE_LEVEL_11_0);
 
-      DXGI_SWAP_CHAIN_DESC1 SwapChainDesc = {};
-      SwapChainDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-      SwapChainDesc.Stereo = TRUE; //TODO(bjorn): What does this actually do?
-      //NOTE(bjorn): I can probably ignore this.
-      //SwapChainDesc.SampleDesc.Count = 1;
-      //SwapChainDesc.SampleDesc.Quality = 0;
-      //NOTE(msdn):You don’t need to pass DXGI_USAGE_BACK_BUFFER when you create a swap chain.
-      //TODO(bjorn): Does this mean that I can't set it to DXGI_USAGE_BACK_BUFFER?
-      SwapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-      SwapChainDesc.BufferCount = 1;
-      //NOTE(bjorn): Having scaling turned off is nicer for debugging but not
-      //supported on win7 according to
-      //https://docs.microsoft.com/en-us/windows/win32/direct3darticles/platform-update-for-windows-7?redirectedfrom=MSDN
-      //SwapChainDesc.Scaling = DXGI_SCALING_NONE;
-      SwapChainDesc.Scaling = DXGI_SCALING_STRETCH;
-      SwapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-      //TODO(bjorn): Maybe turn this on after I lean about it in HMH.
-      //SwapChainDesc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
-      //TODO(bjorn): Is this flag relevant instead of creating two swap chains? 
-      //DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH
       IDXGIDevice2* DXGIDevice2;
       if(SUCCEEDED(D3D11Device->QueryInterface(__uuidof(IDXGIDevice2), (void**)&DXGIDevice2)))
       {
@@ -1405,38 +1384,79 @@ WinMain(HINSTANCE Instance,
           IDXGIFactory2* DXGIFactory2;
           if(SUCCEEDED(DXGIAdapter->GetParent(__uuidof(IDXGIFactory2), (void**)&DXGIFactory2)))
           {
+            DXGI_SWAP_CHAIN_DESC1 SwapChainDesc = {};
+            SwapChainDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+            //SwapChainDesc.Stereo = TRUE; //TODO(bjorn): What does this actually do?
+            //STUDY(bjorn): Anti-aliasing.
+            SwapChainDesc.SampleDesc.Count = 1;
+            //SwapChainDesc.SampleDesc.Quality = 0;
+            //NOTE(msdn):You don’t need to pass DXGI_USAGE_BACK_BUFFER when you create a swap chain.
+            //TODO(bjorn): Does this mean that I can't set it to DXGI_USAGE_BACK_BUFFER?
+            SwapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+            SwapChainDesc.BufferCount = 2;
+            //NOTE(bjorn): Having scaling turned off is nicer for debugging but not
+            //supported on win7 according to
+            //https://docs.microsoft.com/en-us/windows/win32/direct3darticles/platform-update-for-windows-7?redirectedfrom=MSDN
+            //SwapChainDesc.Scaling = DXGI_SCALING_NONE;
+            //SwapChainDesc.Scaling = DXGI_SCALING_STRETCH;
+            SwapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+            //TODO(bjorn): Maybe turn this on after I lean about it in HMH.
+            //SwapChainDesc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
+            //TODO(bjorn): Is this flag relevant instead of creating two swap chains? 
+            //DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH
             if(SUCCEEDED(DXGIFactory2->CreateSwapChainForHwnd(D3D11Device,
-                                                               WindowHandle,
-                                                               &SwapChainDesc,
-                                                               0,
-                                                               0,
-                                                               &WindowedSwapChain)))
+                                                              WindowHandle,
+                                                              &SwapChainDesc,
+                                                              0,
+                                                              0,
+                                                              &SwapChainWindowed)))
             {
-              Assert(WindowedSwapChain);
             }
             else
             {
               //TODO(bjorn): Handle error.
             }
+            Assert(SwapChainWindowed);
 
+            //TODO STUDY
+            // https://docs.microsoft.com/en-us/windows/win32/direct3darticles/dxgi-best-practices
+            //
+            // Excerpt:
+            //
+            // DXGI attempts to simplify this approach by combining the two
+            // cases. For example, when the window border is dragged in windowed
+            // mode, the application receives a WM_SIZE message. DXGI intercepts
+            // this message and automatically resizes the front buffer. All that
+            // the application needs to do is call IDXGISwapChain::ResizeBuffers
+            // to resize the back buffer to the size that was passed as
+            // parameters in WM_SIZE. Similarly, when the application needs to
+            // switch between full-screen and windowed mode, the application can
+            // simply call IDXGISwapChain::SetFullscreenState. DXGI resizes the
+            // front buffer to match the newly selected full-screen mode, and it
+            // sends a WM_SIZE message to the application. The application again
+            // calls ResizeBuffers, just as it would if the window border was
+            // dragged.
+
+#if 0
             DXGI_SWAP_CHAIN_FULLSCREEN_DESC SwapChainFullscreenDesc = {};
             SwapChainFullscreenDesc.RefreshRate = {1, 30};
             //SwapChainFullscreenDesc.ScanlineOrdering;
             //SwapChainFullscreenDesc.Scaling;
-            SwapChainFullscreenDesc.Windowed = TRUE;
+            //SwapChainFullscreenDesc.Windowed = FALSE;
             if(SUCCEEDED(DXGIFactory2->CreateSwapChainForHwnd(D3D11Device,
                                                               WindowHandle,
                                                               &SwapChainDesc,
                                                               &SwapChainFullscreenDesc,
                                                               0,
-                                                              &FullscreenSwapChain)))
+                                                              &SwapChainFullscreen)))
             {
-              Assert(FullscreenSwapChain);
             }
             else
             {
               //TODO(bjorn): Handle error.
             }
+            Assert(SwapChainFullscreen);
+#endif
           }
           else
           {
@@ -1452,6 +1472,74 @@ WinMain(HINSTANCE Instance,
       {
         //TODO(bjorn): Handle error.
       }
+    }
+
+    //NOTE(bjorn): Set render target to default swap-chain backbuffer.
+    {
+      ID3D11Texture2D* SwapChainBackBuffer = 0;
+      ID3D11Texture2D* SwapChainDepthStencil = 0;
+      ID3D11RenderTargetView* RenderTargetView = 0;
+      ID3D11DepthStencilView* DepthStencilView = 0;
+      if(SUCCEEDED(SwapChainWindowed->GetBuffer(0,
+                                                __uuidof(ID3D11Texture2D),
+                                                (void**)&SwapChainBackBuffer)))
+      {
+        Assert(SwapChainBackBuffer);
+
+        if(SUCCEEDED(D3D11Device->CreateRenderTargetView(SwapChainBackBuffer,
+                                                         0,
+                                                         &RenderTargetView)))
+        {
+        }
+        else
+        {
+          //TODO(bjorn): Handle error.
+        }
+
+        D3D11_TEXTURE2D_DESC SwapChainBackBufferDesc;
+        SwapChainBackBuffer->GetDesc(&SwapChainBackBufferDesc);
+
+        D3D11_TEXTURE2D_DESC DepthStencilDesc = {};
+        DepthStencilDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+        DepthStencilDesc.Width = SwapChainBackBufferDesc.Width;
+        DepthStencilDesc.Height = SwapChainBackBufferDesc.Height;
+        DepthStencilDesc.MipLevels = 1;
+        DepthStencilDesc.ArraySize = 1;
+        //TODO(bjorn): What is this and do I care?
+        //DepthStencilDesc.Format = pDeviceSettings->d3d11.AutoDepthStencilFormat;
+        DepthStencilDesc.SampleDesc.Count = 1;
+        DepthStencilDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+
+        if(SUCCEEDED(D3D11Device->CreateTexture2D(&DepthStencilDesc, 
+                                                  0, 
+                                                  &SwapChainDepthStencil)))
+        {
+
+          D3D11_DEPTH_STENCIL_VIEW_DESC DepthStencilViewDesc = {};
+          DepthStencilViewDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+          if(SUCCEEDED(D3D11Device->CreateDepthStencilView(SwapChainDepthStencil,
+                                                           &DepthStencilViewDesc,
+                                                           &DepthStencilView)))
+          {
+          }
+          else
+          {
+            //TODO(bjorn): Handle error.
+          }
+        }
+        else
+        {
+          //TODO(bjorn): Handle error.
+        }
+      }
+      else
+      {
+        //TODO(bjorn): Handle error.
+      }
+      Assert(SwapChainBackBuffer);
+      Assert(SwapChainDepthStencil);
+      Assert(RenderTargetView);
+      Assert(DepthStencilView);
     }
 
     win32_sound_output SoundOutput = {};

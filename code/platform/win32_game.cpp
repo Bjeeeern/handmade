@@ -1475,11 +1475,11 @@ WinMain(HINSTANCE Instance,
     }
 
     //NOTE(bjorn): Set render target to default swap-chain backbuffer.
+    ID3D11Texture2D* SwapChainBackBuffer = 0;
+    ID3D11Texture2D* SwapChainDepthStencil = 0;
+    ID3D11RenderTargetView* RenderTargetView = 0;
+    ID3D11DepthStencilView* DepthStencilView = 0;
     {
-      ID3D11Texture2D* SwapChainBackBuffer = 0;
-      ID3D11Texture2D* SwapChainDepthStencil = 0;
-      ID3D11RenderTargetView* RenderTargetView = 0;
-      ID3D11DepthStencilView* DepthStencilView = 0;
       if(SUCCEEDED(SwapChainWindowed->GetBuffer(0,
                                                 __uuidof(ID3D11Texture2D),
                                                 (void**)&SwapChainBackBuffer)))
@@ -1540,6 +1540,17 @@ WinMain(HINSTANCE Instance,
       Assert(SwapChainDepthStencil);
       Assert(RenderTargetView);
       Assert(DepthStencilView);
+    }
+
+    {
+      D3D11_VIEWPORT Viewport = {};
+      Viewport.Width = (f32)GameScreenWidth;
+      Viewport.Height = (f32)GameScreenHeight;
+      Viewport.MinDepth = 0;
+      Viewport.MaxDepth = 1;
+
+      D3D11Context->RSSetViewports(1, &Viewport);
+      D3D11Context->OMSetRenderTargets(1, &RenderTargetView, DepthStencilView);
     }
 
     win32_sound_output SoundOutput = {};
@@ -2039,12 +2050,14 @@ WinMain(HINSTANCE Instance,
 #endif
 			win32_window_dimension WindowDimension = Win32GetWindowDimension(WindowHandle);
 
+#if 0
 			HDC DeviceContext = GetDC(WindowHandle);
 			Win32CopyBufferToWindow(&BackBuffer, DeviceContext, 
 															WindowDimension.Width, WindowDimension.Height,
 															GameScreenLeft, GameScreenTop,
 															GameScreenWidth, GameScreenHeight);
 			ReleaseDC(WindowHandle, DeviceContext);
+#endif
 
 			for(s32 ControllerIndex = 1;
 					ControllerIndex <= MaxControllerCount;

@@ -823,35 +823,54 @@ RandomNumberTable[] =
 0x294efc18, 0x265a2515, 0x16b16164, 0x2404b699 
 };
 
-global_variable u32 RandomNumberIndex = 0;
-
-  internal_function void
-SetRandomSeed(u32 Seed)
+struct random_series
 {
-  RandomNumberIndex = Seed;
-}
+  u32 RandomNumberIndex;
+};
 
-internal_function f32
-RandomUnilateral()
+  internal_function random_series
+Seed(u32 Seed)
 {
-  f32 Result = ((f32)(RandomNumberTable[RandomNumberIndex++] - MinRandomNumberValue) * 
-                (1.0f / (f32)(MaxRandomNumberValue - MinRandomNumberValue)));
+  random_series Result;
+
+  Result.RandomNumberIndex = Seed;
+  Result.RandomNumberIndex %= ArrayCount(RandomNumberTable);
+
   return Result;
 }
+
 internal_function f32
-RandomBilateral()
+RandomUnilateral(random_series* Seed)
 {
-  return RandomUnilateral() * 2.0f - 1.0f;
+  f32 Result = ((f32)(RandomNumberTable[Seed->RandomNumberIndex++] - MinRandomNumberValue) * 
+                (1.0f / (f32)(MaxRandomNumberValue - MinRandomNumberValue)));
+  Seed->RandomNumberIndex %= ArrayCount(RandomNumberTable);
+  return Result;
 }
+
+internal_function f32
+RandomBetween(random_series* Seed, f32 Min, f32 Max)
+{
+  return Lerp(RandomUnilateral(Seed), Min, Max);
+}
+
+internal_function f32
+RandomBilateral(random_series* Seed)
+{
+  return RandomUnilateral(Seed) * 2.0f - 1.0f;
+}
+
 internal_function v2
-RandomBilateralV2()
+RandomBilateralV2(random_series* Seed)
 {
-  return {RandomBilateral(), RandomBilateral()};
+  return {RandomBilateral(Seed), RandomBilateral(Seed)};
 }
+
 internal_function u32
-RandomZeroToN(u32 Number)
+RandomChoice(random_series* Seed, u32 ChoiceCount)
 {
-  return RandomNumberTable[RandomNumberIndex++] % (Number+1);
+  Seed->RandomNumberIndex %= ArrayCount(RandomNumberTable);
+  return RandomNumberTable[Seed->RandomNumberIndex++] % ChoiceCount;
 }
 
 #define RANDOM_H

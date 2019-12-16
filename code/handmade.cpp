@@ -472,20 +472,20 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 internal_function void
 DrawGeneratedTile(game_state* GameState, game_offscreen_buffer* Buffer)
 {
-  SetRandomSeed(0);
+  random_series Series = Seed(0);
   for(u32 Index = 0; Index < 100; Index++)
   {
     v2 Center = Buffer->Dim * 0.5f;
-    v2 Offset = Hadamard(RandomBilateralV2() * 0.5f, Buffer->Dim * 0.8f);
+    v2 Offset = Hadamard(RandomBilateralV2(&Series) * 0.5f, Buffer->Dim * 0.8f);
     loaded_bitmap* Bitmap = 0;
 
-    switch(RandomZeroToN(1))
+    switch(RandomChoice(&Series, 2))
     {
       case 0: {
-                Bitmap = GameState->Grass  + RandomZeroToN(1);
+                Bitmap = GameState->Grass  + RandomChoice(&Series, 2);
               } break;
       case 1: {
-                Bitmap = GameState->Ground + RandomZeroToN(3);
+                Bitmap = GameState->Ground + RandomChoice(&Series, 4);
               } break;
     }
 
@@ -495,16 +495,16 @@ DrawGeneratedTile(game_state* GameState, game_offscreen_buffer* Buffer)
   for(u32 Index = 0; Index < 100; Index++)
   {
     v2 Center = Buffer->Dim * 0.5f;
-    v2 Offset = Hadamard(RandomBilateralV2() * 0.5f, Buffer->Dim * 0.8f);
+    v2 Offset = Hadamard(RandomBilateralV2(&Series) * 0.5f, Buffer->Dim * 0.8f);
     loaded_bitmap* Bitmap = 0;
 
-    if(RandomZeroToN(1) > 0.8f)
+    if(RandomChoice(&Series, 2) > 0.8f)
     {
-      Bitmap = GameState->Rock + RandomZeroToN(3);
+      Bitmap = GameState->Rock + RandomChoice(&Series, 4);
     }
     else
     {
-      Bitmap = GameState->Tuft + RandomZeroToN(2);
+      Bitmap = GameState->Tuft + RandomChoice(&Series, 3);
     }
 
     DrawBitmap(Buffer, Bitmap, Center + Offset - (Bitmap->Dim * 0.5f));

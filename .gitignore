@@ -1,7 +1,7 @@
 build
 libs
 debug/.vs
-debug/*.rdgb
+debug/*.rdbg
 
 **.input
 **.out

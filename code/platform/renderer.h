@@ -43,7 +43,7 @@ ClearDepthBuffer(depth_buffer* DepthBuffer)
 }
 
 	internal_function void
-DrawLine(game_offscreen_buffer *Buffer, depth_buffer* DepthBuffer,
+DrawLine(game_bitmap *Buffer, depth_buffer* DepthBuffer,
 				 f32 PixelStartX, f32 PixelStartY, f32 StartZ, 
 				 f32 PixelEndX, f32 PixelEndY, f32 EndZ,
 				 f32 RealR, f32 RealG, f32 RealB)
@@ -166,7 +166,7 @@ DrawLine(game_offscreen_buffer *Buffer, depth_buffer* DepthBuffer,
 }
 
 	internal_function void
-DrawLine(game_offscreen_buffer* Buffer, 
+DrawLine(game_bitmap* Buffer, 
 				 f32 AX, f32 AY, f32 BX, f32 BY, 
 				 f32 R, f32 G, f32 B)
 {
@@ -324,13 +324,13 @@ DrawLine(game_offscreen_buffer* Buffer,
 }
 
 	internal_function void
-DrawLine(game_offscreen_buffer* Buffer, v2 A, v2 B, v3 C)
+DrawLine(game_bitmap* Buffer, v2 A, v2 B, v3 C)
 {
 	DrawLine(Buffer, A.X, A.Y, B.X, B.Y, C.R, C.G, C.B);
 }
 
 	internal_function void
-DrawChar(game_offscreen_buffer *Buffer, font *Font, u32 UnicodeCodePoint, 
+DrawChar(game_bitmap *Buffer, font *Font, u32 UnicodeCodePoint, 
 				 f32 GlyphPixelWidth, f32 GlyphPixelHeight, 
 				 f32 GlyphOriginLeft, f32 GlyphOriginTop,
 				 f32 RealR, f32 RealG, f32 RealB)
@@ -369,7 +369,7 @@ DrawChar(game_offscreen_buffer *Buffer, font *Font, u32 UnicodeCodePoint,
 }
 
 	internal_function void
-DrawString(game_offscreen_buffer *Buffer, depth_buffer* DepthBuffer, 
+DrawString(game_bitmap *Buffer, depth_buffer* DepthBuffer, 
 					 font *Font, char *String, 
 					 f32 GlyphPixelWidth, f32 GlyphPixelHeight, 
 					 f32 GlyphOriginLeft, f32 GlyphOriginTop, f32 RealZ,
@@ -454,7 +454,7 @@ DrawString(game_offscreen_buffer *Buffer, depth_buffer* DepthBuffer,
 }
 
 	internal_function void
-DrawRectangle(game_offscreen_buffer *Buffer, rectangle2 Rect, v3 RGB)
+DrawRectangle(game_bitmap *Buffer, rectangle2 Rect, v3 RGB)
 {
 	s32 Left = RoundF32ToS32(Rect.Min.X);
 	s32 Right = RoundF32ToS32(Rect.Max.X);
@@ -493,7 +493,7 @@ DrawRectangle(game_offscreen_buffer *Buffer, rectangle2 Rect, v3 RGB)
 }
 
 	internal_function void
-DrawRectangle(game_offscreen_buffer *Buffer, depth_buffer* DepthBuffer, 
+DrawRectangle(game_bitmap *Buffer, depth_buffer* DepthBuffer, 
 							f32 RealLeft, f32 RealRight, 
 							f32 RealTop, f32 RealBottom, 
 							f32 RealZ,
@@ -552,7 +552,7 @@ DrawRectangle(game_offscreen_buffer *Buffer, depth_buffer* DepthBuffer,
 }
 
 	internal_function v2
-XYZMetersToXYPixels(game_offscreen_buffer* Buffer, camera* Camera, v3 Point)
+XYZMetersToXYPixels(game_bitmap* Buffer, camera* Camera, v3 Point)
 {
 	v2 Result = {};
 
@@ -580,7 +580,7 @@ XYZMetersToXYPixels(game_offscreen_buffer* Buffer, camera* Camera, v3 Point)
 }
 
 	internal_function void
-DrawRectangleRelativeCamera(game_offscreen_buffer* Buffer, 
+DrawRectangleRelativeCamera(game_bitmap* Buffer, 
 														depth_buffer* DepthBuffer, 
 														camera* Camera,
 														f32 RealLeft, f32 RealRight, 
@@ -609,7 +609,7 @@ DrawRectangleRelativeCamera(game_offscreen_buffer* Buffer,
 
 // TODO(bjorn): There is a visual bug when drawn from BottomRight to TopLeft.
 	internal_function void
-DrawFrame(game_offscreen_buffer *Buffer, depth_buffer* DepthBuffer,
+DrawFrame(game_bitmap *Buffer, depth_buffer* DepthBuffer,
 					v2 Start, v2 End, f32 RealZ, f32 Thickness, v3 Color)
 {
 	f32 Left = Start.X;
@@ -631,7 +631,7 @@ DrawFrame(game_offscreen_buffer *Buffer, depth_buffer* DepthBuffer,
 
 // TODO(bjorn): There is a visual bug when drawn from BottomRight to TopLeft.
 	internal_function void
-DrawFrame(game_offscreen_buffer *Buffer, rectangle2 R, v2 WorldDir, v3 Color)
+DrawFrame(game_bitmap *Buffer, rectangle2 R, v2 WorldDir, v3 Color)
 {
 	v2 ScreenSpaceDir = v2{WorldDir.X, -WorldDir.Y};
 	Assert(LengthSquared(WorldDir) <= 1.001f);
@@ -655,7 +655,7 @@ DrawFrame(game_offscreen_buffer *Buffer, rectangle2 R, v2 WorldDir, v3 Color)
 }
 
 	internal_function void
-DrawBitmap(game_offscreen_buffer *Buffer, loaded_bitmap *Bitmap, 
+DrawBitmap(game_bitmap* Buffer, game_bitmap* Bitmap, 
 					 v2 TopLeft, v2 RealDim, f32 Alpha = 1.0f)
 {
 	v2 BottomRight = TopLeft + RealDim;
@@ -678,7 +678,7 @@ DrawBitmap(game_offscreen_buffer *Buffer, loaded_bitmap *Bitmap,
 	Assert(DestTop >= 0);
 	Assert(DestBottom <= Buffer->Height);
 
-	u32 *DestBufferRow = ((u32 *)Buffer->Memory) + (Buffer->Width * DestTop + DestLeft);
+	u32 *DestBufferRow = Buffer->Memory + (Buffer->Pitch * DestTop + DestLeft);
 
 	for(s32 DestY = DestTop;
 			DestY < DestBottom;
@@ -700,7 +700,7 @@ DrawBitmap(game_offscreen_buffer *Buffer, loaded_bitmap *Bitmap,
 			if(0 <= SrcX && SrcX < Bitmap->Width &&
 				 0 <= SrcY && SrcY < Bitmap->Height)
 			{
-				u32 SourceColor = Bitmap->Pixels[Bitmap->Width * ((Bitmap->Height-1) - SrcY) + SrcX];
+				u32 SourceColor = Bitmap->Memory[Bitmap->Pitch * SrcY + SrcX];
 				u32 DestColor = *DestPixel;
 
 				u8 A =  (u8)(SourceColor >> 24);
@@ -723,11 +723,11 @@ DrawBitmap(game_offscreen_buffer *Buffer, loaded_bitmap *Bitmap,
 			DestPixel++;
 		}
 
-		DestBufferRow += Buffer->Width;
+		DestBufferRow += Buffer->Pitch;
 	}
 }
 	internal_function void
-DrawBitmap(game_offscreen_buffer *Buffer, loaded_bitmap *Bitmap, 
+DrawBitmap(game_bitmap *Buffer, game_bitmap *Bitmap, 
 					 v2 TopLeft, f32 Alpha = 1.0f)
 {
   DrawBitmap(Buffer, Bitmap, TopLeft, 
@@ -737,7 +737,7 @@ DrawBitmap(game_offscreen_buffer *Buffer, loaded_bitmap *Bitmap,
  //NOTE(bjorn): This rendering with a z-buffer that I tried just for fun.
 #if 0
 	internal_function void
-DrawBitmap(game_offscreen_buffer *Buffer, depth_buffer* DepthBuffer, loaded_bitmap *Bitmap, 
+DrawBitmap(game_bitmap *Buffer, depth_buffer* DepthBuffer, loaded_bitmap *Bitmap, 
 					 f32 RealLeft, f32 RealRight, 
 					 f32 RealTop, f32 RealBottom, 
 					 f32 RealZ)
@@ -857,7 +857,7 @@ DrawBitmap(game_offscreen_buffer *Buffer, depth_buffer* DepthBuffer, loaded_bitm
 }
 
 	internal_function void
-DrawBitmapResource(game_offscreen_buffer* Buffer, depth_buffer* DepthBuffer, 
+DrawBitmapResource(game_bitmap* Buffer, depth_buffer* DepthBuffer, 
 									 font* Font, bitmap_resource* BitmapResource, 
 									 f32 RealLeft, f32 RealRight, 
 									 f32 RealTop, f32 RealBottom, 
@@ -895,7 +895,7 @@ DrawBitmapResource(game_offscreen_buffer* Buffer, depth_buffer* DepthBuffer,
 }
 
 	internal_function void
-DrawBitmapResourceRelativeCamera(game_offscreen_buffer* Buffer, 
+DrawBitmapResourceRelativeCamera(game_bitmap* Buffer, 
 																 depth_buffer* DepthBuffer, camera* Camera,
 																 font* Font, bitmap_resource* BitmapResource, 
 																 f32 RealLeft, f32 RealRight, 
@@ -951,7 +951,7 @@ DrawBitmapResourceRelativeCamera(game_offscreen_buffer* Buffer,
 #endif //NOTE(bjorn): z-buffering experiment.
 
 	internal_function void
-DrawStringRelativeCamera(game_offscreen_buffer *Buffer, font *Font, char *String, 
+DrawStringRelativeCamera(game_bitmap *Buffer, font *Font, char *String, 
 												 depth_buffer* DepthBuffer, camera* Camera,
 												 f32 GlyphWidth, f32 GlyphHeight, 
 												 f32 GlyphOriginLeft, f32 GlyphOriginTop, 
@@ -980,7 +980,7 @@ DrawStringRelativeCamera(game_offscreen_buffer *Buffer, font *Font, char *String
 }
 
 	internal_function void
-DrawLineRelativeCamera(game_offscreen_buffer *Buffer, depth_buffer* DepthBuffer, 
+DrawLineRelativeCamera(game_bitmap *Buffer, depth_buffer* DepthBuffer, 
 											 camera* Camera,
 											 f32 StartX, f32 StartY, f32 StartZ, 
 											 f32 EndX, f32 EndY, f32 EndZ,
@@ -1008,7 +1008,7 @@ DrawLineRelativeCamera(game_offscreen_buffer *Buffer, depth_buffer* DepthBuffer,
 }
 
 	internal_function void
-DrawCircle(game_offscreen_buffer *Buffer, 
+DrawCircle(game_bitmap *Buffer, 
 					 f32 RealX, f32 RealY, f32 RealRadius,
 					 f32 R, f32 G, f32 B, f32 A)
 {
@@ -1062,7 +1062,7 @@ DrawCircle(game_offscreen_buffer *Buffer,
 }
 
 	internal_function void
-DrawCircle(game_offscreen_buffer *Buffer, v2 P, f32 R, v4 C)
+DrawCircle(game_bitmap *Buffer, v2 P, f32 R, v4 C)
 {
 	DrawCircle(Buffer, P.X, P.Y, R, C.R, C.G, C.B, C.A);
 }

@@ -1,26 +1,8 @@
 #if !defined(RESOURCE_H)
 
 #include "types_and_defines.h"
-
-struct loaded_bitmap
-{
-	void* StartOfFile;
-
-	union
-	{
-		struct
-		{
-			s32 Width;
-			s32 Height;
-		};
-		v2s Dim;
-	};
-	//                                                              high     low
-	// NOTE(bjorn): Expected pixel layout in memory is top to bottom AA RR GG BB.
-	u32 *Pixels;
-
-	v2s Alignment;
-};
+#include "platform.h"
+#include "memory.h"
 
 #pragma pack(push, 1)
 struct bitmap_header
@@ -52,15 +34,16 @@ struct bitmap_header
 #pragma pack(pop)
 
 //NOTE(bjorn) Not complete BMP loading code!!
-internal_function loaded_bitmap
-DEBUGLoadBMP(debug_platform_read_entire_file *ReadEntireFile, char *FileName)
+internal_function game_bitmap
+DEBUGLoadBMP(debug_platform_free_file_memory* FreeFileMemory, 
+             debug_platform_read_entire_file* ReadEntireFile, 
+             memory_arena* Arena, char* FileName)
 {
-	loaded_bitmap Result = {};
+	game_bitmap Result = {};
 
 	debug_read_file_result ReadResult = ReadEntireFile(FileName);
 	if(ReadResult.ContentSize != 0)
 	{
-		Result.StartOfFile = ReadResult.Content;
 		bitmap_header *Header = (bitmap_header *)ReadResult.Content;
 
 		u32 *Pixels = (u32 *)((u8 *)ReadResult.Content + Header->BitmapOffset); 
@@ -88,6 +71,12 @@ DEBUGLoadBMP(debug_platform_read_entire_file *ReadEntireFile, char *FileName)
 		s32 BlueShift  = 0  - (s32)BlueScan.Index;
 
 		s32 PixelCount = (ReadResult.ContentSize - Header->BitmapOffset) / 4;
+
+		Result.Width = Header->Width;
+		Result.Height = Header->Height;
+		Result.Memory = PushArray(Arena, PixelCount, u32);
+    Result.Pitch = Result.Width;
+
 		for(s32 PixelIndex = 0;
 				PixelIndex < PixelCount;
 				++PixelIndex)
@@ -97,17 +86,16 @@ DEBUGLoadBMP(debug_platform_read_entire_file *ReadEntireFile, char *FileName)
 			u32 G = RotateLeft(Pixels[PixelIndex] & GreenMask, GreenShift);
 			u32 B = RotateLeft(Pixels[PixelIndex] & BlueMask,  BlueShift);
 
-			Pixels[PixelIndex] = A | R | G | B;
+			Result.Memory[PixelIndex] = A | R | G | B;
 		}
 
-		Result.Pixels = Pixels;
-		Result.Width = Header->Width;
-		Result.Height = Header->Height;
+		FreeFileMemory(ReadResult.Content);
 	}
 
 	return Result;
 }
 
+#if 0
 struct file_resource
 {
 	debug_platform_read_entire_file *ReadEntireFile;
@@ -178,6 +166,7 @@ SyncBitmapResource(bitmap_resource* BitmapResource)
 		}
 	}
 }
+#endif
 
 #define RESOURCE_H
 #endif

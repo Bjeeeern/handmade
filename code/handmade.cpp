@@ -42,9 +42,9 @@
 
 struct hero_bitmaps
 {
-	loaded_bitmap Head;
-	loaded_bitmap Cape;
-	loaded_bitmap Torso;
+	game_bitmap Head;
+	game_bitmap Cape;
+	game_bitmap Torso;
 };
 
 struct game_state
@@ -61,18 +61,18 @@ struct game_state
 
 	stored_entities Entities;
 
-	loaded_bitmap Backdrop;
-	loaded_bitmap RockWall;
-	loaded_bitmap Dirt;
-	loaded_bitmap Shadow;
-	loaded_bitmap Sword;
+	game_bitmap Backdrop;
+	game_bitmap RockWall;
+	game_bitmap Dirt;
+	game_bitmap Shadow;
+	game_bitmap Sword;
 
 	hero_bitmaps HeroBitmaps[4];
 
-  loaded_bitmap Grass[2];
-  loaded_bitmap Ground[4];
-  loaded_bitmap Rock[4];
-  loaded_bitmap Tuft[3];
+  game_bitmap Grass[2];
+  game_bitmap Ground[4];
+  game_bitmap Rock[4];
+  game_bitmap Tuft[3];
 
 	f32 SimulationSpeedModifier;
 #if HANDMADE_INTERNAL
@@ -95,91 +95,186 @@ struct game_state
 	internal_function void
 InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 {
+	InitializeArena(&GameState->WorldArena, Memory->PermanentStorageSize - sizeof(game_state),
+									(u8*)Memory->PermanentStorage + sizeof(game_state));
+	InitializeArena(&GameState->FrameBoundedTransientArena, Memory->TransientStorageSize>>1, 
+									(u8*)Memory->TransientStorage);
+	InitializeArena(&GameState->TransientArena, Memory->TransientStorageSize>>1, 
+									(u8*)Memory->TransientStorage + (Memory->TransientStorageSize>>1));
+
 	GameState->SimulationSpeedModifier = 1;
 
-  GameState->Grass[0] = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, "data/test2/grass00.bmp");
-  GameState->Grass[1] = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, "data/test2/grass01.bmp");
+	memory_arena* TransientArena = &GameState->TransientArena;
+  GameState->Grass[0] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     "data/test2/grass00.bmp");
+  GameState->Grass[1] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     "data/test2/grass01.bmp");
 
-  GameState->Ground[0] = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, "data/test2/ground00.bmp");
-  GameState->Ground[1] = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, "data/test2/ground01.bmp");
-  GameState->Ground[2] = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, "data/test2/ground02.bmp");
-  GameState->Ground[3] = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, "data/test2/ground03.bmp");
+  GameState->Ground[0] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     "data/test2/ground00.bmp");
+  GameState->Ground[1] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     "data/test2/ground01.bmp");
+  GameState->Ground[2] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     "data/test2/ground02.bmp");
+  GameState->Ground[3] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     "data/test2/ground03.bmp");
 
-  GameState->Rock[0] = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, "data/test2/rock00.bmp");
-  GameState->Rock[1] = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, "data/test2/rock01.bmp");
-  GameState->Rock[2] = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, "data/test2/rock02.bmp");
-  GameState->Rock[3] = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, "data/test2/rock03.bmp");
+  GameState->Rock[0] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     "data/test2/rock00.bmp");
+  GameState->Rock[1] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     "data/test2/rock01.bmp");
+  GameState->Rock[2] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     "data/test2/rock02.bmp");
+  GameState->Rock[3] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     "data/test2/rock03.bmp");
 
-  GameState->Tuft[0] = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, "data/test2/tuft00.bmp");
-  GameState->Tuft[1] = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, "data/test2/tuft01.bmp");
-  GameState->Tuft[2] = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, "data/test2/tuft02.bmp");
+  GameState->Tuft[0] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     "data/test2/tuft00.bmp");
+  GameState->Tuft[1] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     "data/test2/tuft01.bmp");
+  GameState->Tuft[2] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     "data/test2/tuft02.bmp");
 
-	GameState->Backdrop = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+	GameState->Backdrop = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     
 																		 "data/test/test_background.bmp");
 
-	GameState->RockWall = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+	GameState->RockWall = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     
 																 "data/test2/rock00.bmp");
 	GameState->RockWall.Alignment = {35, 41};
 
-	GameState->Dirt = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+	GameState->Dirt = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     
 																 "data/test2/ground00.bmp");
 	GameState->Dirt.Alignment = {133, 56};
 
-	GameState->Shadow = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+	GameState->Shadow = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     
 																	 "data/test/test_hero_shadow.bmp");
 	GameState->Shadow.Alignment = {72, 182};
 
-	GameState->Sword = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+	GameState->Sword = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     
 																	"data/test2/ground01.bmp");
 	GameState->Sword.Alignment = {256/2, 116/2};
 
 	hero_bitmaps Hero = {};
-	Hero.Head = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+	Hero.Head = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     
 													 "data/test/test_hero_front_head.bmp");
-	Hero.Cape = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+	Hero.Cape = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     
 													 "data/test/test_hero_front_cape.bmp");
-	Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+	Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     
 														"data/test/test_hero_front_torso.bmp");
 	Hero.Head.Alignment = {72, 182};
 	Hero.Cape.Alignment = {72, 182};
 	Hero.Torso.Alignment = {72, 182};
 	GameState->HeroBitmaps[0] = Hero;
 
-	Hero.Head = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+	Hero.Head = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     
 													 "data/test/test_hero_left_head.bmp");
-	Hero.Cape = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+	Hero.Cape = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     
 													 "data/test/test_hero_left_cape.bmp");
-	Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+	Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     
 														"data/test/test_hero_left_torso.bmp");
 	Hero.Head.Alignment = {72, 182};
 	Hero.Cape.Alignment = {72, 182};
 	Hero.Torso.Alignment = {72, 182};
 	GameState->HeroBitmaps[1] = Hero;
 
-	Hero.Head = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+	Hero.Head = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     
 													 "data/test/test_hero_back_head.bmp");
-	Hero.Cape = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+	Hero.Cape = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     
 													 "data/test/test_hero_back_cape.bmp");
-	Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+	Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     
 														"data/test/test_hero_back_torso.bmp");
 	Hero.Head.Alignment = {72, 182};
 	Hero.Cape.Alignment = {72, 182};
 	Hero.Torso.Alignment = {72, 182};
 	GameState->HeroBitmaps[2] = Hero;
 
-	Hero.Head = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+	Hero.Head = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     
 													 "data/test/test_hero_right_head.bmp");
-	Hero.Cape = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+	Hero.Cape = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     
 													 "data/test/test_hero_right_cape.bmp");
-	Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformReadEntireFile, 
+	Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     
 														"data/test/test_hero_right_torso.bmp");
 	Hero.Head.Alignment = {72, 182};
 	Hero.Cape.Alignment = {72, 182};
 	Hero.Torso.Alignment = {72, 182};
 	GameState->HeroBitmaps[3] = Hero;
-
-	InitializeArena(&GameState->WorldArena, Memory->PermanentStorageSize - sizeof(game_state),
-									(u8*)Memory->PermanentStorage + sizeof(game_state));
 
 	GameState->WorldMap = PushStruct(&GameState->WorldArena, world_map);
 
@@ -187,11 +282,6 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	WorldMap->ChunkSafetyMargin = 256;
 	WorldMap->TileSideInMeters = 1.4f;
 	WorldMap->ChunkSideInMeters = WorldMap->TileSideInMeters * TILES_PER_CHUNK;
-
-	InitializeArena(&GameState->FrameBoundedTransientArena, Memory->TransientStorageSize>>1, 
-									(u8*)Memory->TransientStorage);
-	InitializeArena(&GameState->TransientArena, Memory->TransientStorageSize>>1, 
-									(u8*)Memory->TransientStorage + (Memory->TransientStorageSize>>1));
 
 	temporary_memory TempMem = BeginTemporaryMemory(&GameState->FrameBoundedTransientArena);
 
@@ -470,14 +560,14 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 }
 
 internal_function void
-DrawGeneratedTile(game_state* GameState, game_offscreen_buffer* Buffer)
+DrawGeneratedTile(game_state* GameState, game_bitmap* Buffer)
 {
   random_series Series = Seed(0);
   for(u32 Index = 0; Index < 100; Index++)
   {
     v2 Center = Buffer->Dim * 0.5f;
     v2 Offset = Hadamard(RandomBilateralV2(&Series) * 0.5f, Buffer->Dim * 0.8f);
-    loaded_bitmap* Bitmap = 0;
+    game_bitmap* Bitmap = 0;
 
     switch(RandomChoice(&Series, 2))
     {
@@ -496,7 +586,7 @@ DrawGeneratedTile(game_state* GameState, game_offscreen_buffer* Buffer)
   {
     v2 Center = Buffer->Dim * 0.5f;
     v2 Offset = Hadamard(RandomBilateralV2(&Series) * 0.5f, Buffer->Dim * 0.8f);
-    loaded_bitmap* Bitmap = 0;
+    game_bitmap* Bitmap = 0;
 
     if(RandomChoice(&Series, 2) > 0.8f)
     {
@@ -513,7 +603,7 @@ DrawGeneratedTile(game_state* GameState, game_offscreen_buffer* Buffer)
 
 //TODO(bjorn): Refactor this into something that looks more sane.
   internal_function void
-TransformLineToScreenSpaceAndRender(game_offscreen_buffer* Buffer, render_piece* RenderPiece,
+TransformLineToScreenSpaceAndRender(game_bitmap* Buffer, render_piece* RenderPiece,
 																		f32 CamDist, m44 CamTrans, v3 V0, v3 V1,
 																		v2 ScreenCenter, m22 GameSpaceToScreenSpace,
 																		v3 RGB)

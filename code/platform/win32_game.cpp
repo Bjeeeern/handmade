@@ -1602,12 +1602,11 @@ WinMain(HINSTANCE Instance,
 
 			thread_context Thread = {};
 
-			game_offscreen_buffer GameBuffer = {};
-			GameBuffer.Memory = BackBuffer.Memory;
+			game_bitmap GameBuffer = {};
+			GameBuffer.Memory = (u32*)BackBuffer.Memory;
 			GameBuffer.Width = BackBuffer.Width;
 			GameBuffer.Height = BackBuffer.Height;
-			GameBuffer.Pitch = BackBuffer.Pitch;
-			GameBuffer.BytesPerPixel = BackBuffer.BytesPerPixel;
+			GameBuffer.Pitch = BackBuffer.Pitch / BackBuffer.BytesPerPixel;
 
 #if HANDMADE_INTERNAL
 			if(Win32State.RecordHandle)

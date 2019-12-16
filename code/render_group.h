@@ -16,7 +16,7 @@ struct render_piece
 {
 	render_piece_type Type;
 
-	loaded_bitmap* BMP;
+	game_bitmap* BMP;
 
 	v4 Color;
 
@@ -68,7 +68,7 @@ PushRenderPieceQuad(render_group* RenderGroup, m44 T, v4 Color)
 }
 
 internal_function void
-PushRenderPieceQuad(render_group* RenderGroup, m44 T, loaded_bitmap* BMP, v4 Color = {1,1,1,1})
+PushRenderPieceQuad(render_group* RenderGroup, m44 T, game_bitmap* BMP, v4 Color = {1,1,1,1})
 {
 	render_piece* RenderPiece = PushRenderPieceRaw(RenderGroup, T);
 	RenderPiece->Type = RenderPieceType_Quad;

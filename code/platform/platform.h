@@ -50,9 +50,13 @@ typedef DEBUG_PLATFORM_GET_FILE_EDIT_TIMESTAMP(debug_platform_get_file_edit_time
 //
 // NOTE(bjorn): Stuff the game provides to the platform.
 //
-struct game_offscreen_buffer
+
+//                                                              high     low
+// NOTE(bjorn): Expected pixel layout in memory is top to bottom AA RR GG BB.
+#define GAME_BITMAP_BYTES_PER_PIXEL 4
+struct game_bitmap
 {
-  void *Memory;
+  u32 *Memory;
 	union
 	{
 		v2s Dim;
@@ -62,10 +66,8 @@ struct game_offscreen_buffer
 			s32 Height;
 		};
 	};
-	//                                                              high     low
-	// NOTE(bjorn): Expected pixel layout in memory is top to bottom AA RR GG BB.
-  s32 BytesPerPixel;
   s32 Pitch;
+  v2s Alignment;
 };
 
 struct game_sound_output_buffer
@@ -301,7 +303,7 @@ struct game_memory
 
 #define GAME_UPDATE_AND_RENDER(name) void name(f32 SecondsToUpdate, thread_context *Thread,\
 																							 game_memory *Memory, game_input *Input,\
-																							 game_offscreen_buffer *Buffer)
+																							 game_bitmap *Buffer)
 typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
 GAME_UPDATE_AND_RENDER(GameUpdateAndRenderStub)
 {

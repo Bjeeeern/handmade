@@ -1,6 +1,6 @@
 @echo off
 
-start cmd /c devenv ..\debug\win32_handmade.sln
+REM start cmd /c devenv ..\debug\win32_handmade.sln
 
 REM SET fileName=%1
 REM SET lineNum=%2
@@ -15,3 +15,5 @@ REM     %codeclap% --chdir %workingDir% %executable% %fileName%:%lineNum%
 REM ) else (
 REM     %codeclap% --chdir %workingDir% %executable%
 REM )
+
+start cmd /c ..\debug\remedybg\remedybg.exe ..\debug\session.rdbg

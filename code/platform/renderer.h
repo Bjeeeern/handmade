@@ -726,7 +726,16 @@ DrawBitmap(game_offscreen_buffer *Buffer, loaded_bitmap *Bitmap,
 		DestBufferRow += Buffer->Width;
 	}
 }
+	internal_function void
+DrawBitmap(game_offscreen_buffer *Buffer, loaded_bitmap *Bitmap, 
+					 v2 TopLeft, f32 Alpha = 1.0f)
+{
+  DrawBitmap(Buffer, Bitmap, TopLeft, 
+             {(f32)Bitmap->Width, (f32)Bitmap->Height}, Alpha);
+}
 
+ //NOTE(bjorn): This rendering with a z-buffer that I tried just for fun.
+#if 0
 	internal_function void
 DrawBitmap(game_offscreen_buffer *Buffer, depth_buffer* DepthBuffer, loaded_bitmap *Bitmap, 
 					 f32 RealLeft, f32 RealRight, 
@@ -939,6 +948,7 @@ DrawBitmapResourceRelativeCamera(game_offscreen_buffer* Buffer,
 							 Color.R, Color.G, Color.B);
 	}
 }
+#endif //NOTE(bjorn): z-buffering experiment.
 
 	internal_function void
 DrawStringRelativeCamera(game_offscreen_buffer *Buffer, font *Font, char *String, 

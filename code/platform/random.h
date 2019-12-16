@@ -2,6 +2,8 @@
 
 #include "intrinsics.h"
 
+#define MaxRandomNumberValue 999752225
+#define MinRandomNumberValue 317550
 global_variable u32 
 RandomNumberTable[] =
 {
@@ -820,6 +822,37 @@ RandomNumberTable[] =
 0x38f8905d, 0x3b64c728, 0x1a5923b4, 0x356ad1c6, 0x020c5697,
 0x294efc18, 0x265a2515, 0x16b16164, 0x2404b699 
 };
+
+global_variable u32 RandomNumberIndex = 0;
+
+  internal_function void
+SetRandomSeed(u32 Seed)
+{
+  RandomNumberIndex = Seed;
+}
+
+internal_function f32
+RandomUnilateral()
+{
+  f32 Result = ((f32)(RandomNumberTable[RandomNumberIndex++] - MinRandomNumberValue) * 
+                (1.0f / (f32)(MaxRandomNumberValue - MinRandomNumberValue)));
+  return Result;
+}
+internal_function f32
+RandomBilateral()
+{
+  return RandomUnilateral() * 2.0f - 1.0f;
+}
+internal_function v2
+RandomBilateralV2()
+{
+  return {RandomBilateral(), RandomBilateral()};
+}
+internal_function u32
+RandomZeroToN(u32 Number)
+{
+  return RandomNumberTable[RandomNumberIndex++] % (Number+1);
+}
 
 #define RANDOM_H
 #endif

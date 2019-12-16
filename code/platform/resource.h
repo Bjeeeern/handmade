@@ -86,7 +86,7 @@ DEBUGLoadBMP(debug_platform_free_file_memory* FreeFileMemory,
 			u32 G = RotateLeft(Pixels[PixelIndex] & GreenMask, GreenShift);
 			u32 B = RotateLeft(Pixels[PixelIndex] & BlueMask,  BlueShift);
 
-			Result.Memory[PixelIndex] = A | R | G | B;
+			Result.Memory[(PixelCount-1)-PixelIndex] = A | R | G | B;
 		}
 
 		FreeFileMemory(ReadResult.Content);
@@ -95,34 +95,48 @@ DEBUGLoadBMP(debug_platform_free_file_memory* FreeFileMemory,
 	return Result;
 }
 
+internal_function game_bitmap
+EmptyBitmap(memory_arena* Arena, u32 Width, u32 Height)
+{
+  game_bitmap Result = {};
+
+  Result.Width = Width;
+  Result.Height = Height;
+  Result.Memory = PushArray(Arena, Width*Height, u32);
+  ZeroMemory_((u8*)Result.Memory, Width*Height*GAME_BITMAP_BYTES_PER_PIXEL);
+  Result.Pitch = Result.Width;
+
+  return Result;
+}
+
 #if 0
 struct file_resource
 {
-	debug_platform_read_entire_file *ReadEntireFile;
-	debug_platform_get_file_edit_timestamp *GetFileEditTimestamp;
-	debug_platform_free_file_memory *FreeFileMemory;
+  debug_platform_read_entire_file *ReadEntireFile;
+  debug_platform_get_file_edit_timestamp *GetFileEditTimestamp;
+  debug_platform_free_file_memory *FreeFileMemory;
 
-	u8 Path[path_max_char_count];
-	u64 LastEdited;
+  u8 Path[path_max_char_count];
+  u64 LastEdited;
 };
 
 struct bitmap_resource
 {
-	b32 Valid;
-	file_resource FileMeta;
-	loaded_bitmap Bitmap;
+  b32 Valid;
+  file_resource FileMeta;
+  loaded_bitmap Bitmap;
 };
 
-internal_function bitmap_resource
+  internal_function bitmap_resource
 RegisterBitmapResource(debug_platform_read_entire_file *ReadEntireFile, 
-											 debug_platform_get_file_edit_timestamp *GetFileEditTimestamp, 
-											 debug_platform_free_file_memory *FreeFileMemory, 
-											 char *FileName)
+                       debug_platform_get_file_edit_timestamp *GetFileEditTimestamp, 
+                       debug_platform_free_file_memory *FreeFileMemory, 
+                       char *FileName)
 {
-	bitmap_resource Result = {};
+  bitmap_resource Result = {};
 
-	Result.FileMeta.LastEdited = GetFileEditTimestamp(FileName);
-	{
+  Result.FileMeta.LastEdited = GetFileEditTimestamp(FileName);
+  {
 		char* Copy = FileName;
 		char* Dest = (char*)Result.FileMeta.Path;
 		while(*Copy != '\0') { *Dest++ = *Copy++; }

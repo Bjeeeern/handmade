@@ -61,6 +61,8 @@ struct game_state
 
 	stored_entities Entities;
 
+  game_bitmap GeneratedTile;
+
 	game_bitmap Backdrop;
 	game_bitmap RockWall;
 	game_bitmap Dirt;
@@ -91,6 +93,48 @@ struct game_state
 	f32 NoteDuration;
 	f32 NoteSecondsPassed;
 };
+
+internal_function void
+DrawGeneratedTile(game_state* GameState, game_bitmap* Buffer)
+{
+  random_series Series = Seed(0);
+  for(u32 Index = 0; Index < 100; Index++)
+  {
+    v2 Center = Buffer->Dim * 0.5f;
+    v2 Offset = Hadamard(RandomBilateralV2(&Series) * 0.5f, Buffer->Dim * 0.8f);
+    game_bitmap* Bitmap = 0;
+
+    switch(RandomChoice(&Series, 2))
+    {
+      case 0: {
+                Bitmap = GameState->Grass  + RandomChoice(&Series, 2);
+              } break;
+      case 1: {
+                Bitmap = GameState->Ground + RandomChoice(&Series, 4);
+              } break;
+    }
+
+    DrawBitmap(Buffer, Bitmap, Center + Offset - (Bitmap->Dim * 0.5f));
+  }
+
+  for(u32 Index = 0; Index < 100; Index++)
+  {
+    v2 Center = Buffer->Dim * 0.5f;
+    v2 Offset = Hadamard(RandomBilateralV2(&Series) * 0.5f, Buffer->Dim * 0.8f);
+    game_bitmap* Bitmap = 0;
+
+    if(RandomChoice(&Series, 2) > 0.8f)
+    {
+      Bitmap = GameState->Rock + RandomChoice(&Series, 4);
+    }
+    else
+    {
+      Bitmap = GameState->Tuft + RandomChoice(&Series, 3);
+    }
+
+    DrawBitmap(Buffer, Bitmap, Center + Offset - (Bitmap->Dim * 0.5f));
+  }
+}
 
 	internal_function void
 InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
@@ -557,48 +601,9 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 #endif
 
 	EndTemporaryMemory(TempMem);
-}
 
-internal_function void
-DrawGeneratedTile(game_state* GameState, game_bitmap* Buffer)
-{
-  random_series Series = Seed(0);
-  for(u32 Index = 0; Index < 100; Index++)
-  {
-    v2 Center = Buffer->Dim * 0.5f;
-    v2 Offset = Hadamard(RandomBilateralV2(&Series) * 0.5f, Buffer->Dim * 0.8f);
-    game_bitmap* Bitmap = 0;
-
-    switch(RandomChoice(&Series, 2))
-    {
-      case 0: {
-                Bitmap = GameState->Grass  + RandomChoice(&Series, 2);
-              } break;
-      case 1: {
-                Bitmap = GameState->Ground + RandomChoice(&Series, 4);
-              } break;
-    }
-
-    DrawBitmap(Buffer, Bitmap, Center + Offset - (Bitmap->Dim * 0.5f));
-  }
-
-  for(u32 Index = 0; Index < 100; Index++)
-  {
-    v2 Center = Buffer->Dim * 0.5f;
-    v2 Offset = Hadamard(RandomBilateralV2(&Series) * 0.5f, Buffer->Dim * 0.8f);
-    game_bitmap* Bitmap = 0;
-
-    if(RandomChoice(&Series, 2) > 0.8f)
-    {
-      Bitmap = GameState->Rock + RandomChoice(&Series, 4);
-    }
-    else
-    {
-      Bitmap = GameState->Tuft + RandomChoice(&Series, 3);
-    }
-
-    DrawBitmap(Buffer, Bitmap, Center + Offset - (Bitmap->Dim * 0.5f));
-  }
+  GameState->GeneratedTile = EmptyBitmap(TransientArena, 512, 512);
+  DrawGeneratedTile(GameState, &GameState->GeneratedTile);
 }
 
 //TODO(bjorn): Refactor this into something that looks more sane.
@@ -855,15 +860,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	s32 TileSideInPixels = 60;
 	f32 PixelsPerMeter = (f32)TileSideInPixels / WorldMap->TileSideInMeters;
 
-	DrawRectangle(Buffer, 
-								RectMinMax(v2{0.0f, 0.0f}, v2{(f32)Buffer->Width, (f32)Buffer->Height}), 
-								{0.5f, 0.5f, 0.5f});
-
-  DrawGeneratedTile(GameState, Buffer);
-#if 0
-	DrawBitmap(Buffer, &GameState->Backdrop, {-40.0f, -40.0f}, 
-						 {(f32)GameState->Backdrop.Width, (f32)GameState->Backdrop.Height});
-#endif
+	DrawRectangle(Buffer, RectMinMax(v2{0.0f, 0.0f}, Buffer->Dim), {0.5f, 0.5f, 0.5f});
+	DrawBitmap(Buffer, &GameState->GeneratedTile, (Buffer->Dim - GameState->GeneratedTile.Dim) * 0.5f);
 
 	//
 	// NOTE(bjorn): Create sim region by camera

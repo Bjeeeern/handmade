@@ -703,21 +703,23 @@ DrawBitmap(game_bitmap* Buffer, game_bitmap* Bitmap,
 				u32 SourceColor = Bitmap->Memory[Bitmap->Pitch * SrcY + SrcX];
 				u32 DestColor = *DestPixel;
 
-				u8 A =  (u8)(SourceColor >> 24);
+				u8 SA = (u8)(SourceColor >> 24);
 				u8 SR = (u8)(SourceColor >> 16);
 				u8 SG = (u8)(SourceColor >>  8);
 				u8 SB = (u8)(SourceColor >>  0);
 
+        u8 DA = (u8)(DestColor >> 24);
 				u8 DR = (u8)(DestColor >> 16);
 				u8 DG = (u8)(DestColor >>  8);
 				u8 DB = (u8)(DestColor >>  0);
 
-				f32 t = (A / 255.0f) * Alpha;
+				f32 t = (SA / 255.0f) * Alpha;
+				u8 A = (u8)Lerp(t, DA, SA);
  				u8 R = (u8)Lerp(t, DR, SR);
 				u8 G = (u8)Lerp(t, DG, SG);
 				u8 B = (u8)Lerp(t, DB, SB);
 
-				*DestPixel = (R << 16) | (G << 8) | (B << 0);
+				*DestPixel = (A << 24) | (R << 16) | (G << 8) | (B << 0);
 			}
 
 			DestPixel++;

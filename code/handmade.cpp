@@ -664,6 +664,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #endif
 	}
 
+#if 0
+  ZeroMemory_((u8*)GameState->GeneratedTile.Memory, 
+              GameState->GeneratedTile.Width*
+              GameState->GeneratedTile.Height*
+              GAME_BITMAP_BYTES_PER_PIXEL);
+  DrawGeneratedTile(GameState, &GameState->GeneratedTile);
+#endif
+
 	memory_arena* WorldArena = &GameState->WorldArena;
 	world_map* WorldMap = GameState->WorldMap;
 	stored_entities* Entities = &GameState->Entities;
@@ -861,7 +869,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	f32 PixelsPerMeter = (f32)TileSideInPixels / WorldMap->TileSideInMeters;
 
 	DrawRectangle(Buffer, RectMinMax(v2{0.0f, 0.0f}, Buffer->Dim), {0.5f, 0.5f, 0.5f});
-	DrawBitmap(Buffer, &GameState->GeneratedTile, (Buffer->Dim - GameState->GeneratedTile.Dim) * 0.5f);
+
+	DrawBitmap(Buffer, &GameState->GeneratedTile, 
+             (Buffer->Dim - GameState->GeneratedTile.Dim) * 0.5f);
 
 	//
 	// NOTE(bjorn): Create sim region by camera

@@ -703,24 +703,29 @@ DrawBitmap(game_bitmap* Buffer, game_bitmap* Bitmap,
 				u32 SourceColor = Bitmap->Memory[Bitmap->Pitch * SrcY + SrcX];
 				u32 DestColor = *DestPixel;
 
-				u8 SA = (u8)(SourceColor >> 24);
-				u8 SR = (u8)(SourceColor >> 16);
-				u8 SG = (u8)(SourceColor >>  8);
-				u8 SB = (u8)(SourceColor >>  0);
+				f32 SA = (f32)((SourceColor >> 24)&0xFF)*Alpha;
+				f32 SR = (f32)((SourceColor >> 16)&0xFF)*Alpha;
+				f32 SG = (f32)((SourceColor >>  8)&0xFF)*Alpha;
+				f32 SB = (f32)((SourceColor >>  0)&0xFF)*Alpha;
+        f32 RSA = SA / 255.0f;
 
-        u8 DA = (u8)(DestColor >> 24);
-				u8 DR = (u8)(DestColor >> 16);
-				u8 DG = (u8)(DestColor >>  8);
-				u8 DB = (u8)(DestColor >>  0);
+        f32 DA = (f32)((DestColor   >> 24)&0xFF);
+				f32 DR = (f32)((DestColor   >> 16)&0xFF);
+				f32 DG = (f32)((DestColor   >>  8)&0xFF);
+				f32 DB = (f32)((DestColor   >>  0)&0xFF);
+        f32 RDA = DA / 255.0f;
 
-				f32 t = (SA / 255.0f) * Alpha;
-				u8 A = (u8)Lerp(t, DA, SA);
- 				u8 R = (u8)Lerp(t, DR, SR);
-				u8 G = (u8)Lerp(t, DG, SG);
-				u8 B = (u8)Lerp(t, DB, SB);
+				f32 InvRSA = (1.0f - RSA);
+				f32 A = 255.0f*(RSA + RDA - RSA*RDA);
+ 				f32 R = InvRSA*DR + SR;
+				f32 G = InvRSA*DG + SG;
+				f32 B = InvRSA*DB + SB;
 
-				*DestPixel = (A << 24) | (R << 16) | (G << 8) | (B << 0);
-			}
+        *DestPixel = (((u32)(A+0.5f) << 24) | 
+                      ((u32)(R+0.5f) << 16) | 
+                      ((u32)(G+0.5f) <<  8) | 
+                      ((u32)(B+0.5f) <<  0));
+      }
 
 			DestPixel++;
 		}

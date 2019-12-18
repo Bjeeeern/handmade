@@ -98,7 +98,7 @@ internal_function void
 DrawGeneratedTile(game_state* GameState, game_bitmap* Buffer)
 {
   random_series Series = Seed(0);
-  for(u32 Index = 0; Index < 100; Index++)
+  for(u32 Index = 0; Index < 200; Index++)
   {
     v2 Center = Buffer->Dim * 0.5f;
     v2 Offset = Hadamard(RandomBilateralV2(&Series) * 0.5f, Buffer->Dim * 0.8f);
@@ -664,41 +664,42 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #endif
 	}
 
-#if 0
-  ZeroMemory_((u8*)GameState->GeneratedTile.Memory, 
-              GameState->GeneratedTile.Width*
-              GameState->GeneratedTile.Height*
-              GAME_BITMAP_BYTES_PER_PIXEL);
-  DrawGeneratedTile(GameState, &GameState->GeneratedTile);
-#endif
+  if(Input->ExecutableReloaded)
+  {
+    ZeroMemory_((u8*)GameState->GeneratedTile.Memory, 
+                GameState->GeneratedTile.Width*
+                GameState->GeneratedTile.Height*
+                GAME_BITMAP_BYTES_PER_PIXEL);
+    DrawGeneratedTile(GameState, &GameState->GeneratedTile);
+  }
 
-	memory_arena* WorldArena = &GameState->WorldArena;
-	world_map* WorldMap = GameState->WorldMap;
-	stored_entities* Entities = &GameState->Entities;
-	memory_arena* FrameBoundedTransientArena = &GameState->FrameBoundedTransientArena;
-	memory_arena* TransientArena = &GameState->TransientArena;
+  memory_arena* WorldArena = &GameState->WorldArena;
+  world_map* WorldMap = GameState->WorldMap;
+  stored_entities* Entities = &GameState->Entities;
+  memory_arena* FrameBoundedTransientArena = &GameState->FrameBoundedTransientArena;
+  memory_arena* TransientArena = &GameState->TransientArena;
 
-	temporary_memory TempMem = BeginTemporaryMemory(FrameBoundedTransientArena);
+  temporary_memory TempMem = BeginTemporaryMemory(FrameBoundedTransientArena);
 
-	//
-	//NOTE(bjorn): General input logic unrelated to individual entities.
-	//
-	for(s32 ControllerIndex = 1;
-			ControllerIndex <= ArrayCount(Input->Controllers);
-			ControllerIndex++)
-	{
-		game_controller* Controller = GetController(Input, ControllerIndex);
-		if(Controller->IsConnected)
-		{
-			{
-				//SimReq->ddP = Controller->LeftStick.End;
+  //
+  //NOTE(bjorn): General input logic unrelated to individual entities.
+  //
+  for(s32 ControllerIndex = 1;
+      ControllerIndex <= ArrayCount(Input->Controllers);
+      ControllerIndex++)
+  {
+    game_controller* Controller = GetController(Input, ControllerIndex);
+    if(Controller->IsConnected)
+    {
+      {
+        //SimReq->ddP = Controller->LeftStick.End;
 
-				if(Clicked(Controller, Start))
-				{
-					//TODO(bjorn) Implement RemoveEntity();
-					//GameState->EntityResidencies[ControlledEntityIndex] = EntityResidence_Nonexistent;
-					//GameState->PlayerIndexForController[ControllerIndex] = 0;
-				}
+        if(Clicked(Controller, Start))
+        {
+          //TODO(bjorn) Implement RemoveEntity();
+          //GameState->EntityResidencies[ControlledEntityIndex] = EntityResidence_Nonexistent;
+          //GameState->PlayerIndexForController[ControllerIndex] = 0;
+        }
 			}
 			//else
 			{

@@ -1429,18 +1429,20 @@ WinMain(HINSTANCE Instance,
 
 		while(GameIsRunning)
 		{
+			game_input NewGameInput = {};
 
 #if HANDMADE_INTERNAL
+      NewGameInput.ExecutableReloaded = false;
+
 			FILETIME LastWriteTime = Win32GetLastWriteTime(Game->DLLFullPath);
 			if(CompareFileTime(&Game->Code.DLLLastWriteTime, &LastWriteTime) != 0) 
 			{
 				Win32UnloadGameCode(&Game->Code);
 				Game->Code = Win32LoadGameCode(Game->DLLFullPath, Game->TempDLLFullPath);
 				Game->Code.DLLLastWriteTime = LastWriteTime;
+        NewGameInput.ExecutableReloaded = true;
 			}
 #endif
-
-			game_input NewGameInput = {};
 
 			// TODO(bjorn): Should this be polled more often?
 			s32 MaxControllerCount = XUSER_MAX_COUNT;

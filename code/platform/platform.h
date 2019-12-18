@@ -212,6 +212,9 @@ struct game_input
 	game_controller Controllers[4];
 	game_keyboard Keyboards[2];
 	game_mouse Mice[2];
+#if HANDMADE_INTERNAL
+  b32 ExecutableReloaded;
+#endif
 };
 
 //NOTE Access to the input devices is in the 1-n range for freeing up 0 as a null index

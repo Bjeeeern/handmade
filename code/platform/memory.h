@@ -19,8 +19,9 @@ InitializeArena(memory_arena* Arena, memi Size, u8 *Base)
 	Arena->TempMemCount = 0;
 }
 
-#define PushStruct(Arena, type) (type *)PushSize_(Arena, sizeof(type))
-#define PushArray(Arena, Count, type) (type *)PushSize_(Arena, (Count)*sizeof(type))
+#define PushStruct(Arena, type) (type *)PushSize_((Arena), sizeof(type))
+#define PushArray(Arena, Count, type) (type *)PushSize_((Arena), (Count)*sizeof(type))
+#define PushSize(Arena, Size) PushSize_((Arena), (Size))
 void *
 PushSize_(memory_arena* Arena, memi Size)
 {
@@ -33,7 +34,8 @@ PushSize_(memory_arena* Arena, memi Size)
 	return Result;
 }
 
-#define ZeroArray(Array) ZeroMemory_((u8*)Array, sizeof(Array))
+#define ZeroArray(Array) ZeroMemory_((u8*)(Array), sizeof(Array))
+#define ZeroMemory(Pointer, Size) ZeroMemory_((u8*)(Pointer), (Size))
 void
 ZeroMemory_(u8* ClearBits, memi Size)
 {
@@ -48,6 +50,7 @@ struct temporary_memory
 {
 	memory_arena* Arena;
 	memi Used;
+  s32 ID;
 };
 
 internal_function temporary_memory
@@ -57,7 +60,7 @@ BeginTemporaryMemory(memory_arena* Arena)
 
 	Result.Arena = Arena;
 	Result.Used = Arena->Used;
-
+	Result.ID = Arena->TempMemCount;
 	Arena->TempMemCount++;
 
 	return Result;
@@ -73,6 +76,7 @@ EndTemporaryMemory(temporary_memory TempMem)
 
 	Assert(Arena->TempMemCount > 0);
 	Arena->TempMemCount--;
+  Assert(TempMem.ID == Arena->TempMemCount);
 }
 
 internal_function void

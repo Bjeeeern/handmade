@@ -33,24 +33,57 @@ struct render_piece
 struct render_group
 {
 	u32 PieceCount;
-	render_piece RenderPieces[4096];
+  f32 PixelsPerMeter;
+
+  u32 MaxPushBufferSize;
+  u32 PushBufferSize;
+  u8* PushBufferBase;
 };
 
+//TODO(bjorn): Make rendering a separate call and actually figure out what kind
+//of information that is needed.
+// internal_function void
+// RenderGroupToBuffer()
+// {
+// }
+
 internal_function render_group*
-AllocateRenderGroup(memory_arena* Arena)
+AllocateRenderGroup(memory_arena* Arena, u32 MaxPushBufferSize, f32 PixelsPerMeter)
 {
 	render_group* Result = PushStruct(Arena, render_group);
+	Result->PushBufferBase = PushArray(Arena, MaxPushBufferSize, u8);
+  Result->PushBufferSize = 0;
+  Result->MaxPushBufferSize = MaxPushBufferSize;
 
-	Result->PieceCount = 0;
+  Result->PieceCount = 0;
+  Result->PixelsPerMeter = PixelsPerMeter;
 
 	return Result;
+}
+
+internal_function void*
+PushRenderElement(render_group* RenderGroup, u32 Size)
+{
+  void* Result = 0;
+
+  if(RenderGroup->PushBufferSize + Size < RenderGroup->MaxPushBufferSize)
+  {
+    Result = RenderGroup->PushBufferBase + RenderGroup->PushBufferSize;
+    RenderGroup->PushBufferSize += Size;
+  }
+  else
+  {
+    InvalidCodePath;
+  }
+
+  return Result;
 }
 
 internal_function render_piece*
 PushRenderPieceRaw(render_group* RenderGroup, m44 T)
 {
-	Assert(RenderGroup->PieceCount < ArrayCount(RenderGroup->RenderPieces));
-	render_piece* Result = RenderGroup->RenderPieces + RenderGroup->PieceCount++;
+	render_piece* Result = (render_piece*)PushRenderElement(RenderGroup, sizeof(render_piece));
+  RenderGroup->PieceCount++;
 
 	*Result = {};
 	Result->Tran = T;

@@ -666,10 +666,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
   if(Input->ExecutableReloaded)
   {
-    ZeroMemory_((u8*)GameState->GeneratedTile.Memory, 
-                GameState->GeneratedTile.Width*
-                GameState->GeneratedTile.Height*
-                GAME_BITMAP_BYTES_PER_PIXEL);
+    ZeroMemory(GameState->GeneratedTile.Memory, (GameState->GeneratedTile.Width*
+                                                 GameState->GeneratedTile.Height*
+                                                 GAME_BITMAP_BYTES_PER_PIXEL));
     DrawGeneratedTile(GameState, &GameState->GeneratedTile);
   }
 
@@ -678,6 +677,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
   stored_entities* Entities = &GameState->Entities;
   memory_arena* FrameBoundedTransientArena = &GameState->FrameBoundedTransientArena;
   memory_arena* TransientArena = &GameState->TransientArena;
+
+	s32 TileSideInPixels = 60;
+	f32 PixelsPerMeter = (f32)TileSideInPixels / WorldMap->TileSideInMeters;
 
   temporary_memory TempMem = BeginTemporaryMemory(FrameBoundedTransientArena);
 
@@ -746,7 +748,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					render_group* OldRenderGroup = GameState->DEBUG_OldRenderGroup;
 
 					GameState->DEBUG_RenderGroupTempMem = BeginTemporaryMemory(TransientArena);
-					GameState->DEBUG_OldRenderGroup = AllocateRenderGroup(TransientArena);
+					GameState->DEBUG_OldRenderGroup = AllocateRenderGroup(TransientArena, Megabytes(4), PixelsPerMeter);
 
 					*GameState->DEBUG_OldRenderGroup = *OldRenderGroup;
 					GameState->DEBUG_PauseStep = 1;
@@ -776,7 +778,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				EndTemporaryMemory(GameState->DEBUG_RenderGroupTempMem);
 				CheckMemoryArena(TransientArena);
 				GameState->DEBUG_RenderGroupTempMem = BeginTemporaryMemory(TransientArena);
-				GameState->DEBUG_OldRenderGroup = AllocateRenderGroup(TransientArena);
+				GameState->DEBUG_OldRenderGroup = AllocateRenderGroup(TransientArena, Megabytes(4), PixelsPerMeter);
 				GameState->DEBUG_PauseStep = Modulate(GameState->DEBUG_PauseStep+1, 1, 9);
 
 				GameState->DEBUG_SkipXSteps = 
@@ -854,7 +856,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	else
 #endif
 	{
-		RenderGroup = AllocateRenderGroup(FrameBoundedTransientArena);
+		RenderGroup = AllocateRenderGroup(FrameBoundedTransientArena, Megabytes(4), PixelsPerMeter);
 #if HANDMADE_INTERNAL
 		GameState->DEBUG_OldRenderGroup = RenderGroup;
 		stored_entity* StoredMainCamera = 
@@ -866,13 +868,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	// NOTE(bjorn): Moving and Rendering
 	//
-	s32 TileSideInPixels = 60;
-	f32 PixelsPerMeter = (f32)TileSideInPixels / WorldMap->TileSideInMeters;
-
-	DrawRectangle(Buffer, RectMinMax(v2{0.0f, 0.0f}, Buffer->Dim), {0.5f, 0.5f, 0.5f});
-
-	DrawBitmap(Buffer, &GameState->GeneratedTile, 
-             (Buffer->Dim - GameState->GeneratedTile.Dim) * 0.5f);
 
 	//
 	// NOTE(bjorn): Create sim region by camera
@@ -938,7 +933,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #endif
 			}
 #if HANDMADE_INTERNAL
-			u32 DEBUG_RenderGroupCount = RenderGroup->PieceCount;
+      //TODO(bjorn): What was this about?
+			// u32 DEBUG_RenderGroupCount = RenderGroup->PieceCount;
 
 			if(!CameraOrAssociates && 
 				 DEBUG_IsPaused &&
@@ -1514,7 +1510,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #if HANDMADE_INTERNAL
 			else
 			{
-				RenderGroup->PieceCount = DEBUG_RenderGroupCount;
+        //TODO(bjorn): What was this about?
+				// RenderGroup->PieceCount = DEBUG_RenderGroupCount;
 			}
 #endif
 		}
@@ -1525,6 +1522,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// NOTE(bjorn): Rendering
 	//
 	{
+    DrawRectangle(Buffer, RectMinMax(v2{0.0f, 0.0f}, Buffer->Dim), {0.5f, 0.5f, 0.5f});
+
+    DrawBitmap(Buffer, &GameState->GeneratedTile, 
+               (Buffer->Dim - GameState->GeneratedTile.Dim) * 0.5f);
+
 		//TODO(bjorn): Rewrite this to use the entity orientation later when I
 		//rewrite/extend the rendering system.
 		Assert(MainCamera);
@@ -1541,7 +1543,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		{PixelsPerMeter, 0             ,
 			0            ,-PixelsPerMeter};
 
-		render_piece* RenderPiece = RenderGroup->RenderPieces;
+		render_piece* RenderPiece = (render_piece*)RenderGroup->PushBufferBase;
 		for(u32 RenderPieceIndex = 0;
 				RenderPieceIndex < RenderGroup->PieceCount;
 				RenderPiece++, RenderPieceIndex++)

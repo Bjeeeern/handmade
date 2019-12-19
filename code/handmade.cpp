@@ -20,6 +20,7 @@
 // BUG Hunting is super shaky.
 
 // TODO
+// * Make the camera stick to the orientation and position of an entity just for fun.
 // * Trigger-only collision bodies
 // & Clip lines that are drawn behind the screen instead of not rendering them at all.
 // * Test with object on mouse.
@@ -606,24 +607,6 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
   DrawGeneratedTile(GameState, &GameState->GeneratedTile);
 }
 
-//TODO(bjorn): Refactor this into something that looks more sane.
-  internal_function void
-TransformLineToScreenSpaceAndRender(game_bitmap* Buffer, render_piece* RenderPiece,
-																		f32 CamDist, m44 CamTrans, v3 V0, v3 V1,
-																		v2 ScreenCenter, m22 GameSpaceToScreenSpace,
-																		v3 RGB)
-{
-	transform_result Tran0 = TransformPoint(CamDist, CamTrans, V0);
-	transform_result Tran1 = TransformPoint(CamDist, CamTrans, V1);
-
-	if(Tran0.Valid && Tran1.Valid)
-	{
-		v2 PixelV0 = ScreenCenter + (GameSpaceToScreenSpace * Tran0.P) * Tran0.f;
-		v2 PixelV1 = ScreenCenter + (GameSpaceToScreenSpace * Tran1.P) * Tran1.f;
-		DrawLine(Buffer, PixelV0, PixelV1, RGB);
-	}
-};
-
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
 #if HANDMADE_SLOW
@@ -677,9 +660,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
   stored_entities* Entities = &GameState->Entities;
   memory_arena* FrameBoundedTransientArena = &GameState->FrameBoundedTransientArena;
   memory_arena* TransientArena = &GameState->TransientArena;
-
-	s32 TileSideInPixels = 60;
-	f32 PixelsPerMeter = (f32)TileSideInPixels / WorldMap->TileSideInMeters;
 
   temporary_memory TempMem = BeginTemporaryMemory(FrameBoundedTransientArena);
 
@@ -748,7 +728,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					render_group* OldRenderGroup = GameState->DEBUG_OldRenderGroup;
 
 					GameState->DEBUG_RenderGroupTempMem = BeginTemporaryMemory(TransientArena);
-					GameState->DEBUG_OldRenderGroup = AllocateRenderGroup(TransientArena, Megabytes(4), PixelsPerMeter);
+					GameState->DEBUG_OldRenderGroup = AllocateRenderGroup(TransientArena, Megabytes(4));
 
 					*GameState->DEBUG_OldRenderGroup = *OldRenderGroup;
 					GameState->DEBUG_PauseStep = 1;
@@ -778,7 +758,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				EndTemporaryMemory(GameState->DEBUG_RenderGroupTempMem);
 				CheckMemoryArena(TransientArena);
 				GameState->DEBUG_RenderGroupTempMem = BeginTemporaryMemory(TransientArena);
-				GameState->DEBUG_OldRenderGroup = AllocateRenderGroup(TransientArena, Megabytes(4), PixelsPerMeter);
+				GameState->DEBUG_OldRenderGroup = AllocateRenderGroup(TransientArena, Megabytes(4));
 				GameState->DEBUG_PauseStep = Modulate(GameState->DEBUG_PauseStep+1, 1, 9);
 
 				GameState->DEBUG_SkipXSteps = 
@@ -856,7 +836,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	else
 #endif
 	{
-		RenderGroup = AllocateRenderGroup(FrameBoundedTransientArena, Megabytes(4), PixelsPerMeter);
+		RenderGroup = AllocateRenderGroup(FrameBoundedTransientArena, Megabytes(4));
 #if HANDMADE_INTERNAL
 		GameState->DEBUG_OldRenderGroup = RenderGroup;
 		stored_entity* StoredMainCamera = 
@@ -1335,6 +1315,26 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					}
 				}
 
+        if(Entity->IsCamera &&
+           Entity == MainCamera)
+        {
+          //TODO(bjorn):Figure out what this was again.
+#if 0
+          v3 Offset = GetWorldMapPosDifference(WorldMap, 
+                                               GameState->DEBUG_MainCameraOffsetDuringPause, 
+                                               MainCamera->WorldP);
+#endif
+          v3 Offset = {0, 0, -MainCamera->CamZoom};
+          m33 XRot = XRotationMatrix(MainCamera->CamRot.Y);
+          m33 RotMat = AxisRotationMatrix(MainCamera->CamRot.X, GetMatCol(XRot, 2)) * XRot;
+          m44 CamTrans = ConstructTransform(Offset, RotMat);
+
+          s32 TileSideInPixels = 60;
+          f32 PixelsPerMeter = (f32)TileSideInPixels / WorldMap->TileSideInMeters;
+
+          PushCamera(RenderGroup, CamTrans, PixelsPerMeter, 20.0f);
+        }
+
 				if(Entity->VisualType == EntityVisualType_Wall)
 				{
 					PushRenderPieceQuad(RenderGroup, T, &GameState->RockWall);
@@ -1413,7 +1413,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 #if HANDMADE_INTERNAL
 				//TODO(bjorn): Do I need to always push these just to enable toggling when paused?
-				//if(GameState->DEBUG_VisualiseCollisionBox)
+				if(GameState->DEBUG_VisualiseCollisionBox)
 				{
 					if(false)//Entity->IsFloor)
 					{
@@ -1516,183 +1516,20 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #endif
 		}
 	}
+
 	EndSim(Input, Entities, WorldArena, SimRegion);
+
+  //TODO(bjorn): Give equivalent render commands for doing these.
+  DrawRectangle(Buffer, RectMinMax(v2{0.0f, 0.0f}, Buffer->Dim), {0.5f, 0.5f, 0.5f});
+#if 0
+  DrawBitmap(Output, &GameState->GeneratedTile, 
+             (Output->Dim - GameState->GeneratedTile.Dim) * 0.5f);
+#endif
 
 	//
 	// NOTE(bjorn): Rendering
 	//
-	{
-    DrawRectangle(Buffer, RectMinMax(v2{0.0f, 0.0f}, Buffer->Dim), {0.5f, 0.5f, 0.5f});
-
-    DrawBitmap(Buffer, &GameState->GeneratedTile, 
-               (Buffer->Dim - GameState->GeneratedTile.Dim) * 0.5f);
-
-		//TODO(bjorn): Rewrite this to use the entity orientation later when I
-		//rewrite/extend the rendering system.
-		Assert(MainCamera);
-		v3 Offset = GetWorldMapPosDifference(WorldMap, 
-																				 GameState->DEBUG_MainCameraOffsetDuringPause, 
-																				 MainCamera->WorldP);
-		m33 XRot = XRotationMatrix(MainCamera->CamRot.Y);
-		m33 RotMat = AxisRotationMatrix(MainCamera->CamRot.X, GetMatCol(XRot, 2)) * XRot;
-		m44 CamTrans = ConstructTransform(RotMat*Offset, RotMat);
-
-		v2 ScreenCenter = v2{(f32)Buffer->Width, (f32)Buffer->Height} * 0.5f;
-
-		m22 GameSpaceToScreenSpace = 
-		{PixelsPerMeter, 0             ,
-			0            ,-PixelsPerMeter};
-
-		render_piece* RenderPiece = (render_piece*)RenderGroup->PushBufferBase;
-		for(u32 RenderPieceIndex = 0;
-				RenderPieceIndex < RenderGroup->PieceCount;
-				RenderPiece++, RenderPieceIndex++)
-		{
-#if HANDMADE_INTERNAL
-			if(RenderPiece->DEBUG_IsDebug && !GameState->DEBUG_VisualiseCollisionBox) { continue; }
-#endif
-
-			if(RenderPiece->Type == RenderPieceType_Quad)
-			{
-				v3 P = RenderPiece->Tran * v3{0,0,0};
-				transform_result Tran = TransformPoint(MainCamera->CamZoom, CamTrans, P);
-				if(!Tran.Valid) { continue; }
-
-				f32 f = Tran.f;
-				v2 Pos = Tran.P;
-
-				v2 PixelPos = ScreenCenter + (GameSpaceToScreenSpace * Pos) * f;
-
-				if(RenderPiece->BMP)
-				{
-					DrawBitmap(Buffer, RenderPiece->BMP, 
-										 PixelPos - RenderPiece->BMP->Alignment * f, 
-										 RenderPiece->BMP->Dim * f, RenderPiece->Color.A);
-				}
-				else
-				{
-					//TODO(bjorn): Think about how and when in the pipeline to render the hit-points.
-#if 0
-					v2 PixelDim = RenderPiece->Dim.XY * (PixelsPerMeter * f);
-					rectangle2 Rect = RectCenterDim(PixelPos, PixelDim);
-
-					DrawRectangle(Buffer, Rect, RenderPiece->Color.RGB);
-#endif
-				}
-			}
-			else if(RenderPiece->Type == RenderPieceType_DimCube)
-			{
-				aabb_verts_result AABB = GetAABBVertices(&RenderPiece->Tran);
-
-				for(u32 VertIndex = 0; 
-						VertIndex < 4; 
-						VertIndex++)
-				{
-					v3 V0 = AABB.Verts[(VertIndex+0)%4];
-					v3 V1 = AABB.Verts[(VertIndex+1)%4];
-					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
-																							MainCamera->CamZoom, CamTrans, V0, V1,
-																							ScreenCenter, GameSpaceToScreenSpace, 
-																							RenderPiece->Color.RGB);
-				}
-				for(u32 VertIndex = 0; 
-						VertIndex < 4; 
-						VertIndex++)
-				{
-					v3 V0 = AABB.Verts[(VertIndex+0)%4 + 4];
-					v3 V1 = AABB.Verts[(VertIndex+1)%4 + 4];
-					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
-																							MainCamera->CamZoom, CamTrans, V0, V1,
-																							ScreenCenter, GameSpaceToScreenSpace, 
-																							RenderPiece->Color.RGB);
-				}
-				for(u32 VertIndex = 0; 
-						VertIndex < 4; 
-						VertIndex++)
-				{
-					v3 V0 = AABB.Verts[VertIndex];
-					v3 V1 = AABB.Verts[VertIndex + 4];
-					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
-																							MainCamera->CamZoom, CamTrans, V0, V1,
-																							ScreenCenter, GameSpaceToScreenSpace, 
-																							RenderPiece->Color.RGB);
-				}
-			}
-			else if(RenderPiece->Type == RenderPieceType_LineSegment)
-			{
-				v3 V0 = RenderPiece->Tran * RenderPiece->A;
-				v3 V1 = RenderPiece->Tran * RenderPiece->B;
-
-				TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
-																						MainCamera->CamZoom, CamTrans, V0, V1,
-																						ScreenCenter, GameSpaceToScreenSpace, 
-																						RenderPiece->Color.RGB);
-
-				v3 n = Normalize(V1-V0);
-
-				//TODO(bjorn): Implement a good GetComplimentaryAxes() fuction.
-				v3 t0 = {};
-				v3 t1 = {};
-				{
-					f32 e = 0.01f;
-					if(IsWithin(n.X, -e, e) && 
-						 IsWithin(n.Y, -e, e))
-					{
-						t0 = {1,0,0};
-					}
-					else
-					{
-						t0 = n + v3{0,0,100};
-					}
-					t1 = Normalize(Cross(n, t0));
-					t0 = Cross(n, t1);
-				}
-
-				f32 Scale = 0.2f;
-				v3 Verts[5];
-				Verts[0] = V1 - n*Scale + t0 * 0.25f * Scale + t1 * 0.25f * Scale;
-				Verts[1] = V1 - n*Scale - t0 * 0.25f * Scale + t1 * 0.25f * Scale;
-				Verts[2] = V1 - n*Scale - t0 * 0.25f * Scale - t1 * 0.25f * Scale;
-				Verts[3] = V1 - n*Scale + t0 * 0.25f * Scale - t1 * 0.25f * Scale;
-				Verts[4] = V1;
-				for(int VertIndex = 0; 
-						VertIndex < 4; 
-						VertIndex++)
-				{
-					V0 = Verts[(VertIndex+0)%4];
-					V1 = Verts[(VertIndex+1)%4];
-					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
-																							MainCamera->CamZoom, CamTrans, V0, V1,
-																							ScreenCenter, GameSpaceToScreenSpace, 
-																							RenderPiece->Color.RGB);
-				}
-				for(int VertIndex = 0; 
-						VertIndex < 4; 
-						VertIndex++)
-				{
-					V0 = Verts[VertIndex];
-					V1 = Verts[4];
-					TransformLineToScreenSpaceAndRender(Buffer, RenderPiece,
-																							MainCamera->CamZoom, CamTrans, V0, V1,
-																							ScreenCenter, GameSpaceToScreenSpace, 
-																							RenderPiece->Color.RGB);
-				}
-			}
-			else if(RenderPiece->Type == RenderPieceType_Sphere)
-			{
-				v3 P0 = RenderPiece->Tran * v3{0,0,0};
-				v3 P1 = RenderPiece->Tran * v3{0.5f,0,0};
-
-				transform_result Tran0 = TransformPoint(MainCamera->CamZoom, CamTrans, P0);
-				if(!Tran0.Valid) { continue; }
-
-				f32 PixR = PixelsPerMeter * Magnitude(P1 - P0) * Tran0.f;
-				v2 PixC = ScreenCenter + GameSpaceToScreenSpace * Tran0.P * Tran0.f;
-
-				DrawCircle(Buffer, PixC, PixR, RenderPiece->Color);
-			}
-		}
-	}
+  RenderGroupToOutput(RenderGroup, Buffer);
 
 	EndTemporaryMemory(TempMem);
 	CheckMemoryArena(FrameBoundedTransientArena);

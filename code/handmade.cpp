@@ -122,7 +122,7 @@ DrawGeneratedTile(game_state* GameState, game_bitmap* Buffer)
     }
 
     Offset += (v2)v2s{-Bitmap->Dim.X, Bitmap->Dim.Y} * 0.5f;
-    PushQuad(RenderGroup, ConstructTransform(Offset), Bitmap, Color);
+    PushQuad(RenderGroup, ConstructTransform(Offset, Bitmap->Dim), Bitmap, Color);
   }
 
   for(u32 Index = 0; Index < 100; Index++)
@@ -140,7 +140,7 @@ DrawGeneratedTile(game_state* GameState, game_bitmap* Buffer)
     }
 
     Offset += (v2)v2s{-Bitmap->Dim.X, Bitmap->Dim.Y} * 0.5f;
-    PushQuad(RenderGroup, ConstructTransform(Offset), Bitmap, Color);
+    PushQuad(RenderGroup, ConstructTransform(Offset, Bitmap->Dim), Bitmap, Color);
   }
 
   RenderGroupToOutput(RenderGroup, Buffer);
@@ -861,8 +861,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	// NOTE(bjorn): Moving and Rendering
 	//
-
-  PushQuad(RenderGroup, M44Identity(), &GameState->GeneratedTile);
+  {
+    m44 Transform = ConstructTransform({}, AngleAxisToQuaternion(tau32 * 0.25f, {1,0,0}), {6,1,6});
+    PushQuad(RenderGroup, Transform, &GameState->GeneratedTile);
+  }
 
 	//
 	// NOTE(bjorn): Create sim region by camera
@@ -1352,7 +1354,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				if(Entity->VisualType == EntityVisualType_Wall)
 				{
-					PushQuad(RenderGroup, T, &GameState->RockWall);
+          m44 QuadTran = ConstructTransform({0,0,0}, 
+                                            AngleAxisToQuaternion(tau32 * 0.25f, {1,0,0}), 
+                                            Entity->Body.Primitives[1].S);
+          PushQuad(RenderGroup, T*QuadTran, &GameState->RockWall);
 				}
 
 				if(Entity->VisualType == EntityVisualType_Player)
@@ -1478,17 +1483,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						 !Entity->IsFloor &&
 						 Entity != MainCamera->FreeMover)
 					{
-						f32 AxesScale = 1.0f;
 						m44 TranslationAndRotation = ConstructTransform(Entity->P, Entity->O, {1,1,1});
-						PushVector(RenderGroup, TranslationAndRotation, 
-																			 v3{0,0,0}, v3{1,0,0}*AxesScale, {1,0,0});
-						PushVector(RenderGroup, TranslationAndRotation, 
-																			 v3{0,0,0}, v3{0,1,0}*AxesScale, {0,1,0});
-						PushVector(RenderGroup, TranslationAndRotation, 
-																			 v3{0,0,0}, v3{0,0,1}*AxesScale, {0,0,1});
+						PushCoordinateSystem(RenderGroup, Entity->Tran);
 
-						m44 TranslationOnly = ConstructTransform(Entity->P, QuaternionIdentity(), {1,1,1});
-						PushVector(RenderGroup, TranslationOnly, v3{0,0,0}, 
+            m44 TranslationOnly = ConstructTransform(Entity->P, QuaternionIdentity(), {1,1,1});
+            PushVector(RenderGroup, TranslationOnly, v3{0,0,0}, 
 																			 Entity->DEBUG_MostRecent_F*(1.0f/10.0f), {1,0,1});
 						PushVector(RenderGroup, TranslationOnly, v3{0,0,0}, 
 																			 Entity->DEBUG_MostRecent_T*(1.0f/tau32), {1,1,0});

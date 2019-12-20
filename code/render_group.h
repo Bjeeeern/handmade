@@ -8,6 +8,7 @@
 enum render_group_entry_type
 {
 	RenderGroupEntryType_render_entry_vector,
+	RenderGroupEntryType_render_entry_coordinate_system,
 	RenderGroupEntryType_render_entry_wire_cube,
 	RenderGroupEntryType_render_entry_blank_quad,
 	RenderGroupEntryType_render_entry_quad,
@@ -21,6 +22,12 @@ struct render_entry_vector
 	v4 Color;
 	v3 A;
 	v3 B;
+};
+struct render_entry_coordinate_system
+{
+  render_group_entry_type Type;
+
+	m44 Tran;
 };
 struct render_entry_wire_cube
 {
@@ -142,6 +149,14 @@ PushVector(render_group* RenderGroup, m44 T, v3 A, v3 B, v4 Color = {0,0.4f,0.8f
 }
 
 internal_function void
+PushCoordinateSystem(render_group* RenderGroup, m44 T)
+{
+	render_entry_coordinate_system* Entry = 
+    PushRenderElement(RenderGroup, render_entry_coordinate_system);
+	Entry->Tran = T;
+}
+
+internal_function void
 PushSphere(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.8f,1})
 {
 	render_entry_sphere* Entry = PushRenderElement(RenderGroup, render_entry_sphere);
@@ -235,6 +250,75 @@ ProjectSegmentToScreen(m44 CameraTransform, f32 LensChamberSize,
   return Result;
 }
 
+internal_function void
+DrawVector(render_group* RenderGroup, v2 ScreenCenter, m22 MeterToPixel, game_bitmap* Output,
+           v3 V0, v3 V1, v3 Color)
+{
+  pixel_line_segment_result LineSegment = 
+    ProjectSegmentToScreen(RenderGroup->CameraTransform, RenderGroup->LensChamberSize, 
+                           ScreenCenter, MeterToPixel, V0, V1);
+  if(LineSegment.PartOfSegmentInView)
+  {
+    DrawLine(Output, LineSegment.A, LineSegment.B, Color);
+  }
+
+  v3 n = Normalize(V1-V0);
+
+  //TODO(bjorn): Implement a good GetComplimentaryAxes() fuction.
+  v3 t0 = {};
+  v3 t1 = {};
+  {
+    f32 e = 0.01f;
+    if(IsWithin(n.X, -e, e) && 
+       IsWithin(n.Y, -e, e))
+    {
+      t0 = {1,0,0};
+    }
+    else
+    {
+      t0 = n + v3{0,0,100};
+    }
+    t1 = Normalize(Cross(n, t0));
+    t0 = Cross(n, t1);
+  }
+
+  f32 Scale = 0.2f;
+  v3 Verts[5];
+  Verts[0] = V1 - n*Scale + t0 * 0.25f * Scale + t1 * 0.25f * Scale;
+  Verts[1] = V1 - n*Scale - t0 * 0.25f * Scale + t1 * 0.25f * Scale;
+  Verts[2] = V1 - n*Scale - t0 * 0.25f * Scale - t1 * 0.25f * Scale;
+  Verts[3] = V1 - n*Scale + t0 * 0.25f * Scale - t1 * 0.25f * Scale;
+  Verts[4] = V1;
+  for(int VertIndex = 0; 
+      VertIndex < 4; 
+      VertIndex++)
+  {
+    V0 = Verts[(VertIndex+0)%4];
+    V1 = Verts[(VertIndex+1)%4];
+    LineSegment = 
+      ProjectSegmentToScreen(RenderGroup->CameraTransform, RenderGroup->LensChamberSize, 
+                             ScreenCenter, MeterToPixel, V0, V1);
+    if(LineSegment.PartOfSegmentInView)
+    {
+      DrawLine(Output, LineSegment.A, LineSegment.B, Color);
+    }
+  }
+  for(int VertIndex = 0; 
+      VertIndex < 4; 
+      VertIndex++)
+  {
+    V0 = Verts[VertIndex];
+    V1 = Verts[4];
+    LineSegment = 
+      ProjectSegmentToScreen(RenderGroup->CameraTransform, RenderGroup->LensChamberSize, 
+                             ScreenCenter, MeterToPixel, V0, V1);
+    if(LineSegment.PartOfSegmentInView)
+    {
+      DrawLine(Output, LineSegment.A, LineSegment.B, Color);
+    }
+  }
+}
+
   internal_function void
 RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
 {
@@ -264,72 +348,20 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
           render_entry_vector* Entry = (render_entry_vector*)UnidentifiedEntry;
           PushBufferByteOffset += sizeof(render_entry_vector);
 
-          v3 V0 = Entry->A;
-          v3 V1 = Entry->B;
+          DrawVector(RenderGroup, ScreenCenter, MeterToPixel, Output,
+                     Entry->A, Entry->B, Entry->Color.RGB);
+        } break;
+      case RenderGroupEntryType_render_entry_coordinate_system
+        : {
+          render_entry_coordinate_system* Entry = (render_entry_coordinate_system*)UnidentifiedEntry;
+          PushBufferByteOffset += sizeof(render_entry_coordinate_system);
 
-          pixel_line_segment_result LineSegment = 
-            ProjectSegmentToScreen(RenderGroup->CameraTransform, RenderGroup->LensChamberSize, 
-                                   ScreenCenter, MeterToPixel, V0, V1);
-          if(LineSegment.PartOfSegmentInView)
-          {
-            DrawLine(Output, LineSegment.A, LineSegment.B, Entry->Color.RGB);
-          }
-
-          v3 n = Normalize(V1-V0);
-
-          //TODO(bjorn): Implement a good GetComplimentaryAxes() fuction.
-          v3 t0 = {};
-          v3 t1 = {};
-          {
-            f32 e = 0.01f;
-            if(IsWithin(n.X, -e, e) && 
-               IsWithin(n.Y, -e, e))
-            {
-              t0 = {1,0,0};
-            }
-            else
-            {
-              t0 = n + v3{0,0,100};
-            }
-            t1 = Normalize(Cross(n, t0));
-            t0 = Cross(n, t1);
-          }
-
-          f32 Scale = 0.2f;
-          v3 Verts[5];
-          Verts[0] = V1 - n*Scale + t0 * 0.25f * Scale + t1 * 0.25f * Scale;
-          Verts[1] = V1 - n*Scale - t0 * 0.25f * Scale + t1 * 0.25f * Scale;
-          Verts[2] = V1 - n*Scale - t0 * 0.25f * Scale - t1 * 0.25f * Scale;
-          Verts[3] = V1 - n*Scale + t0 * 0.25f * Scale - t1 * 0.25f * Scale;
-          Verts[4] = V1;
-          for(int VertIndex = 0; 
-              VertIndex < 4; 
-              VertIndex++)
-          {
-            V0 = Verts[(VertIndex+0)%4];
-            V1 = Verts[(VertIndex+1)%4];
-            LineSegment = 
-              ProjectSegmentToScreen(RenderGroup->CameraTransform, RenderGroup->LensChamberSize, 
-                                     ScreenCenter, MeterToPixel, V0, V1);
-            if(LineSegment.PartOfSegmentInView)
-            {
-              DrawLine(Output, LineSegment.A, LineSegment.B, Entry->Color.RGB);
-            }
-          }
-          for(int VertIndex = 0; 
-              VertIndex < 4; 
-              VertIndex++)
-          {
-            V0 = Verts[VertIndex];
-            V1 = Verts[4];
-            LineSegment = 
-              ProjectSegmentToScreen(RenderGroup->CameraTransform, RenderGroup->LensChamberSize, 
-                                     ScreenCenter, MeterToPixel, V0, V1);
-            if(LineSegment.PartOfSegmentInView)
-            {
-              DrawLine(Output, LineSegment.A, LineSegment.B, Entry->Color.RGB);
-            }
-          }
+          DrawVector(RenderGroup, ScreenCenter, MeterToPixel, Output,
+                     Entry->Tran*v3{0,0,0}, Entry->Tran*v3{1,0,0}, v3{1,0,0});
+          DrawVector(RenderGroup, ScreenCenter, MeterToPixel, Output,
+                     Entry->Tran*v3{0,0,0}, Entry->Tran*v3{0,1,0}, v3{0,1,0});
+          DrawVector(RenderGroup, ScreenCenter, MeterToPixel, Output,
+                     Entry->Tran*v3{0,0,0}, Entry->Tran*v3{0,0,1}, v3{0,0,1});
         } break;
       case RenderGroupEntryType_render_entry_wire_cube
         : {
@@ -399,6 +431,24 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
           render_entry_quad* Entry = (render_entry_quad*)UnidentifiedEntry;
           PushBufferByteOffset += sizeof(render_entry_quad);
 
+          quad_verts_result Quad = GetQuadVertices(&Entry->Tran);
+
+          for(u32 VertIndex = 0; 
+              VertIndex < 4; 
+              VertIndex++)
+          {
+            v3 V0 = Quad.Verts[VertIndex];
+            v3 V1 = Quad.Verts[(VertIndex + 1)%4];
+
+            pixel_line_segment_result LineSegment = 
+              ProjectSegmentToScreen(RenderGroup->CameraTransform, RenderGroup->LensChamberSize, 
+                                     ScreenCenter, MeterToPixel, V0, V1);
+            if(LineSegment.PartOfSegmentInView)
+            {
+              DrawLine(Output, LineSegment.A, LineSegment.B, {1.0f, 0.0f, 1.0f});
+            }
+          }
+#if 0
           v3 Pos = Entry->Tran * v3{0,0,0};
           pixel_pos_result PixPos = 
             ProjectPointToScreen(RenderGroup->CameraTransform, RenderGroup->LensChamberSize, 
@@ -412,6 +462,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
                        Entry->Bitmap->Dim * PixPos.PerspectiveCorrection, 
                        Entry->Color.A);
           }
+#endif
         } break;
       case RenderGroupEntryType_render_entry_sphere
         : {

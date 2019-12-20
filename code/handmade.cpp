@@ -871,8 +871,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		 (DEBUG_IsPaused && DEBUG_UpdateLoopAdvance))
 #endif
 	{
-		PushRenderPieceWireFrame(RenderGroup, SimRegion->UpdateBounds, v4{0,1,1,1});
-		PushRenderPieceWireFrame(RenderGroup, SimRegion->OuterBounds, v4{1,1,0,1});
+		PushRenderEntryWireCube(RenderGroup, SimRegion->UpdateBounds, v4{0,1,1,1});
+		PushRenderEntryWireCube(RenderGroup, SimRegion->OuterBounds, v4{1,1,0,1});
 	}
 
 	//TODO(bjorn): Implement step 2 in J.Blows framerate independence video.
@@ -1332,12 +1332,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
           s32 TileSideInPixels = 60;
           f32 PixelsPerMeter = (f32)TileSideInPixels / WorldMap->TileSideInMeters;
 
-          PushCamera(RenderGroup, CamTrans, PixelsPerMeter, 20.0f);
+          SetRenderGroupCamera(RenderGroup, CamTrans, PixelsPerMeter, 20.0f);
         }
 
 				if(Entity->VisualType == EntityVisualType_Wall)
 				{
-					PushRenderPieceQuad(RenderGroup, T, &GameState->RockWall);
+					PushRenderEntryQuad(RenderGroup, T, &GameState->RockWall);
 				}
 
 				if(Entity->VisualType == EntityVisualType_Player)
@@ -1345,30 +1345,30 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
 
 					f32 ZAlpha = Clamp01(1.0f - (Entity->P.Z / 2.0f));
-					PushRenderPieceQuad(RenderGroup, T, &GameState->Shadow, {1, 1, 1, ZAlpha});
-					PushRenderPieceQuad(RenderGroup, T, &Hero->Torso);
-					PushRenderPieceQuad(RenderGroup, T, &Hero->Cape);
-					PushRenderPieceQuad(RenderGroup, T, &Hero->Head);
+					PushRenderEntryQuad(RenderGroup, T, &GameState->Shadow, {1, 1, 1, ZAlpha});
+					PushRenderEntryQuad(RenderGroup, T, &Hero->Torso);
+					PushRenderEntryQuad(RenderGroup, T, &Hero->Cape);
+					PushRenderEntryQuad(RenderGroup, T, &Hero->Head);
 				}
 				if(Entity->VisualType == EntityVisualType_Monstar)
 				{
 					hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
 
 					f32 ZAlpha = Clamp01(1.0f - (Entity->P.Z / 2.0f));
-					PushRenderPieceQuad(RenderGroup, T, &GameState->Shadow, {1, 1, 1, ZAlpha});
-					PushRenderPieceQuad(RenderGroup, T, &Hero->Torso);
+					PushRenderEntryQuad(RenderGroup, T, &GameState->Shadow, {1, 1, 1, ZAlpha});
+					PushRenderEntryQuad(RenderGroup, T, &Hero->Torso);
 				}
 				if(Entity->VisualType == EntityVisualType_Familiar)
 				{
 					hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
 
 					f32 ZAlpha = Clamp01(1.0f - ((Entity->P.Z + 1.4f) / 2.0f));
-					PushRenderPieceQuad(RenderGroup, T, &GameState->Shadow, {1, 1, 1, ZAlpha});
-					PushRenderPieceQuad(RenderGroup, T, &Hero->Head);
+					PushRenderEntryQuad(RenderGroup, T, &GameState->Shadow, {1, 1, 1, ZAlpha});
+					PushRenderEntryQuad(RenderGroup, T, &Hero->Head);
 				}
 				if(Entity->VisualType == EntityVisualType_Sword)
 				{
-					PushRenderPieceQuad(RenderGroup, T, &GameState->Sword);
+					PushRenderEntryQuad(RenderGroup, T, &GameState->Sword);
 				}
 
 				if(Entity->VisualType == EntityVisualType_Monstar ||
@@ -1390,7 +1390,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						{
 							v3 Green = {0.0f, 1.0f, 0.0f};
 
-							PushRenderPieceQuad(RenderGroup, HitPointT, V4(Green, 1.0f));
+							PushRenderEntryBlankQuad(RenderGroup, HitPointT, V4(Green, 1.0f));
 						}
 						else if(HP.FilledAmount < HIT_POINT_SUB_COUNT &&
 										HP.FilledAmount > 0)
@@ -1399,14 +1399,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							v3 Red = {1.0f, 0.0f, 0.0f};
 
 							//TODO(bjorn): How to push this relative to the screen?
-							//PushRenderPiece(RenderGroup, HitPointPos, HitPointDim, (v4)Red);
-							//PushRenderPiece(RenderGroup, HitPointPos, HitPointDim, (v4)Green);
+							//PushRenderBlankPiece(RenderGroup, HitPointT, (v4)Red);
+							//PushRenderBlankPiece(RenderGroup, HitPointT, (v4)Green);
 						}
 						else
 						{
 							v3 Red = {1.0f, 0.0f, 0.0f};
 
-							PushRenderPieceQuad(RenderGroup, HitPointT, V4(Red, 1.0f));
+							PushRenderEntryBlankQuad(RenderGroup, HitPointT, V4(Red, 1.0f));
 						}
 					}
 				}
@@ -1451,11 +1451,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								}
 							}
 
-							PushRenderPieceSphere(RenderGroup, T * Primitive->Tran, Color);
+							PushRenderEntrySphere(RenderGroup, T * Primitive->Tran, Color);
 						}
 						else if(Primitive->CollisionShape == CollisionShape_AABB)
 						{
-							PushRenderPieceWireFrame(RenderGroup, T * Primitive->Tran);
+							PushRenderEntryWireCube(RenderGroup, T * Primitive->Tran);
 						}
 					}
 
@@ -1465,17 +1465,17 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					{
 						f32 AxesScale = 1.0f;
 						m44 TranslationAndRotation = ConstructTransform(Entity->P, Entity->O, {1,1,1});
-						PushRenderPieceLineSegment(RenderGroup, TranslationAndRotation, 
+						PushRenderEntryVector(RenderGroup, TranslationAndRotation, 
 																			 v3{0,0,0}, v3{1,0,0}*AxesScale, {1,0,0});
-						PushRenderPieceLineSegment(RenderGroup, TranslationAndRotation, 
+						PushRenderEntryVector(RenderGroup, TranslationAndRotation, 
 																			 v3{0,0,0}, v3{0,1,0}*AxesScale, {0,1,0});
-						PushRenderPieceLineSegment(RenderGroup, TranslationAndRotation, 
+						PushRenderEntryVector(RenderGroup, TranslationAndRotation, 
 																			 v3{0,0,0}, v3{0,0,1}*AxesScale, {0,0,1});
 
 						m44 TranslationOnly = ConstructTransform(Entity->P, QuaternionIdentity(), {1,1,1});
-						PushRenderPieceLineSegment(RenderGroup, TranslationOnly, v3{0,0,0}, 
+						PushRenderEntryVector(RenderGroup, TranslationOnly, v3{0,0,0}, 
 																			 Entity->DEBUG_MostRecent_F*(1.0f/10.0f), {1,0,1});
-						PushRenderPieceLineSegment(RenderGroup, TranslationOnly, v3{0,0,0}, 
+						PushRenderEntryVector(RenderGroup, TranslationOnly, v3{0,0,0}, 
 																			 Entity->DEBUG_MostRecent_T*(1.0f/tau32), {1,1,0});
 					}
 
@@ -1494,14 +1494,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							v3 APSize = 0.08f*v3{1,1,1};
 
 							m44 T1 = ConstructTransform(AP1, QuaternionIdentity(), APSize);
-							PushRenderPieceWireFrame(RenderGroup, T1, {0.7f,0,0,1});
+							PushRenderEntryWireCube(RenderGroup, T1, {0.7f,0,0,1});
 							v3 n = Normalize(AP2-AP1);
 							m44 T2 = ConstructTransform(AP1 + n*Info.Length, QuaternionIdentity(), APSize);
-							PushRenderPieceWireFrame(RenderGroup, T2, {1,1,1,1});
+							PushRenderEntryWireCube(RenderGroup, T2, {1,1,1,1});
 
-							PushRenderPieceLineSegment(RenderGroup, M44Identity(), AP1, AP2);
+							PushRenderEntryVector(RenderGroup, M44Identity(), AP1, AP2);
 
-							PushRenderPieceLineSegment(RenderGroup, M44Identity(), Entity->P, AP1, {1,1,1,1});
+							PushRenderEntryVector(RenderGroup, M44Identity(), Entity->P, AP1, {1,1,1,1});
 						}
 					}
 				}
@@ -1519,9 +1519,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 	EndSim(Input, Entities, WorldArena, SimRegion);
 
-  //TODO(bjorn): Give equivalent render commands for doing these.
-  DrawRectangle(Buffer, RectMinMax(v2{0.0f, 0.0f}, Buffer->Dim), {0.5f, 0.5f, 0.5f});
+  SetRenderGroupClearScreen(RenderGroup, {0.5f, 0.5f, 0.5f});
 #if 0
+  //TODO(bjorn): Give equivalent render commands for doing these.
   DrawBitmap(Output, &GameState->GeneratedTile, 
              (Output->Dim - GameState->GeneratedTile.Dim) * 0.5f);
 #endif

@@ -454,6 +454,62 @@ DrawString(game_bitmap *Buffer, depth_buffer* DepthBuffer,
 }
 
 	internal_function void
+DrawQuadSlowly(game_bitmap *Buffer, v2 V0, v2 V1, v2 V2, v2 V3, v3 RGB)
+{
+	s32 Left = RoundF32ToS32(Min(Min(V0.X, V1.X),Min(V2.X, V3.X)));
+	s32 Right = RoundF32ToS32(Max(Max(V0.X, V1.X),Max(V2.X, V3.X)));
+	s32 Top = RoundF32ToS32(Min(Min(V0.Y, V1.Y),Min(V2.Y, V3.Y)));
+	s32 Bottom = RoundF32ToS32(Max(Max(V0.Y, V1.Y),Max(V2.Y, V3.Y)));
+
+	Left = Left < 0 ? 0 : Left;
+	Top = Top < 0 ? 0 : Top;
+
+	Right = Right > Buffer->Width ? Buffer->Width : Right;
+	Bottom = Bottom > Buffer->Height ? Buffer->Height : Bottom;
+
+	u32 Color = ((RoundF32ToS32(RGB.R * 255.0f) << 16) |
+							 (RoundF32ToS32(RGB.G * 255.0f) << 8) |
+							 (RoundF32ToS32(RGB.B * 255.0f) << 0));
+
+  v2 Norm0 = Perp(V1-V0);
+  v2 Norm1 = Perp(V2-V1);
+  v2 Norm2 = Perp(V3-V2);
+  v2 Norm3 = Perp(V0-V3);
+
+	u32 *UpperLeftPixel = Buffer->Memory + Left + Top * Buffer->Pitch;
+	for(s32 Y = Top;
+			Y < Bottom;
+			++Y)
+	{
+		u32 *Pixel = UpperLeftPixel;
+
+		for(s32 X = Left;
+				X < Right;
+				++X)
+		{
+      v2 P = Vec2(X, Y);
+
+      f32 Edge0 = Dot(Norm0, (P-V0));
+      f32 Edge1 = Dot(Norm1, (P-V1));
+      f32 Edge2 = Dot(Norm2, (P-V2));
+      f32 Edge3 = Dot(Norm3, (P-V3));
+
+      if((Edge0 < 0) &&
+         (Edge1 < 0) &&
+         (Edge2 < 0) &&
+         (Edge3 < 0))
+      {
+        *Pixel = Color;
+      }
+
+      Pixel++;
+		}
+
+		UpperLeftPixel += Buffer->Pitch;
+	}
+}
+
+	internal_function void
 DrawRectangle(game_bitmap *Buffer, rectangle2 Rect, v3 RGB)
 {
 	s32 Left = RoundF32ToS32(Rect.Min.X);

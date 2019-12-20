@@ -398,6 +398,18 @@ struct v2
 	operator v3();
 };
 
+//TODO(bjorn): Why does the function name V2 not compile here?
+inline v2 
+Vec2(s32 X, s32 Y)
+{
+  return v2{(f32)X, (f32)Y};
+}
+inline v2 
+Vec2(u32 X, u32 Y)
+{
+  return v2{(f32)X, (f32)Y};
+}
+
 inline v2
 operator+(v2 lhs, v2 rhs)
 {
@@ -1184,6 +1196,12 @@ Cross(v3 A, v3 B)
 	Result.Z = A.X*B.Y - A.Y*B.X;
 	
 	return Result;
+}
+
+inline v2
+Perp(v2 A)
+{
+  return {-A.Y, A.X};
 }
 
 //TODO(bjorn): Where does this belong.

@@ -433,6 +433,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
 
           quad_verts_result Quad = GetQuadVertices(&Entry->Tran);
 
+          v2 PixVerts[4] = {};
           for(u32 VertIndex = 0; 
               VertIndex < 4; 
               VertIndex++)
@@ -445,8 +446,22 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
                                      ScreenCenter, MeterToPixel, V0, V1);
             if(LineSegment.PartOfSegmentInView)
             {
-              DrawLine(Output, LineSegment.A, LineSegment.B, {1.0f, 0.0f, 1.0f});
+              PixVerts[VertIndex] = LineSegment.A;
             }
+          }
+
+          DrawQuadSlowly(Output, 
+                         PixVerts[0], 
+                         PixVerts[1], 
+                         PixVerts[2], 
+                         PixVerts[3], 
+                         {0.2f,0.6f,0.3f});
+          for(u32 VertIndex = 0; 
+              VertIndex < 1; 
+              VertIndex++)
+          {
+            DrawLine(Output, PixVerts[VertIndex], PixVerts[(VertIndex + 1)%4], 
+                     {1.0f, VertIndex*0.25f, 1.0f});
           }
 #if 0
           v3 Pos = Entry->Tran * v3{0,0,0};

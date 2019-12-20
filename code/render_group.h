@@ -172,18 +172,21 @@ struct pixel_pos_result
 };
 
 internal_function pixel_pos_result
-ProjectPointToScreen(render_group* RenderGroup, v2 ScreenCenter, m22 MeterToPixel, v3 Pos)
+ProjectPointToScreen(m44 CameraTransform, f32 LensChamberSize, 
+                     v2 ScreenCenter, m22 MeterToPixel, v3 Pos)
 {
 	pixel_pos_result Result = {};
 
-  v3 PosRelativeCameraLens = RenderGroup->CameraTransform * Pos;
+  v3 PosRelativeCameraLens = CameraTransform * Pos;
+  //NOTE(bjorn): The untransformed camera has the lens located at the origin
+  //and is looking along the negative z-axis in a right-hand coordinate system. 
   f32 DistanceFromCameraLens = -PosRelativeCameraLens.Z;
 
   f32 PerspectiveCorrection = 
-    RenderGroup->LensChamberSize / (DistanceFromCameraLens + RenderGroup->LensChamberSize);
+    LensChamberSize / (DistanceFromCameraLens + LensChamberSize);
 
   //TODO(bjorn): Add clipping plane parameters.
-  b32 PointIsInView = (DistanceFromCameraLens + RenderGroup->LensChamberSize) > 0;
+  b32 PointIsInView = (DistanceFromCameraLens + LensChamberSize) > 0;
   if(PointIsInView)
   {
     Result.PointIsInView = PointIsInView;
@@ -202,12 +205,15 @@ struct pixel_line_segment_result
 };
 //TODO(bjorn): Do a unique solution to this that interpolates the points when nessecary.
   internal_function pixel_line_segment_result
-ProjectSegmentToScreen(render_group* RenderGroup, v2 ScreenCenter, m22 MeterToPixel, v3 A, v3 B)
+ProjectSegmentToScreen(m44 CameraTransform, f32 LensChamberSize, 
+                       v2 ScreenCenter, m22 MeterToPixel, v3 A, v3 B)
 {
   pixel_line_segment_result Result = {};
 
-  pixel_pos_result PixPosA = ProjectPointToScreen(RenderGroup, ScreenCenter, MeterToPixel, A);
-  pixel_pos_result PixPosB = ProjectPointToScreen(RenderGroup, ScreenCenter, MeterToPixel, B);
+  pixel_pos_result PixPosA = 
+    ProjectPointToScreen(CameraTransform, LensChamberSize, ScreenCenter, MeterToPixel, A);
+  pixel_pos_result PixPosB = 
+    ProjectPointToScreen(CameraTransform, LensChamberSize, ScreenCenter, MeterToPixel, B);
 
   if(PixPosA.PointIsInView && PixPosB.PointIsInView)
   {
@@ -262,7 +268,8 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
           v3 V1 = Entry->B;
 
           pixel_line_segment_result LineSegment = 
-            ProjectSegmentToScreen(RenderGroup, ScreenCenter, MeterToPixel, V0, V1);
+            ProjectSegmentToScreen(RenderGroup->CameraTransform, RenderGroup->LensChamberSize, 
+                                   ScreenCenter, MeterToPixel, V0, V1);
           if(LineSegment.PartOfSegmentInView)
           {
             DrawLine(Output, LineSegment.A, LineSegment.B, Entry->Color.RGB);
@@ -302,7 +309,8 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
             V0 = Verts[(VertIndex+0)%4];
             V1 = Verts[(VertIndex+1)%4];
             LineSegment = 
-              ProjectSegmentToScreen(RenderGroup, ScreenCenter, MeterToPixel, V0, V1);
+              ProjectSegmentToScreen(RenderGroup->CameraTransform, RenderGroup->LensChamberSize, 
+                                     ScreenCenter, MeterToPixel, V0, V1);
             if(LineSegment.PartOfSegmentInView)
             {
               DrawLine(Output, LineSegment.A, LineSegment.B, Entry->Color.RGB);
@@ -315,7 +323,8 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
             V0 = Verts[VertIndex];
             V1 = Verts[4];
             LineSegment = 
-              ProjectSegmentToScreen(RenderGroup, ScreenCenter, MeterToPixel, V0, V1);
+              ProjectSegmentToScreen(RenderGroup->CameraTransform, RenderGroup->LensChamberSize, 
+                                     ScreenCenter, MeterToPixel, V0, V1);
             if(LineSegment.PartOfSegmentInView)
             {
               DrawLine(Output, LineSegment.A, LineSegment.B, Entry->Color.RGB);
@@ -336,7 +345,8 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
             v3 V0 = AABB.Verts[(VertIndex+0)%4];
             v3 V1 = AABB.Verts[(VertIndex+1)%4];
             pixel_line_segment_result LineSegment = 
-              ProjectSegmentToScreen(RenderGroup, ScreenCenter, MeterToPixel, V0, V1);
+              ProjectSegmentToScreen(RenderGroup->CameraTransform, RenderGroup->LensChamberSize, 
+                                     ScreenCenter, MeterToPixel, V0, V1);
             if(LineSegment.PartOfSegmentInView)
             {
               DrawLine(Output, LineSegment.A, LineSegment.B, Entry->Color.RGB);
@@ -349,7 +359,8 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
             v3 V0 = AABB.Verts[(VertIndex+0)%4 + 4];
             v3 V1 = AABB.Verts[(VertIndex+1)%4 + 4];
             pixel_line_segment_result LineSegment = 
-              ProjectSegmentToScreen(RenderGroup, ScreenCenter, MeterToPixel, V0, V1);
+              ProjectSegmentToScreen(RenderGroup->CameraTransform, RenderGroup->LensChamberSize, 
+                                     ScreenCenter, MeterToPixel, V0, V1);
             if(LineSegment.PartOfSegmentInView)
             {
               DrawLine(Output, LineSegment.A, LineSegment.B, Entry->Color.RGB);
@@ -362,7 +373,8 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
             v3 V0 = AABB.Verts[VertIndex];
             v3 V1 = AABB.Verts[VertIndex + 4];
             pixel_line_segment_result LineSegment = 
-              ProjectSegmentToScreen(RenderGroup, ScreenCenter, MeterToPixel, V0, V1);
+              ProjectSegmentToScreen(RenderGroup->CameraTransform, RenderGroup->LensChamberSize, 
+                                     ScreenCenter, MeterToPixel, V0, V1);
             if(LineSegment.PartOfSegmentInView)
             {
               DrawLine(Output, LineSegment.A, LineSegment.B, Entry->Color.RGB);
@@ -389,7 +401,8 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
 
           v3 Pos = Entry->Tran * v3{0,0,0};
           pixel_pos_result PixPos = 
-            ProjectPointToScreen(RenderGroup, ScreenCenter, MeterToPixel, Pos);
+            ProjectPointToScreen(RenderGroup->CameraTransform, RenderGroup->LensChamberSize, 
+                                 ScreenCenter, MeterToPixel, Pos);
 
           if(PixPos.PointIsInView)
           {
@@ -409,7 +422,8 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
           v3 P1 = Entry->Tran * v3{0.5f,0,0};
 
           pixel_pos_result PixPos = 
-            ProjectPointToScreen(RenderGroup, ScreenCenter, MeterToPixel, P0);
+            ProjectPointToScreen(RenderGroup->CameraTransform, RenderGroup->LensChamberSize, 
+                                 ScreenCenter, MeterToPixel, P0);
           if(PixPos.PointIsInView)
           {
             f32 PixR = 

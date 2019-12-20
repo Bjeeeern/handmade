@@ -865,6 +865,11 @@ RandomBilateralV2(random_series* Seed)
 {
   return {RandomBilateral(Seed), RandomBilateral(Seed)};
 }
+internal_function v2
+RandomUnilateralV2(random_series* Seed)
+{
+  return {RandomUnilateral(Seed), RandomUnilateral(Seed)};
+}
 
 internal_function u32
 RandomChoice(random_series* Seed, u32 ChoiceCount)

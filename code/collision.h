@@ -234,7 +234,7 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 			{
 				v3 APSize = 0.08f*v3{1,1,1};
 				m44 T = ConstructTransform(Vertex, QuaternionIdentity(), APSize);
-				PushRenderEntryWireCube(RenderGroup, T, {0.7f,0,0,1});
+				PushWireCube(RenderGroup, T, {0.7f,0,0,1});
 			}
 #endif
 
@@ -281,8 +281,8 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 			B_EdgeEnds[1] += Entity_B->P;
 
 #if HANDMADE_INTERNAL
-			PushRenderEntryVector(RenderGroup, M44Identity(), A_EdgeEnds[0], A_EdgeEnds[1], {1,1,0});
-			PushRenderEntryVector(RenderGroup, M44Identity(), B_EdgeEnds[0], B_EdgeEnds[1], {1,1,0});
+			PushVector(RenderGroup, M44Identity(), A_EdgeEnds[0], A_EdgeEnds[1], {1,1,0});
+			PushVector(RenderGroup, M44Identity(), B_EdgeEnds[0], B_EdgeEnds[1], {1,1,0});
 #endif
 
 			v3 ContactPoint;
@@ -329,7 +329,7 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 			{
 				v3 APSize = 0.08f*v3{1,1,1};
 				m44 T = ConstructTransform(ContactPoint, QuaternionIdentity(), APSize);
-				PushRenderEntryWireCube(RenderGroup, T, {0.7f,0,0,1});
+				PushWireCube(RenderGroup, T, {0.7f,0,0,1});
 			}
 #endif
 

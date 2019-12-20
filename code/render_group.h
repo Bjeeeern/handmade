@@ -100,7 +100,7 @@ PushRenderElement_(render_group* RenderGroup, u32 Size, render_group_entry_type 
 }
 
 internal_function void
-PushRenderEntryBlankQuad(render_group* RenderGroup, m44 T, v4 Color)
+PushBlankQuad(render_group* RenderGroup, m44 T, v4 Color)
 {
 	render_entry_blank_quad* Entry = PushRenderElement(RenderGroup, render_entry_blank_quad);
 	Entry->Tran = T;
@@ -108,7 +108,7 @@ PushRenderEntryBlankQuad(render_group* RenderGroup, m44 T, v4 Color)
 }
 
 internal_function void
-PushRenderEntryQuad(render_group* RenderGroup, m44 T, game_bitmap* Bitmap, v4 Color = {1,1,1,1})
+PushQuad(render_group* RenderGroup, m44 T, game_bitmap* Bitmap, v4 Color = {1,1,1,1})
 {
 	render_entry_quad* Entry = PushRenderElement(RenderGroup, render_entry_quad);
 	Entry->Tran = T;
@@ -117,23 +117,23 @@ PushRenderEntryQuad(render_group* RenderGroup, m44 T, game_bitmap* Bitmap, v4 Co
 }
 
 internal_function void
-PushRenderEntryWireCube(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.8f,1})
+PushWireCube(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.8f,1})
 {
 	render_entry_wire_cube* Entry = PushRenderElement(RenderGroup, render_entry_wire_cube);
 	Entry->Tran = T;
 	Entry->Color = Color;
 }
 internal_function void
-PushRenderEntryWireCube(render_group* RenderGroup, rectangle3 Rect, v4 Color = {0,0,1,1})
+PushWireCube(render_group* RenderGroup, rectangle3 Rect, v4 Color = {0,0,1,1})
 {
 	center_dim_v3_result CenterDim = RectToCenterDim(Rect);
 	m44 T = ConstructTransform(CenterDim.Center, QuaternionIdentity(), CenterDim.Dim);
 
-	PushRenderEntryWireCube(RenderGroup, T, Color);
+	PushWireCube(RenderGroup, T, Color);
 }
 
 internal_function void
-PushRenderEntryVector(render_group* RenderGroup, m44 T, v3 A, v3 B, v4 Color = {0,0.4f,0.8f,1})
+PushVector(render_group* RenderGroup, m44 T, v3 A, v3 B, v4 Color = {0,0.4f,0.8f,1})
 {
 	render_entry_vector* Entry = PushRenderElement(RenderGroup, render_entry_vector);
 	Entry->A = T * A;
@@ -142,7 +142,7 @@ PushRenderEntryVector(render_group* RenderGroup, m44 T, v3 A, v3 B, v4 Color = {
 }
 
 internal_function void
-PushRenderEntrySphere(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.8f,1})
+PushSphere(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.8f,1})
 {
 	render_entry_sphere* Entry = PushRenderElement(RenderGroup, render_entry_sphere);
 	Entry->Tran = T;
@@ -150,7 +150,7 @@ PushRenderEntrySphere(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.8f,
 }
 
 internal_function void
-SetRenderGroupCamera(render_group* RenderGroup, m44 CameraTransform, f32 PixelsPerMeter, f32 LensChamberSize)
+SetCamera(render_group* RenderGroup, m44 CameraTransform, f32 PixelsPerMeter, f32 LensChamberSize)
 {
   RenderGroup->CameraTransform = CameraTransform;
   RenderGroup->PixelsPerMeter = PixelsPerMeter;
@@ -158,7 +158,7 @@ SetRenderGroupCamera(render_group* RenderGroup, m44 CameraTransform, f32 PixelsP
 }
 
 internal_function void
-SetRenderGroupClearScreen(render_group* RenderGroup, v4 Color)
+ClearScreen(render_group* RenderGroup, v4 Color)
 {
   RenderGroup->ClearScreen = true;
   RenderGroup->ClearScreenColor = Color;
@@ -177,8 +177,6 @@ ProjectPointToScreen(render_group* RenderGroup, v2 ScreenCenter, m22 MeterToPixe
 	pixel_pos_result Result = {};
 
   v3 PosRelativeCameraLens = RenderGroup->CameraTransform * Pos;
-  //TODO(bjorn): Why is this negative? I have a feeling it should not be and
-  //that Im making a misstake somewhere else.
   f32 DistanceFromCameraLens = -PosRelativeCameraLens.Z;
 
   f32 PerspectiveCorrection = 

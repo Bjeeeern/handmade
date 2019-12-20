@@ -274,7 +274,7 @@ DEBUG_VisualizeCollisionTag(render_group* RenderGroup, rectangle3 CollisionRegio
 													 Dim.Z * Z}));
 
 					m44 Tran = ConstructTransform(Center, QuaternionIdentity(), Dim);
-					PushRenderEntryWireCube(RenderGroup, Tran, {0,0,1,1});
+					PushWireCube(RenderGroup, Tran, {0,0,1,1});
 				}
 			}
 		}
@@ -307,7 +307,7 @@ DEBUG_VisualizeCollisionGrid(render_group* RenderGroup, rectangle3 CollisionRegi
 											   Dim.Z * Z}));
 
 				m44 Tran = ConstructTransform(Center, QuaternionIdentity(), Dim);
-				PushRenderEntryWireCube(RenderGroup, Tran, {0,1,0,1});
+				PushWireCube(RenderGroup, Tran, {0,1,0,1});
 			}
 		}
 	}

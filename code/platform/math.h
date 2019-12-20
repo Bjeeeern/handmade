@@ -2069,6 +2069,22 @@ ConstructTransform(v3 P, m33 M)
 					M.G, M.H, M.I, P.Z,
 					  0,   0,   0,   1};
 }
+inline m44
+ConstructTransform(v3 P)
+{
+	return {  1,   0,   0, P.X,
+					  0,   1,   0, P.Y,
+					  0,   0,   1, P.Z,
+					  0,   0,   0,   1};
+}
+inline m44
+ConstructTransform(v2 P)
+{
+	return {  1,   0,   0, P.X,
+					  0,   1,   0, P.Y,
+					  0,   0,   1,   0,
+					  0,   0,   0,   1};
+}
 
 struct inverse_m33_result
 {

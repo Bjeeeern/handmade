@@ -98,13 +98,19 @@ struct game_state
 internal_function void
 DrawGeneratedTile(game_state* GameState, game_bitmap* Buffer)
 {
+  temporary_memory TempMem = BeginTemporaryMemory(&GameState->TransientArena);
+  render_group* RenderGroup = AllocateRenderGroup(&GameState->TransientArena, Megabytes(4));
+  SetCamera(RenderGroup, M44Identity(), 1.0f, 1.0f);
+
   random_series Series = Seed(0);
+
+  v4 Color = {1.0f,1.0f,1.0f,0.5f};
+
   for(u32 Index = 0; Index < 200; Index++)
   {
-    v2 Center = Buffer->Dim * 0.5f;
-    v2 Offset = Hadamard(RandomBilateralV2(&Series) * 0.5f, Buffer->Dim * 0.8f);
-    game_bitmap* Bitmap = 0;
+    v2 Offset = Hadamard(RandomBilateralV2(&Series) * 0.5f, Buffer->Dim);
 
+    game_bitmap* Bitmap = 0;
     switch(RandomChoice(&Series, 2))
     {
       case 0: {
@@ -115,15 +121,15 @@ DrawGeneratedTile(game_state* GameState, game_bitmap* Buffer)
               } break;
     }
 
-    DrawBitmap(Buffer, Bitmap, Center + Offset - (Bitmap->Dim * 0.5f));
+    Offset += (v2)v2s{-Bitmap->Dim.X, Bitmap->Dim.Y} * 0.5f;
+    PushQuad(RenderGroup, ConstructTransform(Offset), Bitmap, Color);
   }
 
   for(u32 Index = 0; Index < 100; Index++)
   {
-    v2 Center = Buffer->Dim * 0.5f;
-    v2 Offset = Hadamard(RandomBilateralV2(&Series) * 0.5f, Buffer->Dim * 0.8f);
-    game_bitmap* Bitmap = 0;
+    v2 Offset = Hadamard(RandomBilateralV2(&Series) * 0.5f, Buffer->Dim);
 
+    game_bitmap* Bitmap = 0;
     if(RandomChoice(&Series, 2) > 0.8f)
     {
       Bitmap = GameState->Rock + RandomChoice(&Series, 4);
@@ -133,8 +139,14 @@ DrawGeneratedTile(game_state* GameState, game_bitmap* Buffer)
       Bitmap = GameState->Tuft + RandomChoice(&Series, 3);
     }
 
-    DrawBitmap(Buffer, Bitmap, Center + Offset - (Bitmap->Dim * 0.5f));
+    Offset += (v2)v2s{-Bitmap->Dim.X, Bitmap->Dim.Y} * 0.5f;
+    PushQuad(RenderGroup, ConstructTransform(Offset), Bitmap, Color);
   }
+
+  RenderGroupToOutput(RenderGroup, Buffer);
+
+	EndTemporaryMemory(TempMem);
+	CheckMemoryArena(&GameState->TransientArena);
 }
 
 	internal_function void
@@ -604,6 +616,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	EndTemporaryMemory(TempMem);
 
   GameState->GeneratedTile = EmptyBitmap(TransientArena, 512, 512);
+  GameState->GeneratedTile.Alignment = {256, 256};
   DrawGeneratedTile(GameState, &GameState->GeneratedTile);
 }
 
@@ -849,6 +862,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// NOTE(bjorn): Moving and Rendering
 	//
 
+  PushQuad(RenderGroup, M44Identity(), &GameState->GeneratedTile);
+
 	//
 	// NOTE(bjorn): Create sim region by camera
 	//
@@ -871,8 +886,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		 (DEBUG_IsPaused && DEBUG_UpdateLoopAdvance))
 #endif
 	{
-		PushRenderEntryWireCube(RenderGroup, SimRegion->UpdateBounds, v4{0,1,1,1});
-		PushRenderEntryWireCube(RenderGroup, SimRegion->OuterBounds, v4{1,1,0,1});
+		PushWireCube(RenderGroup, SimRegion->UpdateBounds, v4{0,1,1,1});
+		PushWireCube(RenderGroup, SimRegion->OuterBounds, v4{1,1,0,1});
 	}
 
 	//TODO(bjorn): Implement step 2 in J.Blows framerate independence video.
@@ -1324,7 +1339,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                                                GameState->DEBUG_MainCameraOffsetDuringPause, 
                                                MainCamera->WorldP);
 #endif
-          v3 Offset = {0, 0, -MainCamera->CamZoom};
+          v3 Offset = {0, 0, MainCamera->CamZoom};
           m33 XRot = XRotationMatrix(MainCamera->CamRot.Y);
           m33 RotMat = AxisRotationMatrix(MainCamera->CamRot.X, GetMatCol(XRot, 2)) * XRot;
           m44 CamTrans = ConstructTransform(Offset, RotMat);
@@ -1332,12 +1347,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
           s32 TileSideInPixels = 60;
           f32 PixelsPerMeter = (f32)TileSideInPixels / WorldMap->TileSideInMeters;
 
-          SetRenderGroupCamera(RenderGroup, CamTrans, PixelsPerMeter, 20.0f);
+          SetCamera(RenderGroup, CamTrans, PixelsPerMeter, 20.0f);
         }
 
 				if(Entity->VisualType == EntityVisualType_Wall)
 				{
-					PushRenderEntryQuad(RenderGroup, T, &GameState->RockWall);
+					PushQuad(RenderGroup, T, &GameState->RockWall);
 				}
 
 				if(Entity->VisualType == EntityVisualType_Player)
@@ -1345,30 +1360,30 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
 
 					f32 ZAlpha = Clamp01(1.0f - (Entity->P.Z / 2.0f));
-					PushRenderEntryQuad(RenderGroup, T, &GameState->Shadow, {1, 1, 1, ZAlpha});
-					PushRenderEntryQuad(RenderGroup, T, &Hero->Torso);
-					PushRenderEntryQuad(RenderGroup, T, &Hero->Cape);
-					PushRenderEntryQuad(RenderGroup, T, &Hero->Head);
+					PushQuad(RenderGroup, T, &GameState->Shadow, {1, 1, 1, ZAlpha});
+					PushQuad(RenderGroup, T, &Hero->Torso);
+					PushQuad(RenderGroup, T, &Hero->Cape);
+					PushQuad(RenderGroup, T, &Hero->Head);
 				}
 				if(Entity->VisualType == EntityVisualType_Monstar)
 				{
 					hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
 
 					f32 ZAlpha = Clamp01(1.0f - (Entity->P.Z / 2.0f));
-					PushRenderEntryQuad(RenderGroup, T, &GameState->Shadow, {1, 1, 1, ZAlpha});
-					PushRenderEntryQuad(RenderGroup, T, &Hero->Torso);
+					PushQuad(RenderGroup, T, &GameState->Shadow, {1, 1, 1, ZAlpha});
+					PushQuad(RenderGroup, T, &Hero->Torso);
 				}
 				if(Entity->VisualType == EntityVisualType_Familiar)
 				{
 					hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
 
 					f32 ZAlpha = Clamp01(1.0f - ((Entity->P.Z + 1.4f) / 2.0f));
-					PushRenderEntryQuad(RenderGroup, T, &GameState->Shadow, {1, 1, 1, ZAlpha});
-					PushRenderEntryQuad(RenderGroup, T, &Hero->Head);
+					PushQuad(RenderGroup, T, &GameState->Shadow, {1, 1, 1, ZAlpha});
+					PushQuad(RenderGroup, T, &Hero->Head);
 				}
 				if(Entity->VisualType == EntityVisualType_Sword)
 				{
-					PushRenderEntryQuad(RenderGroup, T, &GameState->Sword);
+					PushQuad(RenderGroup, T, &GameState->Sword);
 				}
 
 				if(Entity->VisualType == EntityVisualType_Monstar ||
@@ -1390,7 +1405,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						{
 							v3 Green = {0.0f, 1.0f, 0.0f};
 
-							PushRenderEntryBlankQuad(RenderGroup, HitPointT, V4(Green, 1.0f));
+							PushBlankQuad(RenderGroup, HitPointT, V4(Green, 1.0f));
 						}
 						else if(HP.FilledAmount < HIT_POINT_SUB_COUNT &&
 										HP.FilledAmount > 0)
@@ -1406,7 +1421,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						{
 							v3 Red = {1.0f, 0.0f, 0.0f};
 
-							PushRenderEntryBlankQuad(RenderGroup, HitPointT, V4(Red, 1.0f));
+							PushBlankQuad(RenderGroup, HitPointT, V4(Red, 1.0f));
 						}
 					}
 				}
@@ -1451,11 +1466,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 								}
 							}
 
-							PushRenderEntrySphere(RenderGroup, T * Primitive->Tran, Color);
+							PushSphere(RenderGroup, T * Primitive->Tran, Color);
 						}
 						else if(Primitive->CollisionShape == CollisionShape_AABB)
 						{
-							PushRenderEntryWireCube(RenderGroup, T * Primitive->Tran);
+							PushWireCube(RenderGroup, T * Primitive->Tran);
 						}
 					}
 
@@ -1465,17 +1480,17 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					{
 						f32 AxesScale = 1.0f;
 						m44 TranslationAndRotation = ConstructTransform(Entity->P, Entity->O, {1,1,1});
-						PushRenderEntryVector(RenderGroup, TranslationAndRotation, 
+						PushVector(RenderGroup, TranslationAndRotation, 
 																			 v3{0,0,0}, v3{1,0,0}*AxesScale, {1,0,0});
-						PushRenderEntryVector(RenderGroup, TranslationAndRotation, 
+						PushVector(RenderGroup, TranslationAndRotation, 
 																			 v3{0,0,0}, v3{0,1,0}*AxesScale, {0,1,0});
-						PushRenderEntryVector(RenderGroup, TranslationAndRotation, 
+						PushVector(RenderGroup, TranslationAndRotation, 
 																			 v3{0,0,0}, v3{0,0,1}*AxesScale, {0,0,1});
 
 						m44 TranslationOnly = ConstructTransform(Entity->P, QuaternionIdentity(), {1,1,1});
-						PushRenderEntryVector(RenderGroup, TranslationOnly, v3{0,0,0}, 
+						PushVector(RenderGroup, TranslationOnly, v3{0,0,0}, 
 																			 Entity->DEBUG_MostRecent_F*(1.0f/10.0f), {1,0,1});
-						PushRenderEntryVector(RenderGroup, TranslationOnly, v3{0,0,0}, 
+						PushVector(RenderGroup, TranslationOnly, v3{0,0,0}, 
 																			 Entity->DEBUG_MostRecent_T*(1.0f/tau32), {1,1,0});
 					}
 
@@ -1494,14 +1509,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 							v3 APSize = 0.08f*v3{1,1,1};
 
 							m44 T1 = ConstructTransform(AP1, QuaternionIdentity(), APSize);
-							PushRenderEntryWireCube(RenderGroup, T1, {0.7f,0,0,1});
+							PushWireCube(RenderGroup, T1, {0.7f,0,0,1});
 							v3 n = Normalize(AP2-AP1);
 							m44 T2 = ConstructTransform(AP1 + n*Info.Length, QuaternionIdentity(), APSize);
-							PushRenderEntryWireCube(RenderGroup, T2, {1,1,1,1});
+							PushWireCube(RenderGroup, T2, {1,1,1,1});
 
-							PushRenderEntryVector(RenderGroup, M44Identity(), AP1, AP2);
+							PushVector(RenderGroup, M44Identity(), AP1, AP2);
 
-							PushRenderEntryVector(RenderGroup, M44Identity(), Entity->P, AP1, {1,1,1,1});
+							PushVector(RenderGroup, M44Identity(), Entity->P, AP1, {1,1,1,1});
 						}
 					}
 				}
@@ -1519,12 +1534,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 	EndSim(Input, Entities, WorldArena, SimRegion);
 
-  SetRenderGroupClearScreen(RenderGroup, {0.5f, 0.5f, 0.5f});
-#if 0
-  //TODO(bjorn): Give equivalent render commands for doing these.
-  DrawBitmap(Output, &GameState->GeneratedTile, 
-             (Output->Dim - GameState->GeneratedTile.Dim) * 0.5f);
-#endif
+  ClearScreen(RenderGroup, {0.5f, 0.5f, 0.5f});
 
 	//
 	// NOTE(bjorn): Rendering

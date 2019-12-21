@@ -121,7 +121,6 @@ DrawGeneratedTile(game_state* GameState, game_bitmap* Buffer)
               } break;
     }
 
-    Offset += (v2)v2s{-Bitmap->Dim.X, Bitmap->Dim.Y} * 0.5f;
     PushQuad(RenderGroup, ConstructTransform(Offset, Bitmap->Dim), Bitmap, Color);
   }
 
@@ -139,7 +138,6 @@ DrawGeneratedTile(game_state* GameState, game_bitmap* Buffer)
       Bitmap = GameState->Tuft + RandomChoice(&Series, 3);
     }
 
-    Offset += (v2)v2s{-Bitmap->Dim.X, Bitmap->Dim.Y} * 0.5f;
     PushQuad(RenderGroup, ConstructTransform(Offset, Bitmap->Dim), Bitmap, Color);
   }
 
@@ -862,7 +860,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// NOTE(bjorn): Moving and Rendering
 	//
   {
-    m44 Transform = ConstructTransform({}, AngleAxisToQuaternion(tau32 * 0.25f, {1,0,0}), {6,1,6});
+    m44 Transform = ConstructTransform({}, QuaternionIdentity(), {6,6,1});
     PushQuad(RenderGroup, Transform, &GameState->GeneratedTile);
   }
 

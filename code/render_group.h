@@ -455,14 +455,19 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
                          PixVerts[1], 
                          PixVerts[2], 
                          PixVerts[3], 
-                         {0.2f,0.6f,0.3f});
+                         Entry->Bitmap,
+                         {0.2f,0.6f,0.3f,1.0f});
+
+#if 0
+          DrawLine(Output, PixVerts[0], PixVerts[2], {1.0f, 0.25f, 1.0f});
           for(u32 VertIndex = 0; 
-              VertIndex < 1; 
+              VertIndex < 4; 
               VertIndex++)
           {
             DrawLine(Output, PixVerts[VertIndex], PixVerts[(VertIndex + 1)%4], 
                      {1.0f, VertIndex*0.25f, 1.0f});
           }
+#endif
 #if 0
           v3 Pos = Entry->Tran * v3{0,0,0};
           pixel_pos_result PixPos = 

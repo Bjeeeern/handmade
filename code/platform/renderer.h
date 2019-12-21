@@ -453,8 +453,9 @@ DrawString(game_bitmap *Buffer, depth_buffer* DepthBuffer,
 	}
 }
 
+//TODO(bjorn): There is some weird skewing going on with the UV as the triangles flatten.
 	internal_function void
-DrawQuadSlowly(game_bitmap *Buffer, v2 V0, v2 V1, v2 V2, v2 V3, v3 RGB)
+DrawQuadSlowly(game_bitmap *Buffer, v2 V0, v2 V1, v2 V2, v2 V3, game_bitmap* Bitmap, v4 RGBA)
 {
 	s32 Left = RoundF32ToS32(Min(Min(V0.X, V1.X),Min(V2.X, V3.X)));
 	s32 Right = RoundF32ToS32(Max(Max(V0.X, V1.X),Max(V2.X, V3.X)));
@@ -467,14 +468,7 @@ DrawQuadSlowly(game_bitmap *Buffer, v2 V0, v2 V1, v2 V2, v2 V3, v3 RGB)
 	Right = Right > Buffer->Width ? Buffer->Width : Right;
 	Bottom = Bottom > Buffer->Height ? Buffer->Height : Bottom;
 
-	u32 Color = ((RoundF32ToS32(RGB.R * 255.0f) << 16) |
-							 (RoundF32ToS32(RGB.G * 255.0f) << 8) |
-							 (RoundF32ToS32(RGB.B * 255.0f) << 0));
-
-  v2 Norm0 = Perp(V1-V0);
-  v2 Norm1 = Perp(V2-V1);
-  v2 Norm2 = Perp(V3-V2);
-  v2 Norm3 = Perp(V0-V3);
+  v2 VecToUV[4] = {{0.0f,0.0f}, {1.0f,0.0f}, {1.0f,1.0f}, {0.0f,1.0f}};
 
 	u32 *UpperLeftPixel = Buffer->Memory + Left + Top * Buffer->Pitch;
 	for(s32 Y = Top;
@@ -486,48 +480,98 @@ DrawQuadSlowly(game_bitmap *Buffer, v2 V0, v2 V1, v2 V2, v2 V3, v3 RGB)
 		for(s32 X = Left;
 				X < Right;
 				++X)
-		{
+    {
       v2 P = Vec2(X, Y);
 
-      f32 Edge0 = Dot(Norm0, (P-V0));
-      f32 Edge1 = Dot(Norm1, (P-V1));
-      f32 Edge2 = Dot(Norm2, (P-V2));
-      f32 Edge3 = Dot(Norm3, (P-V3));
+      v3 Tri0Weights = BayesianWeights(V0, V1, V2, P);
+      v3 Tri1Weights = BayesianWeights(V0, V3, V2, P);
 
-      if((Edge0 < 0) &&
-         (Edge1 < 0) &&
-         (Edge2 < 0) &&
-         (Edge3 < 0))
+      b32 InsideTri0 = (Tri0Weights.X >= 0 &&
+                        Tri0Weights.Y >= 0 &&
+                        Tri0Weights.Z >= 0);
+      b32 InsideTri1 = (Tri1Weights.X >= 0 &&
+                        Tri1Weights.Y >= 0 &&
+                        Tri1Weights.Z >= 0);
+      if(InsideTri0 || InsideTri1)
       {
+        v2 UV;
+        if(InsideTri0)
+        {
+          UV = (Tri0Weights.X * VecToUV[0] +
+                Tri0Weights.Y * VecToUV[1] +
+                Tri0Weights.Z * VecToUV[2]);
+        }
+        else
+        {
+          UV = (Tri1Weights.X * VecToUV[0] +
+                Tri1Weights.Y * VecToUV[3] +
+                Tri1Weights.Z * VecToUV[2]);
+        }
+
+#if 0
+        u32 Color = ((RoundF32ToS32(0.0f * 255.0f) << 16) |
+                     (RoundF32ToS32(UV.U * 255.0f) << 8) |
+                     (RoundF32ToS32(UV.V * 255.0f) << 0));
+#else
+        s32 SrcX = RoundF32ToS32(UV.X * Bitmap->Width-1);
+        s32 SrcY = RoundF32ToS32(UV.Y * Bitmap->Height-1);
+
+				u32 SourceColor = Bitmap->Memory[Bitmap->Pitch * SrcY + SrcX];
+				u32 DestColor = *Pixel;
+
+				f32 SA = (f32)((SourceColor >> 24)&0xFF)*RGBA.A;
+				f32 SR = (f32)((SourceColor >> 16)&0xFF)*RGBA.A;
+				f32 SG = (f32)((SourceColor >>  8)&0xFF)*RGBA.A;
+				f32 SB = (f32)((SourceColor >>  0)&0xFF)*RGBA.A;
+        f32 RSA = SA / 255.0f;
+
+        f32 DA = (f32)((DestColor   >> 24)&0xFF);
+				f32 DR = (f32)((DestColor   >> 16)&0xFF);
+				f32 DG = (f32)((DestColor   >>  8)&0xFF);
+				f32 DB = (f32)((DestColor   >>  0)&0xFF);
+        f32 RDA = DA / 255.0f;
+
+				f32 InvRSA = (1.0f - RSA);
+				f32 A = 255.0f*(RSA + RDA - RSA*RDA);
+ 				f32 R = InvRSA*DR + SR;
+				f32 G = InvRSA*DG + SG;
+				f32 B = InvRSA*DB + SB;
+
+        u32 Color = (((u32)(A+0.5f) << 24) | 
+                     ((u32)(R+0.5f) << 16) | 
+                     ((u32)(G+0.5f) <<  8) | 
+                     ((u32)(B+0.5f) <<  0));
+#endif
+
         *Pixel = Color;
       }
 
       Pixel++;
-		}
+    }
 
-		UpperLeftPixel += Buffer->Pitch;
-	}
+    UpperLeftPixel += Buffer->Pitch;
+  }
 }
 
-	internal_function void
+  internal_function void
 DrawRectangle(game_bitmap *Buffer, rectangle2 Rect, v3 RGB)
 {
-	s32 Left = RoundF32ToS32(Rect.Min.X);
-	s32 Right = RoundF32ToS32(Rect.Max.X);
-	s32 Top = RoundF32ToS32(Rect.Min.Y);
-	s32 Bottom = RoundF32ToS32(Rect.Max.Y);
+  s32 Left = RoundF32ToS32(Rect.Min.X);
+  s32 Right = RoundF32ToS32(Rect.Max.X);
+  s32 Top = RoundF32ToS32(Rect.Min.Y);
+  s32 Bottom = RoundF32ToS32(Rect.Max.Y);
 
-	Left = Left < 0 ? 0 : Left;
-	Top = Top < 0 ? 0 : Top;
+  Left = Left < 0 ? 0 : Left;
+  Top = Top < 0 ? 0 : Top;
 
-	Right = Right > Buffer->Width ? Buffer->Width : Right;
-	Bottom = Bottom > Buffer->Height ? Buffer->Height : Bottom;
+  Right = Right > Buffer->Width ? Buffer->Width : Right;
+  Bottom = Bottom > Buffer->Height ? Buffer->Height : Bottom;
 
-	u32 Color = ((RoundF32ToS32(RGB.R * 255.0f) << 16) |
-							 (RoundF32ToS32(RGB.G * 255.0f) << 8) |
-							 (RoundF32ToS32(RGB.B * 255.0f) << 0));
+  u32 Color = ((RoundF32ToS32(RGB.R * 255.0f) << 16) |
+               (RoundF32ToS32(RGB.G * 255.0f) << 8) |
+               (RoundF32ToS32(RGB.B * 255.0f) << 0));
 
-	s32 PixelPitch = Buffer->Width;
+  s32 PixelPitch = Buffer->Width;
 
 	u32 *UpperLeftPixel = (u32 *)Buffer->Memory + Left + Top * PixelPitch;
 

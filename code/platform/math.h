@@ -364,6 +364,11 @@ struct v2
 			f32 X;
 			f32 Y;
 		};
+		struct
+		{
+			f32 U;
+			f32 V;
+		};
 		f32 E_[2];
 	};
   v2&
@@ -1199,9 +1204,14 @@ Cross(v3 A, v3 B)
 }
 
 inline v2
-Perp(v2 A)
+PerpCCW(v2 A)
 {
   return {-A.Y, A.X};
+}
+inline v2
+PerpCW(v2 A)
+{
+  return {A.Y, -A.X};
 }
 
 //TODO(bjorn): Where does this belong.
@@ -2070,6 +2080,20 @@ ConstructTransform(v3 P, q O, v3 S)
 					  0,   0,   0,   1};
 }
 inline m44
+ConstructTransform(v2 P, q O, v2 S)
+{
+	m33 RotMat = QuaternionToRotationMatrix(O);
+	m33 ScaleMat = {S.X,  0,   0,
+									0,  S.Y,   0,
+									0,    0,   1};
+	m33 M = RotMat * ScaleMat;
+
+	return {M.A, M.B, M.C, P.X,
+					M.D, M.E, M.F, P.Y,
+					M.G, M.H, M.I,   0,
+					  0,   0,   0,   1};
+}
+inline m44
 ConstructTransform(v3 P, q O)
 {
 	m33 M = QuaternionToRotationMatrix(O);
@@ -2276,6 +2300,21 @@ IsWithin(f32 Value, f32 Lower, f32 Upper)
 IsWithinInclusive(f32 Value, f32 Lower, f32 Upper)
 {
 	return Lower <= Value && Value <= Upper;
+}
+
+//TODO STUDY(bjorn): Get an intuition for what is going on here.
+// https://codeplea.com/triangular-interpolation
+inline v3 
+BayesianWeights(v2 V0, v2 V1, v2 V2, v2 P)
+{
+  v3 Result;
+
+  f32 InvDenom = 1.0f / ((V1.Y-V2.Y)*(V0.X-V2.X) + (V2.X-V1.X)*(V0.Y-V2.Y));
+  Result.X = ((V1.Y-V2.Y)*(P.X-V2.X) + (V2.X-V1.X)*(P.Y-V2.Y)) * InvDenom; 
+  Result.Y = ((V2.Y-V0.Y)*(P.X-V2.X) + (V0.X-V2.X)*(P.Y-V2.Y)) * InvDenom; 
+  Result.Z = 1.0f - Result.X - Result.Y;
+
+  return Result;
 }
 
 #define MATH_H

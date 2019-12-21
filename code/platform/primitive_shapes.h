@@ -32,10 +32,10 @@ GetAABBVertices(m44* Tran)
 	return Result;
 }
 
-v3 UnscaledQuad[4] = {{-0.5f, 0.0f,  0.5f}, 
-                      { 0.5f, 0.0f,  0.5f}, 
-                      { 0.5f, 0.0f, -0.5f}, 
-											{-0.5f, 0.0f, -0.5f}};
+v3 UnscaledQuad[4] = {{-0.5f,  0.5f, 0.0f}, 
+                      { 0.5f,  0.5f, 0.0f}, 
+                      { 0.5f, -0.5f, 0.0f}, 
+											{-0.5f, -0.5f, 0.0f}};
 struct quad_verts_result
 {
 	u32 Count;

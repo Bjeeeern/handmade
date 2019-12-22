@@ -16,4 +16,4 @@ REM ) else (
 REM     %codeclap% --chdir %workingDir% %executable%
 REM )
 
-start cmd /c remedybg.exe ..\debug\session.rdbg
+start cmd /c remedybg\remedybg.exe ..\debug\session.rdbg

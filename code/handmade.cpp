@@ -105,7 +105,7 @@ DrawGeneratedTile(game_state* GameState, game_bitmap* Buffer)
 
   random_series Series = Seed(0);
 
-  v4 Color = {1.0f,1.0f,1.0f,0.5f};
+  v4 Color = {1.0f,1.0f,1.0f,1.0f};
 
   for(u32 Index = 0; Index < 200; Index++)
   {
@@ -874,10 +874,19 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// NOTE(bjorn): Moving and Rendering
 	//
   {
-    local_persist f32 Offset = 0.0f;
-    m44 Transform = ConstructTransform({6.0f*Sin(Offset*pi32), 0.0f}, QuaternionIdentity(), {6,6,1});
-    Offset += 0.01f;
-    PushQuad(RenderGroup, Transform, &GameState->Tree[0]);
+    local_persist f32 t = 0.0f;
+    m44 Transform = ConstructTransform({1.0f*Sin(t*pi32), 0.0f}, 
+                                       AngleAxisToQuaternion(pi32*Modulate(t*pi32*0.5f, 
+                                                                           0.0f, tau32), 
+                                                             {0,0,1}), 
+                                       {6,6,1});
+    t += 0.01f;
+    v4 Color = {Sin(10.0f*t*pi32)*0.5f+0.5f,
+                 Sin(10.0f*t*pi32 + 0.3f*pi32)*0.5f+0.5f,
+                 Sin(10.0f*t*pi32 + 0.7f*pi32)*0.5f+0.5f,
+                 1.0f};
+
+    PushQuad(RenderGroup, Transform, &GameState->GeneratedTile, Color);
   }
 
 	//

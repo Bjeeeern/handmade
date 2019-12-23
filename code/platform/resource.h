@@ -3,6 +3,7 @@
 #include "types_and_defines.h"
 #include "platform.h"
 #include "memory.h"
+#include "renderer.h"
 
 #pragma pack(push, 1)
 struct bitmap_header
@@ -86,20 +87,21 @@ DEBUGLoadBMP(debug_platform_free_file_memory* FreeFileMemory,
 			u32 DG = RotateLeft(Pixels[PixelIndex] & GreenMask, GreenShift);
 			u32 DB = RotateLeft(Pixels[PixelIndex] & BlueMask,  BlueShift);
 
-      f32 A = (f32)((DA >> 24)&0xFF);
-      f32 R = (f32)((DR >> 16)&0xFF);
-      f32 G = (f32)((DG >>  8)&0xFF);
-      f32 B = (f32)((DB >>  0)&0xFF);
-      f32 RA = A / 255.0f;
+      v4 Texel = { (f32)((DR >> 16)&0xFF),
+                   (f32)((DG >>  8)&0xFF),
+                   (f32)((DB >>  0)&0xFF),
+                   (f32)((DA >> 24)&0xFF)};
 
-      R = R*RA;
-      G = G*RA;
-      B = B*RA;
+      Texel = sRGB255ToLinear1(Texel);
 
-      Result.Memory[(PixelCount-1)-PixelIndex] = (((u32)(A+0.5f) << 24) | 
-                                                  ((u32)(R+0.5f) << 16) | 
-                                                  ((u32)(G+0.5f) <<  8) | 
-                                                  ((u32)(B+0.5f) <<  0));
+      Texel.RGB *= Texel.A;
+
+      Texel = Linear1TosRGB255(Texel);
+
+      Result.Memory[(PixelCount-1)-PixelIndex] = (((u32)(Texel.A+0.5f) << 24) | 
+                                                  ((u32)(Texel.R+0.5f) << 16) | 
+                                                  ((u32)(Texel.G+0.5f) <<  8) | 
+                                                  ((u32)(Texel.B+0.5f) <<  0));
     }
 
 		FreeFileMemory(ReadResult.Content);

@@ -1166,6 +1166,18 @@ Hadamard(v3 A, v3 B)
 
 	return Result;
 }
+inline v4
+Hadamard(v4 A, v4 B)
+{
+	v4 Result;
+
+	Result.X = A.X * B.X;
+	Result.Y = A.Y * B.Y;
+	Result.Z = A.Z * B.Z;
+	Result.W = A.W * B.W;
+
+	return Result;
+}
 inline v3
 HadamardDiv(v3 A, v3 B)
 {

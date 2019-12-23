@@ -15,46 +15,39 @@ enum render_group_entry_type
 	RenderGroupEntryType_render_entry_sphere,
 };
 
-struct render_entry_vector
+struct render_entry_header
 {
   render_group_entry_type Type;
+};
 
+struct render_entry_vector
+{
 	v4 Color;
 	v3 A;
 	v3 B;
 };
 struct render_entry_coordinate_system
 {
-  render_group_entry_type Type;
-
 	m44 Tran;
 };
 struct render_entry_wire_cube
 {
-  render_group_entry_type Type;
-
 	v4 Color;
 	m44 Tran;
 };
 struct render_entry_quad
 {
-  render_group_entry_type Type;
-
 	game_bitmap* Bitmap;
 	v4 Color;
 	m44 Tran;
 };
 struct render_entry_blank_quad
 {
-  render_group_entry_type Type;
-
 	v4 Color;
 	m44 Tran;
 };
 struct render_entry_sphere
 {
-  render_group_entry_type Type;
-
 	v4 Color;
 	m44 Tran;
 };
@@ -91,10 +84,15 @@ PushRenderElement_(render_group* RenderGroup, u32 Size, render_group_entry_type 
 {
   void* Result = 0;
 
+  Size += sizeof(render_entry_header);
+
   if(RenderGroup->PushBufferSize + Size < RenderGroup->MaxPushBufferSize)
   {
-    Result = RenderGroup->PushBufferBase + RenderGroup->PushBufferSize;
-    *(render_group_entry_type*)Result = Type;
+    render_entry_header* Header = 
+      (render_entry_header*)(RenderGroup->PushBufferBase + RenderGroup->PushBufferSize);
+    Header->Type = Type;
+
+    Result = RenderGroup->PushBufferBase + RenderGroup->PushBufferSize + sizeof(render_entry_header);
 
     RenderGroup->PushBufferSize += Size;
   }
@@ -319,6 +317,10 @@ DrawVector(render_group* RenderGroup, v2 ScreenCenter, m22 MeterToPixel, game_bi
   }
 }
 
+#define RenderGroup_DefineEntryAndAdvanceByteOffset(type) \
+  type * Entry = (type *)UnidentifiedEntry; \
+  PushBufferByteOffset += sizeof(render_entry_header) + sizeof(type)
+
   internal_function void
 RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
 {
@@ -338,23 +340,23 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
       PushBufferByteOffset < RenderGroup->PushBufferSize;
       )
   {
-    render_group_entry_type* UnidentifiedEntry = 
-      (render_group_entry_type*)(RenderGroup->PushBufferBase + PushBufferByteOffset);
+    render_entry_header* Header = 
+      (render_entry_header*)(RenderGroup->PushBufferBase + PushBufferByteOffset);
+    u8* UnidentifiedEntry = 
+      RenderGroup->PushBufferBase + PushBufferByteOffset + sizeof(render_entry_header);
 
-    switch(*UnidentifiedEntry)
+    switch(Header->Type)
     {
       case RenderGroupEntryType_render_entry_vector
         : {
-          render_entry_vector* Entry = (render_entry_vector*)UnidentifiedEntry;
-          PushBufferByteOffset += sizeof(render_entry_vector);
+          RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_vector);
 
           DrawVector(RenderGroup, ScreenCenter, MeterToPixel, Output,
                      Entry->A, Entry->B, Entry->Color.RGB);
         } break;
       case RenderGroupEntryType_render_entry_coordinate_system
         : {
-          render_entry_coordinate_system* Entry = (render_entry_coordinate_system*)UnidentifiedEntry;
-          PushBufferByteOffset += sizeof(render_entry_coordinate_system);
+          RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_coordinate_system);
 
           DrawVector(RenderGroup, ScreenCenter, MeterToPixel, Output,
                      Entry->Tran*v3{0,0,0}, Entry->Tran*v3{1,0,0}, v3{1,0,0});
@@ -365,8 +367,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
         } break;
       case RenderGroupEntryType_render_entry_wire_cube
         : {
-          render_entry_wire_cube* Entry = (render_entry_wire_cube*)UnidentifiedEntry;
-          PushBufferByteOffset += sizeof(render_entry_wire_cube);
+          RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_wire_cube);
 
           aabb_verts_result AABB = GetAABBVertices(&Entry->Tran);
 
@@ -415,8 +416,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
         } break;
       case RenderGroupEntryType_render_entry_blank_quad
         : {
-          render_entry_blank_quad* Entry = (render_entry_blank_quad*)UnidentifiedEntry;
-          PushBufferByteOffset += sizeof(render_entry_blank_quad);
+          RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_blank_quad);
 
           //TODO(bjorn): Think about how and when in the pipeline to render the hit-points.
 #if 0
@@ -428,8 +428,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
         } break;
       case RenderGroupEntryType_render_entry_quad
         : {
-          render_entry_quad* Entry = (render_entry_quad*)UnidentifiedEntry;
-          PushBufferByteOffset += sizeof(render_entry_quad);
+          RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_quad);
 
           quad_verts_result Quad = GetQuadVertices(&Entry->Tran);
 
@@ -456,7 +455,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
                          PixVerts[2], 
                          PixVerts[3], 
                          Entry->Bitmap,
-                         {0.2f,0.6f,0.3f,1.0f});
+                         Entry->Color);
 
 #if 0
           DrawLine(Output, PixVerts[0], PixVerts[2], {1.0f, 0.25f, 1.0f});
@@ -486,8 +485,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
         } break;
       case RenderGroupEntryType_render_entry_sphere
         : {
-          render_entry_sphere* Entry = (render_entry_sphere*)UnidentifiedEntry;
-          PushBufferByteOffset += sizeof(render_entry_sphere);
+          RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_sphere);
 
           v3 P0 = Entry->Tran * v3{0,0,0};
           v3 P1 = Entry->Tran * v3{0.5f,0,0};

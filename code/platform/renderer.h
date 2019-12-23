@@ -2,167 +2,31 @@
 
 #include "math.h"
 #include "font.h"
-#include "resource.h"
 
-struct camera
+inline v4 
+sRGB255ToLinear1(v4 sRGB)
 {
-	v3 Pos;
-	f32 FocalPointDistanceFromFurstum;
-	f32 FurstumWidth;
-};
+  v4 Result;
 
-struct depth_buffer
-{
-	void *Memory;
-	s32 Width;
-	s32 Height;
-	s32 BytesPerPixel;
-	s32 Pitch;
-};
+  f32 Inv255 = 1.0f/255.0f;
+  Result.R = Square(sRGB.R * Inv255);
+  Result.G = Square(sRGB.G * Inv255);
+  Result.B = Square(sRGB.B * Inv255);
+  Result.A = sRGB.A * Inv255;
 
-internal_function void
-ClearDepthBuffer(depth_buffer* DepthBuffer)
-{
-	s32 PixelPitch = DepthBuffer->Width;
-	f32 *UpperLeftPixel = (f32 *)DepthBuffer->Memory;
-
-	for(s32 Y = 0;
-			Y < DepthBuffer->Height;
-			++Y)
-	{
-		f32 *Z = UpperLeftPixel;
-
-		for(s32 X = 0;
-				X < DepthBuffer->Width;
-				++X)
-		{
-			*Z++ = -inf32;
-		}
-		UpperLeftPixel += PixelPitch;
-	}
+  return Result;
 }
 
-	internal_function void
-DrawLine(game_bitmap *Buffer, depth_buffer* DepthBuffer,
-				 f32 PixelStartX, f32 PixelStartY, f32 StartZ, 
-				 f32 PixelEndX, f32 PixelEndY, f32 EndZ,
-				 f32 RealR, f32 RealG, f32 RealB)
+inline v4
+Linear1TosRGB255(v4 Linear)
 {
-	f32 R = RealR;
-	f32 G = RealG;
-	f32 B = RealB;
-	u32 Color = ((RoundF32ToS32(R * 255.0f) << 16) |
-							 (RoundF32ToS32(G * 255.0f) << 8) |
-							 (RoundF32ToS32(B * 255.0f) << 0));
+  v4 Result;
+  Result.R = SquareRoot(Linear.R) * 255.0f;
+  Result.G = SquareRoot(Linear.G) * 255.0f;
+  Result.B = SquareRoot(Linear.B) * 255.0f;
+  Result.A = Linear.A * 255.0f;
 
-	s32 PixelPitch = Buffer->Width;
-
-	v2 Start = {PixelStartX, PixelStartY};
-	v2 End = {PixelEndX, PixelEndY};
-
-	f32 K = (End.Y - Start.Y) / (End.X - Start.X);
-	f32 M = Start.Y - K * Start.X;
-
-	b32 StartIsInside = (((0 <= Start.X) && (Start.X < Buffer->Width)) &&
-											 ((0 <= Start.Y) && (Start.Y < Buffer->Height)));
-	b32 EndIsInside = (((0 <= End.X) && (End.X < Buffer->Width)) &&
-											 ((0 <= End.Y) && (End.Y < Buffer->Height)));
-
-	if(!StartIsInside && !EndIsInside) return;
-
-	v2 OldStart = Start;
-	v2 OldEnd = End;
-
-	if(Start.X < 0)
-	{
-		Start.X = 0;
-		Start.Y = K * Start.X + M;
-	}
-	if(Start.X > (f32)Buffer->Width)
-	{
-		Start.X = (f32)Buffer->Width;
-		Start.Y = K * Start.X + M;
-	}
-	if(End.X < 0)
-	{
-		End.X = 0;
-		End.Y = K * End.X + M;
-	}
-	if(End.X > (f32)Buffer->Width)
-	{
-		End.X = (f32)Buffer->Width;
-		End.Y = K * End.X + M;
-	}
-
-	if(Start.Y < 0)
-	{
-		Start.Y = 0;
-		Start.X = (Start.Y - M) / K;
-	}
-	if(Start.Y > (f32)Buffer->Height)
-	{
-		Start.Y = (f32)Buffer->Height;
-		Start.X = (Start.Y - M) / K;
-	}
-	if(End.Y < 0)
-	{
-		End.Y = 0;
-		End.X = (End.Y - M) / K;
-	}
-	if(End.Y > (f32)Buffer->Height)
-	{
-		End.Y = (f32)Buffer->Height;
-		End.X = (End.Y - M) / K;
-	}
-
-	f32 NewStartZ;
-	f32 NewEndZ;
-	{
-		v2 OldStartToEnd = OldEnd - OldStart;
-		f32 RefLength = SquareRoot(OldStartToEnd.X * OldStartToEnd.X + 
-															 OldStartToEnd.Y * OldStartToEnd.Y);
-
-		v2 OStoE = End - OldStart;
-		v2 OStoS = Start - OldStart;
-
-		f32 LengthToStart = InverseSquareRoot(OStoS.X * OStoS.X + OStoS.Y * OStoS.Y);
-		f32 LengthToEnd = InverseSquareRoot(OStoE.X * OStoE.X + OStoE.Y * OStoE.Y);
-
-		NewStartZ = Lerp(LengthToStart / RefLength, StartZ, EndZ);
-		NewEndZ = Lerp(LengthToEnd / RefLength, StartZ, EndZ);
-	}
-
-	StartZ = NewStartZ;
-	EndZ = NewEndZ;
-
-	v2 Vector = End - Start;
-
-	f32 InverseLength = InverseSquareRoot(Vector.X * Vector.X + Vector.Y * Vector.Y);
-	f32 Length = 1.0f / InverseLength;
-	v2 Normal = Vector * InverseLength;
-
-	f32 StepLength = 0.0f;
-	while(StepLength < Length)
-	{
-		v2 Point = Start + (Normal * StepLength);
-		s32 X = RoundF32ToS32(Point.X);
-		s32 Y = RoundF32ToS32(Point.Y);
-		f32 InterpZ = Lerp(StepLength / Length, StartZ, EndZ);
-
-		if(((0 <= X) && (X < Buffer->Width)) &&
-			 ((0 <= Y) && (Y < Buffer->Height)))
-		{
-			u32 *Pixel = (u32 *)Buffer->Memory + X + PixelPitch * Y;
-			f32 *Z = (f32 *)DepthBuffer->Memory + X + PixelPitch * Y;
-
-			b32 DepthTest = InterpZ >= *Z;
-
-			*Pixel = DepthTest ? Color : *Pixel;
-			*Z = DepthTest ? InterpZ : *Z;
-		}
-
-		StepLength += 1.0f;
-	}
+  return Result;
 }
 
 	internal_function void
@@ -368,91 +232,6 @@ DrawChar(game_bitmap *Buffer, font *Font, u32 UnicodeCodePoint,
 	}
 }
 
-	internal_function void
-DrawString(game_bitmap *Buffer, depth_buffer* DepthBuffer, 
-					 font *Font, char *String, 
-					 f32 GlyphPixelWidth, f32 GlyphPixelHeight, 
-					 f32 GlyphOriginLeft, f32 GlyphOriginTop, f32 RealZ,
-					 f32 RealR, f32 RealG, f32 RealB)
-{
-	s32 StringLength = 0;
-	u8 *StringToMeasure = (u8 *)String;
-	while(*StringToMeasure++ != '\0') { StringLength++; if(StringLength > 256) break; }
-
-#define MAX_LENGHT_FOR_DRAWABLE_STRING 256
-	u16 UnicodeCodePointBuffer[MAX_LENGHT_FOR_DRAWABLE_STRING] = {};
-
-	unicode_array_result UnicodeArray = {0};
-	if(StringLength <= MAX_LENGHT_FOR_DRAWABLE_STRING)
-	{
-		UnicodeArray = UnicodeStringToUnicodeCodePointArray((u8 *)String, 
-																												UnicodeCodePointBuffer, 
-																												MAX_LENGHT_FOR_DRAWABLE_STRING);
-	}
-	else
-	{
-		char* ErrorString = "!-!-!-!-[String is too long]-!-!-!-!";
-		UnicodeArray = UnicodeStringToUnicodeCodePointArray((u8*)ErrorString, 
-																												UnicodeCodePointBuffer, 
-																												MAX_LENGHT_FOR_DRAWABLE_STRING);
-	}
-
-	f32 BottomLeftAnchorX = GlyphOriginLeft;
-	f32 BottomLeftAnchorY = GlyphOriginTop + GlyphPixelHeight;
-	v2 Cursor = {BottomLeftAnchorX, BottomLeftAnchorY};
-
-	unicode_to_glyph_data *Entries = (unicode_to_glyph_data *)(Font + 1);
-
-	for(s32 ArrayIndex = 0;
-			ArrayIndex < UnicodeArray.Count;
-			ArrayIndex++)
-	{
-		u32 UnicodeCodePoint = UnicodeArray.UnicodeCodePoint[ArrayIndex];
-
-		if(UnicodeCodePoint == '\n')
-		{
-			Cursor.Y += GlyphPixelHeight;// * Font->AdvanceWidth;
-			Cursor.X = 0.0f;
-		}
-		else
-		{
-			for(s32 EntryIndex = 0;
-					EntryIndex < Font->UnicodeCodePointCount;
-					EntryIndex++)
-			{
-				if(UnicodeCodePoint == Entries[EntryIndex].UnicodeCodePoint)
-				{
-					if(Entries[EntryIndex].OffsetToGlyphData)
-					{
-						quadratic_curve *Curves = 
-							(quadratic_curve *)((u8 *)Font + Entries[EntryIndex].OffsetToGlyphData);
-						for(s32 CurveIndex = 0;
-								CurveIndex < Entries[EntryIndex].QuadraticCurveCount;
-								CurveIndex++)
-						{
-							quadratic_curve Curve = Curves[CurveIndex];
-
-							v2 GlyphDim = {GlyphPixelWidth, -GlyphPixelHeight};
-							v2 Start = Hadamard(Curve.Srt, GlyphDim) + Cursor;
-							v2 End = Hadamard(Curve.End, GlyphDim) + Cursor;
-
-							//Start.Y = GlyphPixelHeight - Start.Y;
-							//End.Y = GlyphPixelHeight - End.Y;
-
-							DrawLine(Buffer, DepthBuffer, 
-											 Start.X, Start.Y, RealZ, 
-											 End.X, End.Y, RealZ, 
-											 RealR, RealG, RealB);
-						}
-					}
-
-					Cursor.X += GlyphPixelWidth;// * Font->AdvanceWidth;
-				}
-			}
-		}
-	}
-}
-
 //TODO(bjorn): There is some weird skewing going on with the UV as the triangles flatten.
 	internal_function void
 DrawQuadSlowly(game_bitmap *Buffer, v2 V0, v2 V1, v2 V2, v2 V3, game_bitmap* Bitmap, v4 RGBA)
@@ -469,6 +248,8 @@ DrawQuadSlowly(game_bitmap *Buffer, v2 V0, v2 V1, v2 V2, v2 V3, game_bitmap* Bit
 	Bottom = Bottom > Buffer->Height ? Buffer->Height : Bottom;
 
   v2 VecToUV[4] = {{0.0f,0.0f}, {1.0f,0.0f}, {1.0f,1.0f}, {0.0f,1.0f}};
+
+  RGBA.RGB *= RGBA.A;
 
 	u32 *UpperLeftPixel = Buffer->Memory + Left + Top * Buffer->Pitch;
 	for(s32 Y = Top;
@@ -543,31 +324,29 @@ DrawQuadSlowly(game_bitmap *Buffer, v2 V0, v2 V1, v2 V2, v2 V3, game_bitmap* Bit
                       (f32)((*TexelPtrD >>  0)&0xFF),
                       (f32)((*TexelPtrD >> 24)&0xFF)};
 
-        v4 SourceColor = Lerp(fY, Lerp(fX, TexelA, TexelB), Lerp(fX, TexelC, TexelD));
+        TexelA = sRGB255ToLinear1(TexelA);
+        TexelB = sRGB255ToLinear1(TexelB);
+        TexelC = sRGB255ToLinear1(TexelC);
+        TexelD = sRGB255ToLinear1(TexelD);
 
-				f32 SA = SourceColor.A*RGBA.A;
-				f32 SR = SourceColor.R*RGBA.A;
-				f32 SG = SourceColor.G*RGBA.A;
-				f32 SB = SourceColor.B*RGBA.A;
-        f32 RSA = SA / 255.0f;
+        v4 Texel = Lerp(fY, Lerp(fX, TexelA, TexelB), Lerp(fX, TexelC, TexelD));
 
-				u32 DestColor = *Pixel;
-        f32 DA = (f32)((DestColor   >> 24)&0xFF);
-				f32 DR = (f32)((DestColor   >> 16)&0xFF);
-				f32 DG = (f32)((DestColor   >>  8)&0xFF);
-				f32 DB = (f32)((DestColor   >>  0)&0xFF);
-        f32 RDA = DA / 255.0f;
+        v4 DestColor = { (f32)((*Pixel >> 16)&0xFF),
+                         (f32)((*Pixel >>  8)&0xFF),
+                         (f32)((*Pixel >>  0)&0xFF),
+                         (f32)((*Pixel >> 24)&0xFF)};
+        DestColor = sRGB255ToLinear1(DestColor);
 
-				f32 InvRSA = (1.0f - RSA);
-				f32 A = 255.0f*(RSA + RDA - RSA*RDA);
- 				f32 R = InvRSA*DR + SR;
-				f32 G = InvRSA*DG + SG;
-				f32 B = InvRSA*DB + SB;
+        Texel = Hadamard(Texel, RGBA);
 
-        u32 Color = (((u32)(A+0.5f) << 24) | 
-                     ((u32)(R+0.5f) << 16) | 
-                     ((u32)(G+0.5f) <<  8) | 
-                     ((u32)(B+0.5f) <<  0));
+        v4 Blended = DestColor*(1.0f - Texel.A) + Texel;
+
+        Blended = Linear1TosRGB255(Blended);
+
+        u32 Color = (((u32)(Blended.A+0.5f) << 24) | 
+                     ((u32)(Blended.R+0.5f) << 16) | 
+                     ((u32)(Blended.G+0.5f) <<  8) | 
+                     ((u32)(Blended.B+0.5f) <<  0));
 
         *Pixel = Color;
       }
@@ -616,143 +395,6 @@ DrawRectangle(game_bitmap *Buffer, rectangle2 Rect, v3 RGB)
 
 		UpperLeftPixel += PixelPitch;
 	}
-}
-
-	internal_function void
-DrawRectangle(game_bitmap *Buffer, depth_buffer* DepthBuffer, 
-							f32 RealLeft, f32 RealRight, 
-							f32 RealTop, f32 RealBottom, 
-							f32 RealZ,
-							f32 R, f32 G, f32 B, f32 A)
-{
-	b32 XNotFlipped = RealLeft < RealRight;
-	b32 YNotFlipped = RealTop < RealBottom;
-
-	s32 Left = RoundF32ToS32(XNotFlipped ? RealLeft : RealRight);
-	s32 Right = RoundF32ToS32(XNotFlipped ? RealRight : RealLeft);
-	s32 Top = RoundF32ToS32(YNotFlipped ? RealTop : RealBottom);
-	s32 Bottom = RoundF32ToS32(YNotFlipped ? RealBottom : RealTop);
-
-	Left = Left < 0 ? 0 : Left;
-	Top = Top < 0 ? 0 : Top;
-
-	Right = Right > Buffer->Width ? Buffer->Width : Right;
-	Bottom = Bottom > Buffer->Height ? Buffer->Height : Bottom;
-
-	s32 PixelPitch = Buffer->Width;
-
-	u32 *UpperLeftPixel = (u32 *)Buffer->Memory + Left + Top * PixelPitch;
-	f32 *UpperLeftZ = (f32 *)DepthBuffer->Memory + Left + Top * PixelPitch;
-
-	for(s32 Y = Top;
-			Y < Bottom;
-			++Y)
-	{
-		u32 *Pixel = UpperLeftPixel;
-		f32 *Z = UpperLeftZ;
-
-		for(s32 X = Left;
-				X < Right;
-				++X)
-		{
-			b32 DepthTest = RealZ >= *Z;
-
-			f32 OldR = ((*Pixel & 0x00FF0000) >> 16) / 255.0f;
-			f32 OldG = ((*Pixel & 0x0000FF00) >> 8 ) / 255.0f;
-			f32 OldB = ((*Pixel & 0x000000FF) >> 0 ) / 255.0f;
-
-			u32 Color = ((RoundF32ToS32(Lerp(A, OldR, R) * 255.0f) << 16) |
-									 (RoundF32ToS32(Lerp(A, OldG, G) * 255.0f) << 8) |
-									 (RoundF32ToS32(Lerp(A, OldB, B) * 255.0f) << 0));
-
-			*Pixel = DepthTest ? Color : *Pixel;
-			*Z = DepthTest ? RealZ : *Z;
-
-			Pixel++;
-			Z++;
-		}
-
-		UpperLeftPixel += PixelPitch;
-		UpperLeftZ += PixelPitch;
-	}
-}
-
-	internal_function v2
-XYZMetersToXYPixels(game_bitmap* Buffer, camera* Camera, v3 Point)
-{
-	v2 Result = {};
-
-	v3 FocalPoint = Camera->Pos;
-	FocalPoint.Z -= Camera->FocalPointDistanceFromFurstum;
-
-	f32 FurstumWidth = Camera->FurstumWidth;
-	f32 ScreenRatio = (f32)Buffer->Height/(f32)Buffer->Width;
-	f32 FurstumHeight = FurstumWidth * ScreenRatio;
-
-	f32 ZRatio = Absolute(FocalPoint.Z - Camera->Pos.Z) / Absolute(FocalPoint.Z - Point.Z);
-
-	f32 HLong = Distance(FocalPoint, Point);
-	f32 HShort = HLong * ZRatio;
-
-	v3 PointOnFurstum = Normalize(Point - FocalPoint) * HShort;
-
-	PointOnFurstum.X -= (Camera->Pos.X - FurstumWidth*0.5f);
-	PointOnFurstum.Y -= (Camera->Pos.Y + FurstumHeight*0.5f);
-
-	Result.X = PointOnFurstum.X * ((f32)Buffer->Width / FurstumWidth);
-	Result.Y = -(PointOnFurstum.Y * ((f32)Buffer->Height / FurstumHeight));
-
-	return Result;
-}
-
-	internal_function void
-DrawRectangleRelativeCamera(game_bitmap* Buffer, 
-														depth_buffer* DepthBuffer, 
-														camera* Camera,
-														f32 RealLeft, f32 RealRight, 
-														f32 RealTop, f32 RealBottom, 
-														f32 RealZ,
-														f32 R, f32 G, f32 B, f32 A)
-{
-	v3 FocalPoint = Camera->Pos;
-	FocalPoint.Z -= Camera->FocalPointDistanceFromFurstum;
-
-	if(RealZ < FocalPoint.Z) { return; }
-
-	v3 TopLeft = {RealLeft, RealTop, RealZ};
-	v3 BottomRight = {RealRight, RealBottom, RealZ};
-
-	v2 TopLeftPixelPoint = XYZMetersToXYPixels(Buffer, Camera, TopLeft);
-	v2 BottomRightPixelPoint = XYZMetersToXYPixels(Buffer, Camera, BottomRight);
-	f32 DistanceFromCamera = -(RealZ - Camera->Pos.Z);
-
-	DrawRectangle(Buffer, DepthBuffer,
-								TopLeftPixelPoint.X, BottomRightPixelPoint.X, 
-								TopLeftPixelPoint.Y, BottomRightPixelPoint.Y, 
-								DistanceFromCamera,
-								R, G, B, A);
-}
-
-// TODO(bjorn): There is a visual bug when drawn from BottomRight to TopLeft.
-	internal_function void
-DrawFrame(game_bitmap *Buffer, depth_buffer* DepthBuffer,
-					v2 Start, v2 End, f32 RealZ, f32 Thickness, v3 Color)
-{
-	f32 Left = Start.X;
-	f32 Top = Start.Y;
-	f32 Right = End.X;
-	f32 Bottom = End.Y;
-
-	f32 Pad = Thickness*0.5f;
-
-	DrawRectangle(Buffer, DepthBuffer, Left-Pad, Right+Pad, Top-Pad, Top+Pad, RealZ, 
-								Color.R, Color.G, Color.B, 1.0f);
-	DrawRectangle(Buffer, DepthBuffer, Left-Pad, Left+Pad, Top-Pad, Bottom+Pad, RealZ, 
-								Color.R, Color.G, Color.B, 1.0f);
-	DrawRectangle(Buffer, DepthBuffer, Right-Pad, Right+Pad, Top-Pad, Bottom+Pad, RealZ, 
-								Color.R, Color.G, Color.B, 1.0f);
-	DrawRectangle(Buffer, DepthBuffer, Left-Pad, Right+Pad, Bottom-Pad, Bottom+Pad, RealZ, 
-								Color.R, Color.G, Color.B, 1.0f);
 }
 
 // TODO(bjorn): There is a visual bug when drawn from BottomRight to TopLeft.
@@ -858,286 +500,6 @@ DrawBitmap(game_bitmap* Buffer, game_bitmap* Bitmap,
 
 		DestBufferRow += Buffer->Pitch;
 	}
-}
-	internal_function void
-DrawBitmap(game_bitmap *Buffer, game_bitmap *Bitmap, 
-					 v2 TopLeft, f32 Alpha = 1.0f)
-{
-  DrawBitmap(Buffer, Bitmap, TopLeft, 
-             {(f32)Bitmap->Width, (f32)Bitmap->Height}, Alpha);
-}
-
- //NOTE(bjorn): This rendering with a z-buffer that I tried just for fun.
-#if 0
-	internal_function void
-DrawBitmap(game_bitmap *Buffer, depth_buffer* DepthBuffer, loaded_bitmap *Bitmap, 
-					 f32 RealLeft, f32 RealRight, 
-					 f32 RealTop, f32 RealBottom, 
-					 f32 RealZ)
-{
-	v2 TopLeft = {RealLeft, RealTop};
-	v2 BottomRight = {RealRight, RealBottom};
-
-	f32 ScreenPixelPerBitmapPixelX = Absolute(BottomRight.X - TopLeft.X) / (f32)Buffer->Width;
-	f32 ScreenPixelPerBitmapPixelY = Absolute(BottomRight.Y - TopLeft.Y) / (f32)Buffer->Height;
-
-	f32 BitmapPixelPerScreenPixelX = (f32)Bitmap->Width / Absolute(BottomRight.X - TopLeft.X); 
-	f32 BitmapPixelPerScreenPixelY = (f32)Bitmap->Height / Absolute(BottomRight.Y - TopLeft.Y);
-
-	f32 BitmapPixelHalfX = BitmapPixelPerScreenPixelX * 0.5f; 
-	f32 BitmapPixelHalfY = BitmapPixelPerScreenPixelY * 0.5f;
-
-	s32 DestLeft   = RoundF32ToS32(TopLeft.X);
-	s32 DestTop    = RoundF32ToS32(TopLeft.Y);
-	s32 DestRight  = RoundF32ToS32(BottomRight.X);
-	s32 DestBottom = RoundF32ToS32(BottomRight.Y);
-
-	DestLeft = DestLeft < 0 ? 0 : DestLeft;
-	DestTop = DestTop < 0 ? 0 : DestTop;
-	DestRight = DestRight > Buffer->Width ? Buffer->Width : DestRight;
-	DestBottom = DestBottom > Buffer->Height ? Buffer->Height : DestBottom;
-
-	Assert(DestLeft >= 0);
-	Assert(DestRight <= Buffer->Width);
-	Assert(DestTop >= 0);
-	Assert(DestBottom <= Buffer->Height);
-
-	v2 ClampedTopLeft = 
-	{Clamp(TopLeft.X, 0.0f, (f32)Buffer->Width), 
-		Clamp(TopLeft.Y, 0.0f, (f32)Buffer->Height)};
-	v2 ClampedBottomRight = 
-	{Clamp(BottomRight.X, 0.0f, (f32)Buffer->Width), 
-		Clamp(BottomRight.Y, 0.0f, (f32)Buffer->Height)};
-
-	f32 OnePixelInBitmapAreaInversed =  
-		1 / (BitmapPixelPerScreenPixelX * BitmapPixelPerScreenPixelY);
-	f32 OnePixelInBitmapArea =  BitmapPixelPerScreenPixelX * BitmapPixelPerScreenPixelY;
-
-	f32 SumOfHalfWidthX = 1.0f * 0.5f + BitmapPixelPerScreenPixelX * 0.5f;
-	f32 SumOfHalfWidthY = 1.0f * 0.5f + BitmapPixelPerScreenPixelY * 0.5f;
-
-	u32 *DestBufferRow = ((u32 *)Buffer->Memory) + (Buffer->Width * DestTop + DestLeft);
-	f32 *DepthBufferRow = (f32 *)DepthBuffer->Memory + DestLeft + DestTop * DepthBuffer->Width;
-
-	for(s32 DestY = DestTop;
-			DestY < DestBottom;
-			++DestY)
-	{
-		u32 *DestPixel = DestBufferRow;
-		f32 *Z = DepthBufferRow;
-
-		for(s32 DestX = DestLeft;
-				DestX < DestRight;
-				++DestX)
-		{
-			v2 BitmapPixel = {};
-
-			BitmapPixel.X = (DestX - TopLeft.X) * BitmapPixelPerScreenPixelX;
-			BitmapPixel.Y = (DestY - TopLeft.Y) * BitmapPixelPerScreenPixelY;
-
-			/*
-				 s32 MinX = RoundF32ToS32(BitmapPixel.X - BitmapPixelHalfX);
-				 s32 MinY = RoundF32ToS32(BitmapPixel.Y - BitmapPixelHalfY);
-
-				 s32 MaxX = RoundF32ToS32(BitmapPixel.X + BitmapPixelHalfX);
-				 s32 MaxY = RoundF32ToS32(BitmapPixel.Y + BitmapPixelHalfY);
-
-				 MaxX += 1;
-				 MaxY += 1;
-
-				 MinX = MinX < 0 ? 0 : MinX;
-				 MinY = MinY < 0 ? 0 : MinY;
-				 MaxX = MaxX > Bitmap->Width ? Bitmap->Width : MaxX;
-				 MaxY = MaxY > Bitmap->Height ? Bitmap->Height : MaxY;
-				 */
-			s32 SrcX = RoundF32ToS32(BitmapPixel.X);
-			s32 SrcY = RoundF32ToS32(BitmapPixel.Y);
-
-			if(0 <= SrcX && SrcX < Bitmap->Width &&
-				 0 <= SrcY && SrcY < Bitmap->Height)
-			{
-				u32 Color = Bitmap->Pixels[Bitmap->Width * ((Bitmap->Height-1) - SrcY) + SrcX];
-
-				f32 A = (Color >> 24) / 255.0f;
-
-				b32 DepthTest = RealZ >= *Z;
-				b32 AlphaTest = A >= 0.5f;
-
-				Color = DepthTest ? Color : *DestPixel;
-				*DestPixel = AlphaTest ? Color : *DestPixel;
-
-				*Z = (DepthTest && AlphaTest) ? RealZ : *Z;
-			}
-
-			DestPixel++;
-			Z++;
-		}
-
-		DestBufferRow += Buffer->Width;
-		DepthBufferRow += DepthBuffer->Width;
-	}
-
-#if 0	// NOTE(bjorn): Debug stuff for the bitmap renderer.
-	DrawFrame(Buffer, {(f32)DestLeft, (f32)DestTop}, {(f32)DestRight, (f32)DestBottom}, 
-						2.0f, {1.0f, 1.0f, 1.0f});
-
-	DrawFrame(Buffer, TopLeft, BottomRight, 1.0f, {1.0f, 0.0f, 0.0f});
-
-
-	DrawFrame(Buffer, DepthBuffer, ClampedTopLeft, ClampedTopLeft, RealZ, 2.0f, 
-						{0.5f, 0.5f, 1.0f});
-#endif
-}
-
-	internal_function void
-DrawBitmapResource(game_bitmap* Buffer, depth_buffer* DepthBuffer, 
-									 font* Font, bitmap_resource* BitmapResource, 
-									 f32 RealLeft, f32 RealRight, 
-									 f32 RealTop, f32 RealBottom, 
-									 f32 RealZ)
-{
-	f32 Left = RealLeft < RealRight ? RealLeft : RealRight;
-	f32 Right = RealLeft > RealRight ? RealLeft : RealRight;
-	f32 Top = RealTop < RealBottom ? RealTop : RealBottom;
-	f32 Bottom = RealTop > RealBottom ? RealTop : RealBottom;
-
-	f32 Width = Right - Left;
-	f32 Height = Bottom - Top;
-
-	if(BitmapResource->Valid)
-	{
-		DrawBitmap(Buffer, DepthBuffer, &BitmapResource->Bitmap, 
-							 Left, Right, Top, Bottom, RealZ);
-	}
-	else
-	{
-#if 0 
-		v3 Color = {0.0f, 0.5, 0.0f};
-
-		DrawFrame(Buffer, DepthBuffer, Start, End, RealZ, 1.0f, Color);
-		DrawLine(Buffer, Start.X, Start.Y, End.X, End.Y, Color.R, Color.G, Color.B);
-
-		//TODO(bjorn): Make the error string get generated when loading the file
-		//and then get passed on with the resource package.
-		DrawString(Buffer, Font, "Bitmap corrupted or not found.", 
-							 Width * 0.023f, Width * 0.023f * 2.0f,
-							 Start.X, (f32)Buffer->Height - (Start.Y + Width * 0.023f * 2.0f),
-							 Color.R, Color.G, Color.B);
-#endif
-	}
-}
-
-	internal_function void
-DrawBitmapResourceRelativeCamera(game_bitmap* Buffer, 
-																 depth_buffer* DepthBuffer, camera* Camera,
-																 font* Font, bitmap_resource* BitmapResource, 
-																 f32 RealLeft, f32 RealRight, 
-																 f32 RealTop, f32 RealBottom, 
-																 f32 RealZ)
-{
-	v3 FocalPoint = Camera->Pos;
-	FocalPoint.Z -= Camera->FocalPointDistanceFromFurstum;
-
-	if(RealZ < FocalPoint.Z) { return; }
-
-	v3 TopLeft = {RealLeft, RealTop, RealZ};
-	v3 BottomRight = {RealRight, RealBottom, RealZ};
-
-	v2 TopLeftPixelPoint = XYZMetersToXYPixels(Buffer, Camera, TopLeft);
-	v2 BottomRightPixelPoint = XYZMetersToXYPixels(Buffer, Camera, BottomRight);
-	f32 DistanceFromCamera = -(RealZ - Camera->Pos.Z);
-
-	if(BitmapResource->Valid)
-	{
-		DrawBitmap(Buffer, DepthBuffer, &BitmapResource->Bitmap, 
-							 TopLeftPixelPoint.X, BottomRightPixelPoint.X, 
-							 TopLeftPixelPoint.Y, BottomRightPixelPoint.Y, 
-							 DistanceFromCamera);
-	}
-	else
-	{
-		f32 GlyphPixelWidth = (BottomRightPixelPoint.X - TopLeftPixelPoint.X) / 30.0f;
-		f32 GlyphPixelHeight = GlyphPixelWidth * 2.0f;
-
-		v3 Color = {0.0f, 0.5, 0.0f};
-
-		DrawFrame(Buffer, DepthBuffer, TopLeftPixelPoint, BottomRightPixelPoint, RealZ, 1.0f, Color);
-		DrawLine(Buffer, DepthBuffer,
-						 TopLeftPixelPoint.X, TopLeftPixelPoint.Y, DistanceFromCamera,
-						 BottomRightPixelPoint.X, BottomRightPixelPoint.Y, DistanceFromCamera,
-						 Color.R, Color.G, Color.B);
-
-		//TODO(bjorn): Make the error string get generated when loading the file
-		//and then get passed on with the resource package.
-		DrawString(Buffer, DepthBuffer, Font, "Bitmap corrupted or not found.", 
-							 GlyphPixelWidth, GlyphPixelHeight,
-							 TopLeftPixelPoint.X, TopLeftPixelPoint.Y,
-							 DistanceFromCamera,
-							 Color.R, Color.G, Color.B);
-		DrawString(Buffer, DepthBuffer, Font, (char*)&BitmapResource->FileMeta.Path, 
-							 GlyphPixelWidth * 0.5f, GlyphPixelHeight * 0.5f,
-							 TopLeftPixelPoint.X, TopLeftPixelPoint.Y + GlyphPixelHeight * 1.5f,
-							 DistanceFromCamera,
-							 Color.R, Color.G, Color.B);
-	}
-}
-#endif //NOTE(bjorn): z-buffering experiment.
-
-	internal_function void
-DrawStringRelativeCamera(game_bitmap *Buffer, font *Font, char *String, 
-												 depth_buffer* DepthBuffer, camera* Camera,
-												 f32 GlyphWidth, f32 GlyphHeight, 
-												 f32 GlyphOriginLeft, f32 GlyphOriginTop, 
-												 f32 RealZ,
-												 f32 RealR, f32 RealG, f32 RealB)
-{
-	v3 FocalPoint = Camera->Pos;
-	FocalPoint.Z -= Camera->FocalPointDistanceFromFurstum;
-
-	if(RealZ < FocalPoint.Z) { return; }
-
-	v3 TopLeft = {GlyphOriginLeft, GlyphOriginTop, RealZ};
-	v3 BottomRight = {TopLeft.X + GlyphWidth, TopLeft.Y - GlyphHeight, RealZ};
-
-	v2 TopLeftPixelPoint = XYZMetersToXYPixels(Buffer, Camera, TopLeft);
-	v2 BottomRightPixelPoint = XYZMetersToXYPixels(Buffer, Camera, BottomRight);
-	f32 DistanceFromCamera = -(RealZ - Camera->Pos.Z);
-
-	v2 GlyphPixelDim = BottomRightPixelPoint - TopLeftPixelPoint;
-
-	DrawString(Buffer, DepthBuffer, Font, String, 
-						 GlyphPixelDim.X, GlyphPixelDim.Y,
-						 TopLeftPixelPoint.X, TopLeftPixelPoint.Y,
-						 DistanceFromCamera,
-						 RealR, RealG, RealB);
-}
-
-	internal_function void
-DrawLineRelativeCamera(game_bitmap *Buffer, depth_buffer* DepthBuffer, 
-											 camera* Camera,
-											 f32 StartX, f32 StartY, f32 StartZ, 
-											 f32 EndX, f32 EndY, f32 EndZ,
-											 f32 RealR, f32 RealG, f32 RealB)
-{
-	v3 FocalPoint = Camera->Pos;
-	FocalPoint.Z -= Camera->FocalPointDistanceFromFurstum;
-
-	if(StartZ < FocalPoint.Z && 
-		 EndZ < FocalPoint.Z) { return; }
-
-	v3 Start = {StartX, StartY, StartZ};
-	v3 End = {EndX, EndY, EndZ};
-
-	v2 PixelStart = XYZMetersToXYPixels(Buffer, Camera, Start);
-	v2 PixelEnd = XYZMetersToXYPixels(Buffer, Camera, End);
-
-	f32 DistanceFromCameraStart = -(StartZ - Camera->Pos.Z);
-	f32 DistanceFromCameraEnd = -(EndZ - Camera->Pos.Z);
-
-	DrawLine(Buffer, DepthBuffer,
-					 PixelStart.X, PixelStart.Y, DistanceFromCameraStart, 
-					 PixelEnd.X, PixelEnd.Y, DistanceFromCameraEnd,
-					 RealR, RealG, RealB);
 }
 
 	internal_function void

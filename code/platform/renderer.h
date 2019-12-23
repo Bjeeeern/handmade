@@ -508,23 +508,50 @@ DrawQuadSlowly(game_bitmap *Buffer, v2 V0, v2 V1, v2 V2, v2 V3, game_bitmap* Bit
                 Tri1Weights.Z * VecToUV[2]);
         }
 
-#if 0
-        u32 Color = ((RoundF32ToS32(0.0f * 255.0f) << 16) |
-                     (RoundF32ToS32(UV.U * 255.0f) << 8) |
-                     (RoundF32ToS32(UV.V * 255.0f) << 0));
-#else
-        s32 SrcX = RoundF32ToS32(UV.X * Bitmap->Width-1);
-        s32 SrcY = RoundF32ToS32(UV.Y * Bitmap->Height-1);
+        Assert(0.0f <= UV.U && UV.U <= 1.0f);
+        Assert(0.0f <= UV.V && UV.V <= 1.0f);
 
-				u32 SourceColor = Bitmap->Memory[Bitmap->Pitch * SrcY + SrcX];
-				u32 DestColor = *Pixel;
+        f32 tX = (1.0f + (UV.U * (f32)(Bitmap->Width -3)) + 0.5f);
+        f32 tY = (1.0f + (UV.V * (f32)(Bitmap->Height-3)) + 0.5f);
 
-				f32 SA = (f32)((SourceColor >> 24)&0xFF)*RGBA.A;
-				f32 SR = (f32)((SourceColor >> 16)&0xFF)*RGBA.A;
-				f32 SG = (f32)((SourceColor >>  8)&0xFF)*RGBA.A;
-				f32 SB = (f32)((SourceColor >>  0)&0xFF)*RGBA.A;
+        s32 wX = (s32)tX;
+        s32 wY = (s32)tY;
+
+        f32 fX = tX - wX;
+        f32 fY = tY - wY;
+
+				u32* TexelPtr = Bitmap->Memory + Bitmap->Pitch * wY + wX;
+				u32* TexelPtrA = TexelPtr;
+				u32* TexelPtrB = TexelPtr + 1;
+				u32* TexelPtrC = TexelPtr + Bitmap->Pitch;
+				u32* TexelPtrD = TexelPtr + Bitmap->Pitch + 1;
+
+        v4 TexelA = { (f32)((*TexelPtrA >> 16)&0xFF),
+                      (f32)((*TexelPtrA >>  8)&0xFF),
+                      (f32)((*TexelPtrA >>  0)&0xFF),
+                      (f32)((*TexelPtrA >> 24)&0xFF)};
+        v4 TexelB = { (f32)((*TexelPtrB >> 16)&0xFF),
+                      (f32)((*TexelPtrB >>  8)&0xFF),
+                      (f32)((*TexelPtrB >>  0)&0xFF),
+                      (f32)((*TexelPtrB >> 24)&0xFF)};
+        v4 TexelC = { (f32)((*TexelPtrC >> 16)&0xFF),
+                      (f32)((*TexelPtrC >>  8)&0xFF),
+                      (f32)((*TexelPtrC >>  0)&0xFF),
+                      (f32)((*TexelPtrC >> 24)&0xFF)};
+        v4 TexelD = { (f32)((*TexelPtrD >> 16)&0xFF),
+                      (f32)((*TexelPtrD >>  8)&0xFF),
+                      (f32)((*TexelPtrD >>  0)&0xFF),
+                      (f32)((*TexelPtrD >> 24)&0xFF)};
+
+        v4 SourceColor = Lerp(fY, Lerp(fX, TexelA, TexelB), Lerp(fX, TexelC, TexelD));
+
+				f32 SA = SourceColor.A*RGBA.A;
+				f32 SR = SourceColor.R*RGBA.A;
+				f32 SG = SourceColor.G*RGBA.A;
+				f32 SB = SourceColor.B*RGBA.A;
         f32 RSA = SA / 255.0f;
 
+				u32 DestColor = *Pixel;
         f32 DA = (f32)((DestColor   >> 24)&0xFF);
 				f32 DR = (f32)((DestColor   >> 16)&0xFF);
 				f32 DG = (f32)((DestColor   >>  8)&0xFF);
@@ -541,7 +568,6 @@ DrawQuadSlowly(game_bitmap *Buffer, v2 V0, v2 V1, v2 V2, v2 V3, game_bitmap* Bit
                      ((u32)(R+0.5f) << 16) | 
                      ((u32)(G+0.5f) <<  8) | 
                      ((u32)(B+0.5f) <<  0));
-#endif
 
         *Pixel = Color;
       }

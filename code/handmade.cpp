@@ -76,6 +76,7 @@ struct game_state
   game_bitmap Ground[4];
   game_bitmap Rock[4];
   game_bitmap Tuft[3];
+  game_bitmap Tree[3];
 
 	f32 SimulationSpeedModifier;
 #if HANDMADE_INTERNAL
@@ -215,6 +216,19 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      "data/test2/tuft02.bmp");
+
+  GameState->Tree[0] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     "data/test2/tree00.bmp");
+  GameState->Tree[1] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     "data/test2/tree01.bmp");
+  GameState->Tree[2] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                                     Memory->DEBUGPlatformReadEntireFile, 
+                                     TransientArena,
+                                     "data/test2/tree02.bmp");
 
 	GameState->Backdrop = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
@@ -860,8 +874,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// NOTE(bjorn): Moving and Rendering
 	//
   {
-    m44 Transform = ConstructTransform({}, QuaternionIdentity(), {6,6,1});
-    PushQuad(RenderGroup, Transform, &GameState->GeneratedTile);
+    local_persist f32 Offset = 0.0f;
+    m44 Transform = ConstructTransform({6.0f*Sin(Offset*pi32), 0.0f}, QuaternionIdentity(), {6,6,1});
+    Offset += 0.01f;
+    PushQuad(RenderGroup, Transform, &GameState->Tree[0]);
   }
 
 	//
@@ -1347,7 +1363,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
           s32 TileSideInPixels = 60;
           f32 PixelsPerMeter = (f32)TileSideInPixels / WorldMap->TileSideInMeters;
 
+#if 0
+          SetCamera(RenderGroup, CamTrans, PixelsPerMeter, positive_infinity32);
+#else
           SetCamera(RenderGroup, CamTrans, PixelsPerMeter, 20.0f);
+#endif
         }
 
 				if(Entity->VisualType == EntityVisualType_Wall)

@@ -1583,6 +1583,15 @@ Lerp(f32 t, f32 A, f32 B)
 	return A + (B - A) * t;
 }
 
+	inline v4
+Lerp(f32 t, v4 A, v4 B)
+{
+	return {Lerp(t, A.X, B.X),
+          Lerp(t, A.Y, B.Y),
+          Lerp(t, A.Z, B.Z),
+          Lerp(t, A.W, B.W)};
+}
+
 inline f32
 LengthSquared(v2 A)
 {

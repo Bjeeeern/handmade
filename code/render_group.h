@@ -449,16 +449,38 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
             }
           }
 
-          DrawQuadSlowly(Output, 
-                         PixVerts[0], 
-                         PixVerts[1], 
-                         PixVerts[2], 
-                         PixVerts[3], 
-                         Entry->Bitmap,
-                         Entry->Color);
+          DrawTriangleSlowly(Output, 
+                             RenderGroup->LensChamberSize, ScreenCenter, MeterToPixel, 0.0f,
+                             RenderGroup->CameraTransform * Quad.Verts[0], 
+                             RenderGroup->CameraTransform * Quad.Verts[1], 
+                             RenderGroup->CameraTransform * Quad.Verts[2], 
+                             {0,0},
+                             {1,0},
+                             {1,1},
+                             Entry->Bitmap,
+                             Entry->Color);
+          DrawTriangleSlowly(Output, 
+                             RenderGroup->LensChamberSize, ScreenCenter, MeterToPixel, 0.0f,
+                             RenderGroup->CameraTransform * Quad.Verts[0], 
+                             RenderGroup->CameraTransform * Quad.Verts[2], 
+                             RenderGroup->CameraTransform * Quad.Verts[3], 
+                             {0,0},
+                             {1,1},
+                             {0,1},
+                             Entry->Bitmap,
+                             Entry->Color);
 
-#if 0
           DrawLine(Output, PixVerts[0], PixVerts[2], {1.0f, 0.25f, 1.0f});
+          DrawCircle(Output, (PixVerts[0] + PixVerts[2]) * 0.5f, 3.0f, {1.0f, 1.0f, 0.0f, 1.0f});
+
+          pixel_pos_result PixPos = 
+            ProjectPointToScreen(RenderGroup->CameraTransform, RenderGroup->LensChamberSize, 
+                                 ScreenCenter, MeterToPixel, (Quad.Verts[0]+Quad.Verts[2])*0.5f);
+          if(PixPos.PointIsInView)
+          {
+            DrawCircle(Output, PixPos.P, 3.0f, {0.0f, 1.0f, 1.0f, 1.0f});
+          }
+#if 0
           for(u32 VertIndex = 0; 
               VertIndex < 4; 
               VertIndex++)

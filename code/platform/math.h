@@ -533,6 +533,12 @@ struct v3
 		}
 };
 
+inline v3
+ToV3(v2 XY, f32 Z)
+{
+  return {XY.X, XY.Y, Z};
+}
+
 inline bool
 operator==(v3 lhs, v3 rhs)
 {
@@ -1203,6 +1209,10 @@ Dot(v3 A, v3 B)
 	
 	return Result;
 }
+
+//NOTE(bjorn):                       A == right hand thumb
+//                                   B == right hand index finger
+//             Cross product direction == right hand middle finger
 inline v3
 Cross(v3 A, v3 B)
 {
@@ -2295,6 +2305,23 @@ InverseUnscaledTransform(m44 T)
 	return Result;
 }
 
+	inline m22
+Transpose(m22 M)
+{
+	m22 Result = {};
+
+	for(u32 i = 0;
+			i < 4;
+			i++)
+	{
+		u32 x = i % 2;
+		u32 y = i / 2;
+		Result.E_[x*2 + y] = M.E_[y*2 + x];
+	}
+
+	return Result;
+}
+
 	inline m33
 Transpose(m33 M)
 {
@@ -2326,7 +2353,7 @@ IsWithinInclusive(f32 Value, f32 Lower, f32 Upper)
 //TODO STUDY(bjorn): Get an intuition for what is going on here.
 // https://codeplea.com/triangular-interpolation
 inline v3 
-BayesianWeights(v2 V0, v2 V1, v2 V2, v2 P)
+BayesianWeights2D(v2 V0, v2 V1, v2 V2, v2 P)
 {
   v3 Result;
 
@@ -2334,6 +2361,28 @@ BayesianWeights(v2 V0, v2 V1, v2 V2, v2 P)
   Result.X = ((V1.Y-V2.Y)*(P.X-V2.X) + (V2.X-V1.X)*(P.Y-V2.Y)) * InvDenom; 
   Result.Y = ((V2.Y-V0.Y)*(P.X-V2.X) + (V0.X-V2.X)*(P.Y-V2.Y)) * InvDenom; 
   Result.Z = 1.0f - Result.X - Result.Y;
+
+  return Result;
+}
+
+inline v3 
+BayesianWeights3D(v3 V0, v3 V1, v3 V2, v3 P)
+{
+  v3 Result;
+
+  v3 TotalAreaVector = Cross(V2-V0, V1-V0);
+  v3 AreaAVector = Cross(V2-P, V1-P);
+  v3 AreaBVector = Cross(V0-P, V2-P);
+  v3 AreaCVector = Cross(V1-P, V0-P);
+
+  f32 DotAB = Dot(AreaAVector, AreaBVector);
+  f32 DotBC = Dot(AreaBVector, AreaCVector);
+  f32 DotTA = Dot(TotalAreaVector, AreaAVector);
+  f32 DotTB = Dot(TotalAreaVector, AreaBVector);
+
+  Result.X = DotAB / DotTB;
+  Result.Y = DotAB / DotTA;
+  Result.Z = DotBC / DotTB;
 
   return Result;
 }

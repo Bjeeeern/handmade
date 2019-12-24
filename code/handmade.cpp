@@ -107,7 +107,8 @@ DrawGeneratedTile(game_state* GameState, game_bitmap* Buffer)
 
   v4 Color = {1.0f,1.0f,1.0f,1.0f};
 
-  for(u32 Index = 0; Index < 200; Index++)
+  u32 Count = 50;
+  for(u32 Index = 0; Index < Count; Index++)
   {
     v2 Offset = Hadamard(RandomBilateralV2(&Series) * 0.5f, Buffer->Dim);
 
@@ -125,7 +126,7 @@ DrawGeneratedTile(game_state* GameState, game_bitmap* Buffer)
     PushQuad(RenderGroup, ConstructTransform(Offset, Bitmap->Dim), Bitmap, Color);
   }
 
-  for(u32 Index = 0; Index < 100; Index++)
+  for(u32 Index = 0; Index < Count; Index++)
   {
     v2 Offset = Hadamard(RandomBilateralV2(&Series) * 0.5f, Buffer->Dim);
 
@@ -875,8 +876,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
   {
     local_persist f32 t = 0.0f;
-    m44 Transform = ConstructTransform({1.0f*Sin(t*pi32), 0.0f}, 
-                                       AngleAxisToQuaternion(pi32*Modulate(t*pi32*0.5f, 
+    m44 Transform = ConstructTransform({1.0f*Sin(t*pi32*0.0f), 0.0f}, 
+                                       AngleAxisToQuaternion(pi32*Modulate(t*pi32*0.0f, 
                                                                            0.0f, tau32), 
                                                              {0,0,1}), 
                                        {6,6,1});

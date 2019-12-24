@@ -232,28 +232,84 @@ DrawChar(game_bitmap *Buffer, font *Font, u32 UnicodeCodePoint,
 	}
 }
 
-//TODO(bjorn): There is some weird skewing going on with the UV as the triangles flatten.
 	internal_function void
-DrawQuadSlowly(game_bitmap *Buffer, v2 V0, v2 V1, v2 V2, v2 V3, game_bitmap* Bitmap, v4 RGBA)
+DrawTriangleSlowly(game_bitmap *Buffer, 
+                   f32 LensChamberSize, v2 ScreenCenter, m22 MeterToPixel, f32 NearClipPoint,
+                   v3 CameraSpacePoint0, v3 CameraSpacePoint1, v3 CameraSpacePoint2, 
+                   v2 UV0, v2 UV1, v2 UV2, 
+                   game_bitmap* Bitmap, v4 RGBA)
 {
-	s32 Left = RoundF32ToS32(Min(Min(V0.X, V1.X),Min(V2.X, V3.X)));
-	s32 Right = RoundF32ToS32(Max(Max(V0.X, V1.X),Max(V2.X, V3.X)));
-	s32 Top = RoundF32ToS32(Min(Min(V0.Y, V1.Y),Min(V2.Y, V3.Y)));
-	s32 Bottom = RoundF32ToS32(Max(Max(V0.Y, V1.Y),Max(V2.Y, V3.Y)));
+  Assert(NearClipPoint < LensChamberSize);
 
-	Left = Left < 0 ? 0 : Left;
-	Top = Top < 0 ? 0 : Top;
+  b32 AllPointsBehindClipPoint = false;
+  {
+    if(CameraSpacePoint0.Z < NearClipPoint &&
+       CameraSpacePoint1.Z < NearClipPoint &&
+       CameraSpacePoint2.Z < NearClipPoint)
+    {
+      AllPointsBehindClipPoint = true;
+    }
+    else
+    {
+      //TODO(bjorn): Come up with a good clipping scheme.
+      if(CameraSpacePoint0.Z < NearClipPoint ||
+         CameraSpacePoint1.Z < NearClipPoint ||
+         CameraSpacePoint2.Z < NearClipPoint)
+      {
+        AllPointsBehindClipPoint = true;
+      }
+    }
+  }
+  if(AllPointsBehindClipPoint) { return; }
 
-	Right = Right > Buffer->Width ? Buffer->Width : Right;
-	Bottom = Bottom > Buffer->Height ? Buffer->Height : Bottom;
+  v2 PixelSpacePoint0, PixelSpacePoint1, PixelSpacePoint2;
+  {
+    f32 Divisor = (LensChamberSize + CameraSpacePoint0.Z);
+    f32 PerspectiveCorrection = SafeRatio0(LensChamberSize, Divisor);
 
-  v2 VecToUV[4] = {{0.0f,0.0f}, {1.0f,0.0f}, {1.0f,1.0f}, {0.0f,1.0f}};
+    PixelSpacePoint0 = 
+      (ScreenCenter + (MeterToPixel * CameraSpacePoint0.XY) * PerspectiveCorrection);
+  }
+  {
+    f32 Divisor = (LensChamberSize + CameraSpacePoint1.Z);
+    f32 PerspectiveCorrection = SafeRatio0(LensChamberSize, Divisor);
+
+    PixelSpacePoint1 = 
+      (ScreenCenter + (MeterToPixel * CameraSpacePoint1.XY) * PerspectiveCorrection);
+  }
+  {
+    f32 Divisor = (LensChamberSize + CameraSpacePoint2.Z);
+    f32 PerspectiveCorrection = SafeRatio0(LensChamberSize, Divisor);
+
+    PixelSpacePoint2 = 
+      (ScreenCenter + (MeterToPixel * CameraSpacePoint2.XY) * PerspectiveCorrection);
+  }
+
+  v3 FocalPoint = {0,0,LensChamberSize};
+  v3 TriangleNormal = 
+    Cross(CameraSpacePoint1-CameraSpacePoint0, CameraSpacePoint2-CameraSpacePoint0);
+  v3 TriangleCenter = (CameraSpacePoint0 + CameraSpacePoint1 + CameraSpacePoint2) * (1.0f/3.0f);
+
+  b32 CameraAndTriangleNormalsAreOrthogonal = Dot(TriangleNormal, TriangleCenter - FocalPoint) == 0;
+  if(CameraAndTriangleNormalsAreOrthogonal) { return; }
+
+  s32 Left   = RoundF32ToS32(Min(Min(PixelSpacePoint0.X, PixelSpacePoint1.X),PixelSpacePoint2.X));
+  s32 Right  = RoundF32ToS32(Max(Max(PixelSpacePoint0.X, PixelSpacePoint1.X),PixelSpacePoint2.X));
+  s32 Top    = RoundF32ToS32(Min(Min(PixelSpacePoint0.Y, PixelSpacePoint1.Y),PixelSpacePoint2.Y));
+  s32 Bottom = RoundF32ToS32(Max(Max(PixelSpacePoint0.Y, PixelSpacePoint1.Y),PixelSpacePoint2.Y));
+
+  Left = Left < 0 ? 0 : Left;
+  Top = Top < 0 ? 0 : Top;
+
+  Right = Right > Buffer->Width ? Buffer->Width : Right;
+  Bottom = Bottom > Buffer->Height ? Buffer->Height : Bottom;
 
   RGBA.RGB *= RGBA.A;
+  m22 PixelToMeter = Transpose(MeterToPixel);
 
-	u32 *UpperLeftPixel = Buffer->Memory + Left + Top * Buffer->Pitch;
-	for(s32 Y = Top;
-			Y < Bottom;
+  u32 *UpperLeftPixel = Buffer->Memory + Left + Top * Buffer->Pitch;
+  for(s32 Y = Top;
+      Y < Bottom;
 			++Y)
 	{
 		u32 *Pixel = UpperLeftPixel;
@@ -262,36 +318,42 @@ DrawQuadSlowly(game_bitmap *Buffer, v2 V0, v2 V1, v2 V2, v2 V3, game_bitmap* Bit
 				X < Right;
 				++X)
     {
-      v2 P = Vec2(X, Y);
+      v2 PixelPoint = Vec2(X, Y);
 
-      v3 Tri0Weights = BayesianWeights(V0, V1, V2, P);
-      v3 Tri1Weights = BayesianWeights(V0, V3, V2, P);
-
-      b32 InsideTri0 = (Tri0Weights.X >= 0 &&
-                        Tri0Weights.Y >= 0 &&
-                        Tri0Weights.Z >= 0);
-      b32 InsideTri1 = (Tri1Weights.X >= 0 &&
-                        Tri1Weights.Y >= 0 &&
-                        Tri1Weights.Z >= 0);
-      if(InsideTri0 || InsideTri1)
+      v3 Point;
       {
-        v2 UV;
-        if(InsideTri0)
-        {
-          UV = (Tri0Weights.X * VecToUV[0] +
-                Tri0Weights.Y * VecToUV[1] +
-                Tri0Weights.Z * VecToUV[2]);
-        }
-        else
-        {
-          UV = (Tri1Weights.X * VecToUV[0] +
-                Tri1Weights.Y * VecToUV[3] +
-                Tri1Weights.Z * VecToUV[2]);
-        }
+        v3 PointInCameraSpace = ToV3(PixelToMeter * (PixelPoint - ScreenCenter), 0);
+        v3 LineDirection = PointInCameraSpace - FocalPoint;
+
+        //NOTE(bjorn): Source: https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection
+        //NOTE(bjorn): TriangleNormal does not actually need to be a normal
+        //since it cancles out when calculating d.
+        //TODO(bjorn): SafeRatio here?
+        f32 d = (Dot((TriangleCenter - PointInCameraSpace), TriangleNormal) / 
+                 Dot(LineDirection, TriangleNormal));
+
+        //Assert(d >= 0);
+
+        Point = PointInCameraSpace + d * LineDirection;
+      }
+
+      v3 TriangleWeights = 
+        BayesianWeights3D(CameraSpacePoint0, CameraSpacePoint1, CameraSpacePoint2, Point);
+
+      b32 InsideTriangle = (TriangleWeights.X >= 0 &&
+                            TriangleWeights.Y >= 0 &&
+                            TriangleWeights.Z >= 0);
+      if(InsideTriangle)
+      {
+
+        v2 UV = (TriangleWeights.X * UV0 +
+                 TriangleWeights.Y * UV1 +
+                 TriangleWeights.Z * UV2);
 
         Assert(0.0f <= UV.U && UV.U <= 1.0f);
         Assert(0.0f <= UV.V && UV.V <= 1.0f);
 
+#if 0
         f32 tX = (1.0f + (UV.U * (f32)(Bitmap->Width -3)) + 0.5f);
         f32 tY = (1.0f + (UV.V * (f32)(Bitmap->Height-3)) + 0.5f);
 
@@ -338,6 +400,15 @@ DrawQuadSlowly(game_bitmap *Buffer, v2 V0, v2 V1, v2 V2, v2 V3, game_bitmap* Bit
         DestColor = sRGB255ToLinear1(DestColor);
 
         Texel = Hadamard(Texel, RGBA);
+#else
+        v4 DestColor = { (f32)((*Pixel >> 16)&0xFF),
+                         (f32)((*Pixel >>  8)&0xFF),
+                         (f32)((*Pixel >>  0)&0xFF),
+                         (f32)((*Pixel >> 24)&0xFF)};
+        DestColor = sRGB255ToLinear1(DestColor);
+
+        v4 Texel = {(UV.U+UV.V) >= 1.0f ? 1.0f : 0.0f, 0.0f, 0.0f, 1.0f};
+#endif
 
         v4 Blended = DestColor*(1.0f - Texel.A) + Texel;
 

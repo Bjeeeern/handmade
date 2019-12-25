@@ -1609,6 +1609,7 @@ WinMain(HINSTANCE Instance,
 			GameBuffer.Width = BackBuffer.Width;
 			GameBuffer.Height = BackBuffer.Height;
 			GameBuffer.Pitch = BackBuffer.Pitch / BackBuffer.BytesPerPixel;
+      GameBuffer.WidthOverHeight = SafeRatio0((f32)GameBuffer.Width, (f32)GameBuffer.Height);
 
 #if HANDMADE_INTERNAL
 			if(Win32State.RecordHandle)

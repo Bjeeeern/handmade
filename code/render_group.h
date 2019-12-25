@@ -12,10 +12,15 @@
 
 struct camera_parameters
 {
-  m22 PixelToMeter;
-  m22 MeterToPixel;
   f32 LensChamberSize;
   f32 NearClipPoint;
+};
+
+struct output_target_screen_variables
+{
+    m22 MeterToPixel;
+    m22 PixelToMeter;
+    v2 Center;
 };
 
 inline v4 
@@ -249,7 +254,7 @@ DrawChar(game_bitmap *Buffer, font *Font, u32 UnicodeCodePoint,
 
 	internal_function void
 DrawTriangleSlowly(game_bitmap *Buffer, 
-                   camera_parameters* CamParam, v2 ScreenCenter,
+                   camera_parameters* CamParam, output_target_screen_variables* ScreenVars,
                    v3 CameraSpacePoint0, v3 CameraSpacePoint1, v3 CameraSpacePoint2, 
                    v2 UV0, v2 UV1, v2 UV2, 
                    game_bitmap* Bitmap, v4 RGBA)
@@ -281,21 +286,21 @@ DrawTriangleSlowly(game_bitmap *Buffer,
     f32 PerspectiveCorrection = SafeRatio0(CamParam->LensChamberSize, Divisor);
 
     PixelSpacePoint0 = 
-      (ScreenCenter + (CamParam->MeterToPixel * CameraSpacePoint0.XY) * PerspectiveCorrection);
+      (ScreenVars->Center + (ScreenVars->MeterToPixel * CameraSpacePoint0.XY) * PerspectiveCorrection);
   }
   {
     f32 Divisor = (CamParam->LensChamberSize - CameraSpacePoint1.Z);
     f32 PerspectiveCorrection = SafeRatio0(CamParam->LensChamberSize, Divisor);
 
     PixelSpacePoint1 = 
-      (ScreenCenter + (CamParam->MeterToPixel * CameraSpacePoint1.XY) * PerspectiveCorrection);
+      (ScreenVars->Center + (ScreenVars->MeterToPixel * CameraSpacePoint1.XY) * PerspectiveCorrection);
   }
   {
     f32 Divisor = (CamParam->LensChamberSize - CameraSpacePoint2.Z);
     f32 PerspectiveCorrection = SafeRatio0(CamParam->LensChamberSize, Divisor);
 
     PixelSpacePoint2 = 
-      (ScreenCenter + (CamParam->MeterToPixel * CameraSpacePoint2.XY) * PerspectiveCorrection);
+      (ScreenVars->Center + (ScreenVars->MeterToPixel * CameraSpacePoint2.XY) * PerspectiveCorrection);
   }
 
   v3 FocalPoint = {0,0,CamParam->LensChamberSize};
@@ -344,7 +349,7 @@ DrawTriangleSlowly(game_bitmap *Buffer,
       {
         v3 Point;
         {
-          v3 PointInCameraSpace = ToV3(CamParam->PixelToMeter * (PixelPoint - ScreenCenter), 0);
+          v3 PointInCameraSpace = ToV3(ScreenVars->PixelToMeter * (PixelPoint - ScreenVars->Center), 0);
           v3 LineDirection = PointInCameraSpace - FocalPoint;
 
           //NOTE(bjorn): Source: https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection
@@ -815,16 +820,11 @@ PushSphere(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.8f,1})
 }
 
 internal_function void
-SetCamera(render_group* RenderGroup, m44 WorldToCamera, 
-          f32 PixelsPerMeter, f32 LensChamberSize, f32 NearClipPoint)
+SetCamera(render_group* RenderGroup, m44 WorldToCamera, f32 LensChamberSize, f32 NearClipPoint)
 {
   RenderGroup->WorldToCamera = WorldToCamera;
 
   camera_parameters* CamParam = &RenderGroup->CamParam;
-  CamParam->MeterToPixel = {PixelsPerMeter, 0,
-                            0, PixelsPerMeter};
-  CamParam->PixelToMeter = {1.0f/PixelsPerMeter, 0,
-                            0, 1.0f/PixelsPerMeter};
 
   Assert(NearClipPoint <= LensChamberSize);
   CamParam->LensChamberSize = LensChamberSize;
@@ -846,7 +846,8 @@ struct pixel_pos_result
 };
 
 internal_function pixel_pos_result
-ProjectPointToScreen(m44 WorldToCamera, camera_parameters* CamParam, v2 ScreenCenter, v3 Pos)
+ProjectPointToScreen(m44 WorldToCamera, camera_parameters* CamParam, 
+                     output_target_screen_variables* ScreenVars, v3 Pos)
 {
 	pixel_pos_result Result = {};
 
@@ -864,8 +865,8 @@ ProjectPointToScreen(m44 WorldToCamera, camera_parameters* CamParam, v2 ScreenCe
   {
     Result.PointIsInView = PointIsInView;
     Result.PerspectiveCorrection = PerspectiveCorrection;
-    Result.P = 
-      ScreenCenter + (CamParam->MeterToPixel * PosRelativeCameraLens.XY) * PerspectiveCorrection;
+    Result.P = (ScreenVars->Center + 
+                (ScreenVars->MeterToPixel * PosRelativeCameraLens.XY) * PerspectiveCorrection);
   }
 
   return Result;
@@ -881,14 +882,14 @@ struct pixel_line_segment_result
 //             Using the last term in a m33? Would that be inversible?
   internal_function pixel_line_segment_result
 ProjectSegmentToScreen(m44 WorldToCamera, camera_parameters* CamParam, 
-                       v2 ScreenCenter, v3 A, v3 B)
+                       output_target_screen_variables* ScreenVars, v3 A, v3 B)
 {
   pixel_line_segment_result Result = {};
 
   pixel_pos_result PixPosA = 
-    ProjectPointToScreen(WorldToCamera, CamParam, ScreenCenter, A);
+    ProjectPointToScreen(WorldToCamera, CamParam, ScreenVars, A);
   pixel_pos_result PixPosB = 
-    ProjectPointToScreen(WorldToCamera, CamParam, ScreenCenter, B);
+    ProjectPointToScreen(WorldToCamera, CamParam, ScreenVars, B);
 
   if(PixPosA.PointIsInView && PixPosB.PointIsInView)
   {
@@ -911,14 +912,12 @@ ProjectSegmentToScreen(m44 WorldToCamera, camera_parameters* CamParam,
 }
 
 internal_function void
-DrawVector(render_group* RenderGroup, game_bitmap* OutputTarget,
-           v3 V0, v3 V1, v3 Color)
+DrawVector(render_group* RenderGroup, output_target_screen_variables* ScreenVars, 
+           game_bitmap* OutputTarget, v3 V0, v3 V1, v3 Color)
 {
-  v2 ScreenCenter = OutputTarget->Dim * 0.5f;
-
   pixel_line_segment_result LineSegment = 
     ProjectSegmentToScreen(RenderGroup->WorldToCamera, &RenderGroup->CamParam, 
-                           ScreenCenter, V0, V1);
+                           ScreenVars, V0, V1);
   if(LineSegment.PartOfSegmentInView)
   {
     DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Color);
@@ -959,7 +958,7 @@ DrawVector(render_group* RenderGroup, game_bitmap* OutputTarget,
     V1 = Verts[(VertIndex+1)%4];
     LineSegment = 
       ProjectSegmentToScreen(RenderGroup->WorldToCamera, &RenderGroup->CamParam, 
-                             ScreenCenter, V0, V1);
+                             ScreenVars, V0, V1);
     if(LineSegment.PartOfSegmentInView)
     {
       DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Color);
@@ -973,7 +972,7 @@ DrawVector(render_group* RenderGroup, game_bitmap* OutputTarget,
     V1 = Verts[4];
     LineSegment = 
       ProjectSegmentToScreen(RenderGroup->WorldToCamera, &RenderGroup->CamParam, 
-                             ScreenCenter, V0, V1);
+                             ScreenVars, V0, V1);
     if(LineSegment.PartOfSegmentInView)
     {
       DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Color);
@@ -986,9 +985,20 @@ DrawVector(render_group* RenderGroup, game_bitmap* OutputTarget,
   PushBufferByteOffset += sizeof(render_entry_header) + sizeof(type)
 
   internal_function void
-RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget)
+RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 ScreenHeightInMeters)
 {
-  v2 ScreenCenter = OutputTarget->Dim * 0.5f;
+  output_target_screen_variables ScreenVars = {};
+  {
+    Assert(ScreenHeightInMeters > 0);
+    f32 PixelsPerMeter = (f32)OutputTarget->Height / ScreenHeightInMeters;
+    ScreenVars.MeterToPixel = 
+    { PixelsPerMeter,              0,
+      0,              PixelsPerMeter};
+    ScreenVars.PixelToMeter = 
+    { 1.0f/PixelsPerMeter,                   0,
+      0,                  1.0f/PixelsPerMeter};
+    ScreenVars.Center = OutputTarget->Dim * 0.5f;
+  }
 
   if(RenderGroup->ClearScreen)
   {
@@ -1011,18 +1021,18 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget)
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_vector);
 
-          DrawVector(RenderGroup, OutputTarget,
+          DrawVector(RenderGroup, &ScreenVars, OutputTarget,
                      Entry->A, Entry->B, Entry->Color.RGB);
         } break;
       case RenderGroupEntryType_render_entry_coordinate_system
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_coordinate_system);
 
-          DrawVector(RenderGroup, OutputTarget,
+          DrawVector(RenderGroup, &ScreenVars, OutputTarget,
                      Entry->Tran*v3{0,0,0}, Entry->Tran*v3{1,0,0}, v3{1,0,0});
-          DrawVector(RenderGroup, OutputTarget,
+          DrawVector(RenderGroup, &ScreenVars, OutputTarget,
                      Entry->Tran*v3{0,0,0}, Entry->Tran*v3{0,1,0}, v3{0,1,0});
-          DrawVector(RenderGroup, OutputTarget,
+          DrawVector(RenderGroup, &ScreenVars, OutputTarget,
                      Entry->Tran*v3{0,0,0}, Entry->Tran*v3{0,0,1}, v3{0,0,1});
         } break;
       case RenderGroupEntryType_render_entry_wire_cube
@@ -1039,7 +1049,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget)
             v3 V1 = AABB.Verts[(VertIndex+1)%4];
             pixel_line_segment_result LineSegment = 
               ProjectSegmentToScreen(RenderGroup->WorldToCamera, &RenderGroup->CamParam, 
-                                     ScreenCenter, V0, V1);
+                                     &ScreenVars, V0, V1);
             if(LineSegment.PartOfSegmentInView)
             {
               DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Entry->Color.RGB);
@@ -1053,7 +1063,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget)
             v3 V1 = AABB.Verts[(VertIndex+1)%4 + 4];
             pixel_line_segment_result LineSegment = 
               ProjectSegmentToScreen(RenderGroup->WorldToCamera, &RenderGroup->CamParam, 
-                                     ScreenCenter, V0, V1);
+                                     &ScreenVars, V0, V1);
             if(LineSegment.PartOfSegmentInView)
             {
               DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Entry->Color.RGB);
@@ -1067,7 +1077,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget)
             v3 V1 = AABB.Verts[VertIndex + 4];
             pixel_line_segment_result LineSegment = 
               ProjectSegmentToScreen(RenderGroup->WorldToCamera, &RenderGroup->CamParam, 
-                                     ScreenCenter, V0, V1);
+                                     &ScreenVars, V0, V1);
             if(LineSegment.PartOfSegmentInView)
             {
               DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Entry->Color.RGB);
@@ -1102,7 +1112,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget)
 
             pixel_line_segment_result LineSegment = 
               ProjectSegmentToScreen(RenderGroup->WorldToCamera, &RenderGroup->CamParam, 
-                                     ScreenCenter, V0, V1);
+                                     &ScreenVars, V0, V1);
             if(LineSegment.PartOfSegmentInView)
             {
               PixVerts[VertIndex] = LineSegment.A;
@@ -1110,7 +1120,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget)
           }
 
           DrawTriangleSlowly(OutputTarget, 
-                             &RenderGroup->CamParam, ScreenCenter, 
+                             &RenderGroup->CamParam, &ScreenVars, 
                              RenderGroup->WorldToCamera * Quad.Verts[0], 
                              RenderGroup->WorldToCamera * Quad.Verts[1], 
                              RenderGroup->WorldToCamera * Quad.Verts[2], 
@@ -1120,7 +1130,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget)
                              Entry->Bitmap,
                              Entry->Color);
           DrawTriangleSlowly(OutputTarget, 
-                             &RenderGroup->CamParam, ScreenCenter,
+                             &RenderGroup->CamParam, &ScreenVars,
                              RenderGroup->WorldToCamera * Quad.Verts[0], 
                              RenderGroup->WorldToCamera * Quad.Verts[2], 
                              RenderGroup->WorldToCamera * Quad.Verts[3], 
@@ -1136,7 +1146,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget)
 
           pixel_pos_result PixPos = 
             ProjectPointToScreen(RenderGroup->WorldToCamera, &RenderGroup->CamParam, 
-                                 ScreenCenter, (Quad.Verts[0]+Quad.Verts[2])*0.5f);
+                                 &ScreenVars, (Quad.Verts[0]+Quad.Verts[2])*0.5f);
           if(PixPos.PointIsInView)
           {
             DrawCircle(OutputTarget, PixPos.P, 3.0f, {0.0f, 1.0f, 1.0f, 1.0f});
@@ -1159,10 +1169,10 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget)
 
           pixel_pos_result PixPos = 
             ProjectPointToScreen(RenderGroup->WorldToCamera, &RenderGroup->CamParam, 
-                                 ScreenCenter, P0);
+                                 &ScreenVars, P0);
           if(PixPos.PointIsInView)
           {
-            f32 PixR = (RenderGroup->CamParam.MeterToPixel.A * 
+            f32 PixR = (ScreenVars.MeterToPixel.A * 
                         Magnitude(P1 - P0) * 
                         PixPos.PerspectiveCorrection);
 

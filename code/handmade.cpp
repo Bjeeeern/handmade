@@ -101,7 +101,7 @@ GenerateTile(game_state* GameState, game_bitmap* Buffer)
 {
   temporary_memory TempMem = BeginTemporaryMemory(&GameState->TransientArena);
   render_group* RenderGroup = AllocateRenderGroup(&GameState->TransientArena, Megabytes(4));
-  SetCamera(RenderGroup, M44Identity(), 1.0f, 1.0f, 1.0f);
+  SetCamera(RenderGroup, M44Identity(), 1.0f, 1.0f);
 
   random_series Series = Seed(0);
 
@@ -143,7 +143,7 @@ GenerateTile(game_state* GameState, game_bitmap* Buffer)
     PushQuad(RenderGroup, ConstructTransform(Offset, Bitmap->Dim), Bitmap, Color);
   }
 
-  RenderGroupToOutput(RenderGroup, Buffer);
+  RenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
 
 	EndTemporaryMemory(TempMem);
 	CheckMemoryArena(&GameState->TransientArena);
@@ -892,7 +892,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     v4 Color = {1,1,1,1};
 #endif
 
-#if 1
+#if 0
     PushQuad(RenderGroup, Transform, &GameState->GeneratedTile, Color);
 #else
     PushQuad(RenderGroup, Transform, &GameState->Tree[1], Color);
@@ -1379,13 +1379,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
           m33 RotMat = AxisRotationMatrix(MainCamera->CamRot.X, GetMatCol(XRot, 2)) * XRot;
           m44 CamTrans = ConstructTransform(Offset, RotMat);
 
-          s32 TileSideInPixels = 60;
-          f32 PixelsPerMeter = (f32)TileSideInPixels / WorldMap->TileSideInMeters;
 
 #if 1
-          SetCamera(RenderGroup, CamTrans, PixelsPerMeter, 20.0f, 20.f);
+          SetCamera(RenderGroup, CamTrans, 20.0f, 20.f);
 #else
-          SetCamera(RenderGroup, CamTrans, PixelsPerMeter, positive_infinity32, 20.f);
+          SetCamera(RenderGroup, CamTrans, positive_infinity32, 20.f);
 #endif
         }
 
@@ -1575,7 +1573,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	// NOTE(bjorn): Rendering
 	//
-  RenderGroupToOutput(RenderGroup, Buffer);
+  RenderGroupToOutput(RenderGroup, Buffer, 1.4f*9.0f);
 
 	EndTemporaryMemory(TempMem);
 	CheckMemoryArena(FrameBoundedTransientArena);

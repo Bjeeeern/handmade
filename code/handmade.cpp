@@ -892,7 +892,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     v4 Color = {1,1,1,1};
 #endif
 
-#if 0
+#if 1
     PushQuad(RenderGroup, Transform, &GameState->GeneratedTile, Color);
 #else
     PushQuad(RenderGroup, Transform, &GameState->Tree[1], Color);

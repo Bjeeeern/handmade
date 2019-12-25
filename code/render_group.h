@@ -819,6 +819,7 @@ PushSphere(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.8f,1})
 	Entry->Color = Color;
 }
 
+//TODO(Bjorn): SetCamera(f32 HeightOfScreenInGameMeters, f32 YFoV)
 internal_function void
 SetCamera(render_group* RenderGroup, m44 WorldToCamera, f32 LensChamberSize, f32 NearClipPoint)
 {
@@ -1140,7 +1141,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                              Entry->Bitmap,
                              Entry->Color);
 
-#if 1
+#if 0
           DrawLine(OutputTarget, PixVerts[0], PixVerts[2], {1.0f, 0.25f, 1.0f});
           DrawCircle(OutputTarget, (PixVerts[0] + PixVerts[2]) * 0.5f, 3.0f, {1.0f, 1.0f, 0.0f, 1.0f});
 

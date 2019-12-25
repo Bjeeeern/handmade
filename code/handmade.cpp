@@ -888,7 +888,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                  1.0f};
     t += 0.01f;
 #else
-    m44 Transform = M44Identity();
+    m44 Transform = ConstructTransform({}, QuaternionIdentity(), {6,6,1});
     v4 Color = {1,1,1,1};
 #endif
 

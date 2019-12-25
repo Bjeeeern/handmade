@@ -5,6 +5,11 @@
 #include "renderer.h"
 #include "primitive_shapes.h"
 
+// NOTE(bjorn):
+//
+// All Color variables passed to the renderer are in NON-premultiplied alpha.
+//
+
 enum render_group_entry_type
 {
 	RenderGroupEntryType_render_entry_vector,
@@ -220,6 +225,7 @@ struct pixel_line_segment_result
   v2 B;
 };
 //TODO(bjorn): Do a unique solution to this that interpolates the points when nessecary.
+//             Using the last term in a m33? Would that be inversible?
   internal_function pixel_line_segment_result
 ProjectSegmentToScreen(m44 CameraTransform, f32 LensChamberSize, 
                        v2 ScreenCenter, m22 MeterToPixel, v3 A, v3 B)

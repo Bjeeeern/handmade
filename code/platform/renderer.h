@@ -333,7 +333,9 @@ DrawTriangleSlowly(game_bitmap *Buffer,
         f32 d = (Dot((TriangleCenter - FocalPoint), TriangleNormal) / 
                  Dot(LineDirection, TriangleNormal));
 
-        Assert(d >= 0);
+        //TODO(bjorn): Does this assertion make sense? Do I have a problem when 
+        //             NearClipPoint == LensChamberSize ?
+        //Assert(d >= 0);
 
         Point = FocalPoint + d * LineDirection;
       }

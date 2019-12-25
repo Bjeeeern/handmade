@@ -97,11 +97,11 @@ struct game_state
 };
 
 internal_function void
-DrawGeneratedTile(game_state* GameState, game_bitmap* Buffer)
+GenerateTile(game_state* GameState, game_bitmap* Buffer)
 {
   temporary_memory TempMem = BeginTemporaryMemory(&GameState->TransientArena);
   render_group* RenderGroup = AllocateRenderGroup(&GameState->TransientArena, Megabytes(4));
-  SetCamera(RenderGroup, M44Identity(), 1.0f, 1.0f);
+  SetCamera(RenderGroup, M44Identity(), 1.0f, 1.0f, 1.0f);
 
   random_series Series = Seed(0);
 
@@ -630,7 +630,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 
   GameState->GeneratedTile = EmptyBitmap(TransientArena, 512, 512);
   GameState->GeneratedTile.Alignment = {256, 256};
-  DrawGeneratedTile(GameState, &GameState->GeneratedTile);
+  //GenerateTile(GameState, &GameState->GeneratedTile);
 }
 
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
@@ -678,7 +678,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     ZeroMemory(GameState->GeneratedTile.Memory, (GameState->GeneratedTile.Width*
                                                  GameState->GeneratedTile.Height*
                                                  GAME_BITMAP_BYTES_PER_PIXEL));
-    DrawGeneratedTile(GameState, &GameState->GeneratedTile);
+    //GenerateTile(GameState, &GameState->GeneratedTile);
   }
 
   memory_arena* WorldArena = &GameState->WorldArena;
@@ -881,13 +881,17 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                                                                            0.0f, tau32), 
                                                              {0,0,1}), 
                                        {6,6,1});
-    t += 0.01f;
     v4 Color = {Sin(10.0f*t*pi32)*0.5f+0.5f,
                  Sin(10.0f*t*pi32 + 0.3f*pi32)*0.5f+0.5f,
                  Sin(10.0f*t*pi32 + 0.7f*pi32)*0.5f+0.5f,
                  1.0f};
+    //t += 0.01f;
 
+#if 0
     PushQuad(RenderGroup, Transform, &GameState->GeneratedTile, Color);
+#else
+    PushQuad(RenderGroup, Transform, &GameState->Tree[1], Color);
+#endif
   }
 
 	//
@@ -1376,7 +1380,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #if 0
           SetCamera(RenderGroup, CamTrans, PixelsPerMeter, positive_infinity32);
 #else
-          SetCamera(RenderGroup, CamTrans, PixelsPerMeter, 20.0f);
+          SetCamera(RenderGroup, CamTrans, PixelsPerMeter, 20.0f, 20.f);
 #endif
         }
 

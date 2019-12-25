@@ -239,22 +239,22 @@ DrawTriangleSlowly(game_bitmap *Buffer,
                    v2 UV0, v2 UV1, v2 UV2, 
                    game_bitmap* Bitmap, v4 RGBA)
 {
-  Assert(NearClipPoint < LensChamberSize);
+  Assert(NearClipPoint <= LensChamberSize);
 
   b32 AllPointsBehindClipPoint = false;
   {
-    if(CameraSpacePoint0.Z < NearClipPoint &&
-       CameraSpacePoint1.Z < NearClipPoint &&
-       CameraSpacePoint2.Z < NearClipPoint)
+    if(CameraSpacePoint0.Z > NearClipPoint &&
+       CameraSpacePoint1.Z > NearClipPoint &&
+       CameraSpacePoint2.Z > NearClipPoint)
     {
       AllPointsBehindClipPoint = true;
     }
     else
     {
       //TODO(bjorn): Come up with a good clipping scheme.
-      if(CameraSpacePoint0.Z < NearClipPoint ||
-         CameraSpacePoint1.Z < NearClipPoint ||
-         CameraSpacePoint2.Z < NearClipPoint)
+      if(CameraSpacePoint0.Z > NearClipPoint ||
+         CameraSpacePoint1.Z > NearClipPoint ||
+         CameraSpacePoint2.Z > NearClipPoint)
       {
         AllPointsBehindClipPoint = true;
       }
@@ -264,21 +264,21 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 
   v2 PixelSpacePoint0, PixelSpacePoint1, PixelSpacePoint2;
   {
-    f32 Divisor = (LensChamberSize + CameraSpacePoint0.Z);
+    f32 Divisor = (LensChamberSize - CameraSpacePoint0.Z);
     f32 PerspectiveCorrection = SafeRatio0(LensChamberSize, Divisor);
 
     PixelSpacePoint0 = 
       (ScreenCenter + (MeterToPixel * CameraSpacePoint0.XY) * PerspectiveCorrection);
   }
   {
-    f32 Divisor = (LensChamberSize + CameraSpacePoint1.Z);
+    f32 Divisor = (LensChamberSize - CameraSpacePoint1.Z);
     f32 PerspectiveCorrection = SafeRatio0(LensChamberSize, Divisor);
 
     PixelSpacePoint1 = 
       (ScreenCenter + (MeterToPixel * CameraSpacePoint1.XY) * PerspectiveCorrection);
   }
   {
-    f32 Divisor = (LensChamberSize + CameraSpacePoint2.Z);
+    f32 Divisor = (LensChamberSize - CameraSpacePoint2.Z);
     f32 PerspectiveCorrection = SafeRatio0(LensChamberSize, Divisor);
 
     PixelSpacePoint2 = 
@@ -305,7 +305,8 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   Bottom = Bottom > Buffer->Height ? Buffer->Height : Bottom;
 
   RGBA.RGB *= RGBA.A;
-  m22 PixelToMeter = Transpose(MeterToPixel);
+  m22 PixelToMeter = {1.0f/MeterToPixel.A, 0.0f,
+                      0.0f,                1.0f/MeterToPixel.D};
 
   u32 *UpperLeftPixel = Buffer->Memory + Left + Top * Buffer->Pitch;
   for(s32 Y = Top;
@@ -329,12 +330,12 @@ DrawTriangleSlowly(game_bitmap *Buffer,
         //NOTE(bjorn): TriangleNormal does not actually need to be a normal
         //since it cancles out when calculating d.
         //TODO(bjorn): SafeRatio here?
-        f32 d = (Dot((TriangleCenter - PointInCameraSpace), TriangleNormal) / 
+        f32 d = (Dot((TriangleCenter - FocalPoint), TriangleNormal) / 
                  Dot(LineDirection, TriangleNormal));
 
-        //Assert(d >= 0);
+        Assert(d >= 0);
 
-        Point = PointInCameraSpace + d * LineDirection;
+        Point = FocalPoint + d * LineDirection;
       }
 
       v3 TriangleWeights = 
@@ -353,7 +354,6 @@ DrawTriangleSlowly(game_bitmap *Buffer,
         Assert(0.0f <= UV.U && UV.U <= 1.0f);
         Assert(0.0f <= UV.V && UV.V <= 1.0f);
 
-#if 0
         f32 tX = (1.0f + (UV.U * (f32)(Bitmap->Width -3)) + 0.5f);
         f32 tY = (1.0f + (UV.V * (f32)(Bitmap->Height-3)) + 0.5f);
 
@@ -400,15 +400,6 @@ DrawTriangleSlowly(game_bitmap *Buffer,
         DestColor = sRGB255ToLinear1(DestColor);
 
         Texel = Hadamard(Texel, RGBA);
-#else
-        v4 DestColor = { (f32)((*Pixel >> 16)&0xFF),
-                         (f32)((*Pixel >>  8)&0xFF),
-                         (f32)((*Pixel >>  0)&0xFF),
-                         (f32)((*Pixel >> 24)&0xFF)};
-        DestColor = sRGB255ToLinear1(DestColor);
-
-        v4 Texel = {(UV.U+UV.V) >= 1.0f ? 1.0f : 0.0f, 0.0f, 0.0f, 1.0f};
-#endif
 
         v4 Blended = DestColor*(1.0f - Texel.A) + Texel;
 

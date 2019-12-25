@@ -57,6 +57,7 @@ struct render_group
   m44 CameraTransform;
   f32 PixelsPerMeter;
   f32 LensChamberSize;
+  f32 NearClipPoint;
 
   b32 ClearScreen;
   v4 ClearScreenColor;
@@ -163,11 +164,13 @@ PushSphere(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.8f,1})
 }
 
 internal_function void
-SetCamera(render_group* RenderGroup, m44 CameraTransform, f32 PixelsPerMeter, f32 LensChamberSize)
+SetCamera(render_group* RenderGroup, m44 CameraTransform, f32 PixelsPerMeter, f32 LensChamberSize,
+          f32 NearClipPoint)
 {
   RenderGroup->CameraTransform = CameraTransform;
   RenderGroup->PixelsPerMeter = PixelsPerMeter;
   RenderGroup->LensChamberSize = LensChamberSize;
+  RenderGroup->NearClipPoint = NearClipPoint;
 }
 
 internal_function void
@@ -450,7 +453,8 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
           }
 
           DrawTriangleSlowly(Output, 
-                             RenderGroup->LensChamberSize, ScreenCenter, MeterToPixel, 0.0f,
+                             RenderGroup->LensChamberSize, ScreenCenter, MeterToPixel, 
+                             RenderGroup->NearClipPoint,
                              RenderGroup->CameraTransform * Quad.Verts[0], 
                              RenderGroup->CameraTransform * Quad.Verts[1], 
                              RenderGroup->CameraTransform * Quad.Verts[2], 
@@ -460,7 +464,8 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
                              Entry->Bitmap,
                              Entry->Color);
           DrawTriangleSlowly(Output, 
-                             RenderGroup->LensChamberSize, ScreenCenter, MeterToPixel, 0.0f,
+                             RenderGroup->LensChamberSize, ScreenCenter, MeterToPixel,
+                             RenderGroup->NearClipPoint,
                              RenderGroup->CameraTransform * Quad.Verts[0], 
                              RenderGroup->CameraTransform * Quad.Verts[2], 
                              RenderGroup->CameraTransform * Quad.Verts[3], 
@@ -470,6 +475,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
                              Entry->Bitmap,
                              Entry->Color);
 
+#if 0
           DrawLine(Output, PixVerts[0], PixVerts[2], {1.0f, 0.25f, 1.0f});
           DrawCircle(Output, (PixVerts[0] + PixVerts[2]) * 0.5f, 3.0f, {1.0f, 1.0f, 0.0f, 1.0f});
 
@@ -480,28 +486,12 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
           {
             DrawCircle(Output, PixPos.P, 3.0f, {0.0f, 1.0f, 1.0f, 1.0f});
           }
-#if 0
           for(u32 VertIndex = 0; 
               VertIndex < 4; 
               VertIndex++)
           {
             DrawLine(Output, PixVerts[VertIndex], PixVerts[(VertIndex + 1)%4], 
                      {1.0f, VertIndex*0.25f, 1.0f});
-          }
-#endif
-#if 0
-          v3 Pos = Entry->Tran * v3{0,0,0};
-          pixel_pos_result PixPos = 
-            ProjectPointToScreen(RenderGroup->CameraTransform, RenderGroup->LensChamberSize, 
-                                 ScreenCenter, MeterToPixel, Pos);
-
-          if(PixPos.PointIsInView)
-          {
-            DrawBitmap(Output, 
-                       Entry->Bitmap, 
-                       PixPos.P - Entry->Bitmap->Alignment * PixPos.PerspectiveCorrection, 
-                       Entry->Bitmap->Dim * PixPos.PerspectiveCorrection, 
-                       Entry->Color.A);
           }
 #endif
         } break;

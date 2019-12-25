@@ -452,7 +452,7 @@ Win32ResizeDIBSection(win32_offscreen_buffer *Buffer, s32 Width, s32 Height)
 	//              represent left-right top-to-bottom.
 	Buffer->Info.bmiHeader.biSize = sizeof(Buffer->Info.bmiHeader);
 	Buffer->Info.bmiHeader.biWidth = Width;
-	Buffer->Info.bmiHeader.biHeight = -Height;
+	Buffer->Info.bmiHeader.biHeight = Height;
 	Buffer->Info.bmiHeader.biPlanes = 1;
 	Buffer->Info.bmiHeader.biBitCount = 32;
 	Buffer->Info.bmiHeader.biCompression = BI_RGB;

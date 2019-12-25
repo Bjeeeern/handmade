@@ -630,7 +630,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 
   GameState->GeneratedTile = EmptyBitmap(TransientArena, 512, 512);
   GameState->GeneratedTile.Alignment = {256, 256};
-  //GenerateTile(GameState, &GameState->GeneratedTile);
+  GenerateTile(GameState, &GameState->GeneratedTile);
 }
 
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
@@ -678,7 +678,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     ZeroMemory(GameState->GeneratedTile.Memory, (GameState->GeneratedTile.Width*
                                                  GameState->GeneratedTile.Height*
                                                  GAME_BITMAP_BYTES_PER_PIXEL));
-    //GenerateTile(GameState, &GameState->GeneratedTile);
+    GenerateTile(GameState, &GameState->GeneratedTile);
   }
 
   memory_arena* WorldArena = &GameState->WorldArena;
@@ -875,6 +875,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// NOTE(bjorn): Moving and Rendering
 	//
   {
+#if 0
     local_persist f32 t = 0.0f;
     m44 Transform = ConstructTransform({1.0f*Sin(t*pi32*0.0f), 0.0f}, 
                                        AngleAxisToQuaternion(pi32*Modulate(t*pi32*0.0f, 
@@ -885,9 +886,13 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                  Sin(10.0f*t*pi32 + 0.3f*pi32)*0.5f+0.5f,
                  Sin(10.0f*t*pi32 + 0.7f*pi32)*0.5f+0.5f,
                  1.0f};
-    //t += 0.01f;
+    t += 0.01f;
+#else
+    m44 Transform = M44Identity();
+    v4 Color = {1,1,1,1};
+#endif
 
-#if 0
+#if 1
     PushQuad(RenderGroup, Transform, &GameState->GeneratedTile, Color);
 #else
     PushQuad(RenderGroup, Transform, &GameState->Tree[1], Color);

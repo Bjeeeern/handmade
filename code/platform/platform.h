@@ -53,6 +53,7 @@ typedef DEBUG_PLATFORM_GET_FILE_EDIT_TIMESTAMP(debug_platform_get_file_edit_time
 
 //                                                              high     low
 // NOTE(bjorn): Expected pixel layout in memory is top to bottom AA RR GG BB.
+//              Pixels are laid out in a bottom-up, left-right order.
 #define GAME_BITMAP_BYTES_PER_PIXEL 4
 struct game_bitmap
 {

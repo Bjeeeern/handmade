@@ -175,7 +175,7 @@ DrawLine(game_bitmap* Buffer,
 		if(((0 <= X) && (X < Buffer->Width)) &&
 			 ((0 <= Y) && (Y < Buffer->Height)))
 		{
-			u32 *Pixel = (u32 *)Buffer->Memory + Buffer->Width * Y + X;
+			u32 *Pixel = (u32 *)Buffer->Memory + Buffer->Pitch * Y + X;
 			*Pixel = Color;
 		}
 		else
@@ -196,7 +196,7 @@ DrawLine(game_bitmap* Buffer, v2 A, v2 B, v3 C)
 	internal_function void
 DrawChar(game_bitmap *Buffer, font *Font, u32 UnicodeCodePoint, 
 				 f32 GlyphPixelWidth, f32 GlyphPixelHeight, 
-				 f32 GlyphOriginLeft, f32 GlyphOriginTop,
+				 f32 GlyphOriginLeft, f32 GlyphOriginBottom,
 				 f32 RealR, f32 RealG, f32 RealB)
 {
 	unicode_to_glyph_data *Entries = (unicode_to_glyph_data *)(Font + 1);
@@ -215,8 +215,8 @@ DrawChar(game_bitmap *Buffer, font *Font, u32 UnicodeCodePoint,
 
 	s32 Offset = Entries[CharEntryIndex].OffsetToGlyphData;
 	s32 CurveCount = Entries[CharEntryIndex].QuadraticCurveCount;
-	v2 GlyphDim = {GlyphPixelWidth, -GlyphPixelHeight};
-	v2 GlyphOrigin = {GlyphOriginLeft, GlyphOriginTop};
+	v2 GlyphDim = {GlyphPixelWidth, GlyphPixelHeight};
+	v2 GlyphOrigin = {GlyphOriginLeft, GlyphOriginBottom};
 
 	quadratic_curve *Curves = (quadratic_curve *)((u8 *)Font + Offset);
 	for(s32 CurveIndex = 0;
@@ -295,22 +295,22 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 
   s32 Left   = RoundF32ToS32(Min(Min(PixelSpacePoint0.X, PixelSpacePoint1.X),PixelSpacePoint2.X));
   s32 Right  = RoundF32ToS32(Max(Max(PixelSpacePoint0.X, PixelSpacePoint1.X),PixelSpacePoint2.X));
-  s32 Top    = RoundF32ToS32(Min(Min(PixelSpacePoint0.Y, PixelSpacePoint1.Y),PixelSpacePoint2.Y));
-  s32 Bottom = RoundF32ToS32(Max(Max(PixelSpacePoint0.Y, PixelSpacePoint1.Y),PixelSpacePoint2.Y));
+  s32 Bottom = RoundF32ToS32(Min(Min(PixelSpacePoint0.Y, PixelSpacePoint1.Y),PixelSpacePoint2.Y));
+  s32 Top    = RoundF32ToS32(Max(Max(PixelSpacePoint0.Y, PixelSpacePoint1.Y),PixelSpacePoint2.Y));
 
   Left = Left < 0 ? 0 : Left;
-  Top = Top < 0 ? 0 : Top;
+  Bottom = Bottom < 0 ? 0 : Bottom;
 
   Right = Right > Buffer->Width ? Buffer->Width : Right;
-  Bottom = Bottom > Buffer->Height ? Buffer->Height : Bottom;
+  Top = Top > Buffer->Height ? Buffer->Height : Top;
 
   RGBA.RGB *= RGBA.A;
   m22 PixelToMeter = {1.0f/MeterToPixel.A, 0.0f,
                       0.0f,                1.0f/MeterToPixel.D};
 
-  u32 *UpperLeftPixel = Buffer->Memory + Left + Top * Buffer->Pitch;
-  for(s32 Y = Top;
-      Y < Bottom;
+  u32 *UpperLeftPixel = Buffer->Memory + Left + Bottom * Buffer->Pitch;
+  for(s32 Y = Bottom;
+      Y < Top;
 			++Y)
 	{
 		u32 *Pixel = UpperLeftPixel;
@@ -427,16 +427,16 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   internal_function void
 DrawRectangle(game_bitmap *Buffer, rectangle2 Rect, v3 RGB)
 {
-  s32 Left = RoundF32ToS32(Rect.Min.X);
-  s32 Right = RoundF32ToS32(Rect.Max.X);
-  s32 Top = RoundF32ToS32(Rect.Min.Y);
-  s32 Bottom = RoundF32ToS32(Rect.Max.Y);
+  s32 Left   = RoundF32ToS32(Rect.Min.X);
+  s32 Right  = RoundF32ToS32(Rect.Max.X);
+  s32 Bottom = RoundF32ToS32(Rect.Min.Y);
+  s32 Top    = RoundF32ToS32(Rect.Max.Y);
 
   Left = Left < 0 ? 0 : Left;
-  Top = Top < 0 ? 0 : Top;
+  Bottom = Bottom < 0 ? 0 : Bottom;
 
   Right = Right > Buffer->Width ? Buffer->Width : Right;
-  Bottom = Bottom > Buffer->Height ? Buffer->Height : Bottom;
+  Top = Top > Buffer->Height ? Buffer->Height : Top;
 
   u32 Color = ((RoundF32ToS32(RGB.R * 255.0f) << 16) |
                (RoundF32ToS32(RGB.G * 255.0f) << 8) |
@@ -444,10 +444,10 @@ DrawRectangle(game_bitmap *Buffer, rectangle2 Rect, v3 RGB)
 
   s32 PixelPitch = Buffer->Width;
 
-	u32 *UpperLeftPixel = (u32 *)Buffer->Memory + Left + Top * PixelPitch;
+	u32 *UpperLeftPixel = (u32 *)Buffer->Memory + Left + Bottom * PixelPitch;
 
-	for(s32 Y = Top;
-			Y < Bottom;
+	for(s32 Y = Bottom;
+			Y < Top;
 			++Y)
 	{
 		u32 *Pixel = UpperLeftPixel;
@@ -467,7 +467,7 @@ DrawRectangle(game_bitmap *Buffer, rectangle2 Rect, v3 RGB)
 	internal_function void
 DrawFrame(game_bitmap *Buffer, rectangle2 R, v2 WorldDir, v3 Color)
 {
-	v2 ScreenSpaceDir = v2{WorldDir.X, -WorldDir.Y};
+	v2 ScreenSpaceDir = v2{WorldDir.X, WorldDir.Y};
 	Assert(LengthSquared(WorldDir) <= 1.001f);
 	Assert(LengthSquared(WorldDir) >= 0.999f);
 
@@ -488,6 +488,7 @@ DrawFrame(game_bitmap *Buffer, rectangle2 R, v2 WorldDir, v3 Color)
 	DrawLine(Buffer, BottomLeft,  TopLeft,     Color);
 }
 
+#if 0
 	internal_function void
 DrawBitmap(game_bitmap* Buffer, game_bitmap* Bitmap, 
 					 v2 TopLeft, v2 RealDim, f32 Alpha = 1.0f)
@@ -567,6 +568,7 @@ DrawBitmap(game_bitmap* Buffer, game_bitmap* Bitmap,
 		DestBufferRow += Buffer->Pitch;
 	}
 }
+#endif
 
 	internal_function void
 DrawCircle(game_bitmap *Buffer, 
@@ -575,24 +577,22 @@ DrawCircle(game_bitmap *Buffer,
 {
 	s32 CenterX = RoundF32ToS32(RealX);
 	s32 CenterY = RoundF32ToS32(RealY);
-	s32 Left = RoundF32ToS32(RealX - RealRadius);
-	s32 Right = RoundF32ToS32(RealX + RealRadius);
-	s32 Top = RoundF32ToS32(RealY - RealRadius);
-	s32 Bottom = RoundF32ToS32(RealY + RealRadius);
+	s32 Left    = RoundF32ToS32(RealX - RealRadius);
+	s32 Right   = RoundF32ToS32(RealX + RealRadius);
+	s32 Bottom  = RoundF32ToS32(RealY - RealRadius);
+	s32 Top     = RoundF32ToS32(RealY + RealRadius);
 
 	s32 RadiusSquared = RoundF32ToS32(Square(RealRadius));
 
 	Left = Left < 0 ? 0 : Left;
-	Top = Top < 0 ? 0 : Top;
+	Bottom = Bottom < 0 ? 0 : Bottom;
 	Right = Right > Buffer->Width ? Buffer->Width : Right;
-	Bottom = Bottom > Buffer->Height ? Buffer->Height : Bottom;
+	Top = Top > Buffer->Height ? Buffer->Height : Top;
 
-	s32 PixelPitch = Buffer->Width;
+	u32 *UpperLeftPixel = (u32 *)Buffer->Memory + Left + Bottom * Buffer->Pitch;
 
-	u32 *UpperLeftPixel = (u32 *)Buffer->Memory + Left + Top * PixelPitch;
-
-	for(s32 Y = Top;
-			Y < Bottom;
+	for(s32 Y = Bottom;
+			Y < Top;
 			++Y)
 	{
 		u32 *Pixel = UpperLeftPixel;
@@ -618,7 +618,7 @@ DrawCircle(game_bitmap *Buffer,
 			Pixel++;
 		}
 
-		UpperLeftPixel += PixelPitch;
+		UpperLeftPixel += Buffer->Pitch;
 	}
 }
 

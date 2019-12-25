@@ -331,7 +331,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
   v2 ScreenCenter = v2{(f32)Output->Width, (f32)Output->Height} * 0.5f;
   m22 MeterToPixel = 
   {RenderGroup->PixelsPerMeter, 0                         ,
-    0                         ,-RenderGroup->PixelsPerMeter};
+    0                         , RenderGroup->PixelsPerMeter};
 
   if(RenderGroup->ClearScreen)
   {
@@ -459,7 +459,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
                              RenderGroup->CameraTransform * Quad.Verts[1], 
                              RenderGroup->CameraTransform * Quad.Verts[2], 
                              {0,0},
-                             {1,0},
+                             {0,1},
                              {1,1},
                              Entry->Bitmap,
                              Entry->Color);
@@ -471,7 +471,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
                              RenderGroup->CameraTransform * Quad.Verts[3], 
                              {0,0},
                              {1,1},
-                             {0,1},
+                             {1,0},
                              Entry->Bitmap,
                              Entry->Color);
 

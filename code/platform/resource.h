@@ -50,6 +50,7 @@ DEBUGLoadBMP(debug_platform_free_file_memory* FreeFileMemory,
 		u32 *Pixels = (u32 *)((u8 *)ReadResult.Content + Header->BitmapOffset); 
 
 		Assert(Header->Compression == 3);
+		Assert(Header->Height >= 0);
 
 		u32 RedMask = Header->RedMask;
 		u32 GreenMask = Header->GreenMask;
@@ -98,10 +99,10 @@ DEBUGLoadBMP(debug_platform_free_file_memory* FreeFileMemory,
 
       Texel = Linear1TosRGB255(Texel);
 
-      Result.Memory[(PixelCount-1)-PixelIndex] = (((u32)(Texel.A+0.5f) << 24) | 
-                                                  ((u32)(Texel.R+0.5f) << 16) | 
-                                                  ((u32)(Texel.G+0.5f) <<  8) | 
-                                                  ((u32)(Texel.B+0.5f) <<  0));
+      Result.Memory[PixelIndex] = (((u32)(Texel.A+0.5f) << 24) | 
+                                   ((u32)(Texel.R+0.5f) << 16) | 
+                                   ((u32)(Texel.G+0.5f) <<  8) | 
+                                   ((u32)(Texel.B+0.5f) <<  0));
     }
 
 		FreeFileMemory(ReadResult.Content);

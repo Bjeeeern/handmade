@@ -3,7 +3,7 @@
 #include "types_and_defines.h"
 #include "platform.h"
 #include "memory.h"
-#include "renderer.h"
+#include "render_group.h"
 
 #pragma pack(push, 1)
 struct bitmap_header

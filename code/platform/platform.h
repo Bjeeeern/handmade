@@ -69,6 +69,8 @@ struct game_bitmap
 	};
   s32 Pitch;
   v2s Alignment;
+
+  f32 WidthOverHeight;
 };
 
 struct game_sound_output_buffer

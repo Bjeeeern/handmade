@@ -481,7 +481,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* Output)
                              Entry->Bitmap,
                              Entry->Color);
 
-#if 0
+#if 1
           DrawLine(Output, PixVerts[0], PixVerts[2], {1.0f, 0.25f, 1.0f});
           DrawCircle(Output, (PixVerts[0] + PixVerts[2]) * 0.5f, 3.0f, {1.0f, 1.0f, 0.0f, 1.0f});
 

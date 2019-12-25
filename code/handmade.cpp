@@ -1382,10 +1382,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
           s32 TileSideInPixels = 60;
           f32 PixelsPerMeter = (f32)TileSideInPixels / WorldMap->TileSideInMeters;
 
-#if 0
-          SetCamera(RenderGroup, CamTrans, PixelsPerMeter, positive_infinity32);
-#else
+#if 1
           SetCamera(RenderGroup, CamTrans, PixelsPerMeter, 20.0f, 20.f);
+#else
+          SetCamera(RenderGroup, CamTrans, PixelsPerMeter, positive_infinity32, 20.f);
 #endif
         }
 

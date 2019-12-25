@@ -321,29 +321,40 @@ DrawTriangleSlowly(game_bitmap *Buffer,
     {
       v2 PixelPoint = Vec2(X, Y);
 
-      v3 Point;
+      v3 TriangleWeights;
+      if(LensChamberSize == positive_infinity32)
       {
-        v3 PointInCameraSpace = ToV3(PixelToMeter * (PixelPoint - ScreenCenter), 0);
-        v3 LineDirection = PointInCameraSpace - FocalPoint;
-
-        //NOTE(bjorn): Source: https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection
-        //NOTE(bjorn): TriangleNormal does not actually need to be a normal
-        //since it cancles out when calculating d.
-        //TODO(bjorn): SafeRatio here?
-        f32 d = (Dot((TriangleCenter - FocalPoint), TriangleNormal) / 
-                 Dot(LineDirection, TriangleNormal));
-
-        //TODO(bjorn): Does this assertion make sense? Do I have a problem when 
-        //             NearClipPoint == LensChamberSize ?
-        //Assert(d >= 0);
-
-        Point = FocalPoint + d * LineDirection;
+        TriangleWeights = PointToBarycentricCoordinates(PixelPoint, 
+                                                        PixelSpacePoint0, 
+                                                        PixelSpacePoint1, 
+                                                        PixelSpacePoint2);
       }
+      else
+      {
+        v3 Point;
+        {
+          v3 PointInCameraSpace = ToV3(PixelToMeter * (PixelPoint - ScreenCenter), 0);
+          v3 LineDirection = PointInCameraSpace - FocalPoint;
 
-      v3 TriangleWeights = PointToBarycentricCoordinates(Point, 
-                                                         CameraSpacePoint0, 
-                                                         CameraSpacePoint1, 
-                                                         CameraSpacePoint2);
+          //NOTE(bjorn): Source: https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection
+          //NOTE(bjorn): TriangleNormal does not actually need to be a normal
+          //since it cancles out when calculating d.
+          //TODO(bjorn): SafeRatio here?
+          f32 d = (Dot((TriangleCenter - FocalPoint), TriangleNormal) / 
+                   Dot(LineDirection, TriangleNormal));
+
+          //TODO(bjorn): Does this assertion make sense? Do I have a problem when 
+          //             NearClipPoint == LensChamberSize ?
+          //Assert(d >= 0);
+
+          Point = FocalPoint + d * LineDirection;
+        }
+
+        TriangleWeights = PointToBarycentricCoordinates(Point, 
+                                                        CameraSpacePoint0, 
+                                                        CameraSpacePoint1, 
+                                                        CameraSpacePoint2);
+      }
 
       b32 InsideTriangle = (TriangleWeights.X >= 0 &&
                             TriangleWeights.Y >= 0 &&

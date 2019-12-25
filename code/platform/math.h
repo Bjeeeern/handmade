@@ -2353,7 +2353,7 @@ IsWithinInclusive(f32 Value, f32 Lower, f32 Upper)
 //TODO STUDY(bjorn): Get an intuition for what is going on here.
 // https://codeplea.com/triangular-interpolation
 inline v3 
-BayesianWeights2D(v2 V0, v2 V1, v2 V2, v2 P)
+PointToBarycentricCoordinates(v2 P, v2 V0, v2 V1, v2 V2)
 {
   v3 Result;
 
@@ -2366,14 +2366,19 @@ BayesianWeights2D(v2 V0, v2 V1, v2 V2, v2 P)
 }
 
 inline v3 
-BayesianWeights3D(v3 V0, v3 V1, v3 V2, v3 P)
+PointToBarycentricCoordinates(v3 P, v3 V0, v3 V1, v3 V2)
 {
   v3 Result;
 
   v3 TotalAreaVector = Cross(V2-V0, V1-V0);
-  v3 AreaAVector = Cross(V2-P, V1-P);
-  v3 AreaBVector = Cross(V0-P, V2-P);
-  v3 AreaCVector = Cross(V1-P, V0-P);
+
+  v3 V0P = V0-P;
+  v3 V1P = V1-P;
+  v3 V2P = V2-P;
+
+  v3 AreaAVector = Cross(V2P, V1P);
+  v3 AreaBVector = Cross(V0P, V2P);
+  v3 AreaCVector = Cross(V1P, V0P);
 
   f32 DotAB = Dot(AreaAVector, AreaBVector);
   f32 DotBC = Dot(AreaBVector, AreaCVector);

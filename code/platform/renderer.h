@@ -338,8 +338,10 @@ DrawTriangleSlowly(game_bitmap *Buffer,
         Point = FocalPoint + d * LineDirection;
       }
 
-      v3 TriangleWeights = 
-        BayesianWeights3D(CameraSpacePoint0, CameraSpacePoint1, CameraSpacePoint2, Point);
+      v3 TriangleWeights = PointToBarycentricCoordinates(Point, 
+                                                         CameraSpacePoint0, 
+                                                         CameraSpacePoint1, 
+                                                         CameraSpacePoint2);
 
       b32 InsideTriangle = (TriangleWeights.X >= 0 &&
                             TriangleWeights.Y >= 0 &&

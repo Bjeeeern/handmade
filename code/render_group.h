@@ -329,12 +329,21 @@ DrawTriangleSlowly(game_bitmap *Buffer,
        (ScreenVars->MeterToPixel * CameraSpacePoint2.XY) * PerspectiveCorrection);
   }
 
+  f32 Bary2D_V1YmV2Y = (PixelSpacePoint1.Y - PixelSpacePoint2.Y);
+  f32 Bary2D_V0XmV2X = (PixelSpacePoint0.X - PixelSpacePoint2.X);
+  f32 Bary2D_V2XmV1X = (PixelSpacePoint2.X - PixelSpacePoint1.X);
+  f32 Bary2D_V0YmV2Y = (PixelSpacePoint0.Y - PixelSpacePoint2.Y);
+  f32 Bary2D_V2YmV0Y = (PixelSpacePoint2.Y - PixelSpacePoint0.Y);
+  f32 Bary2D_InvDenom = 1.0f / (Bary2D_V1YmV2Y*Bary2D_V0XmV2X + Bary2D_V2XmV1X*Bary2D_V0YmV2Y);
+
   v3 FocalPoint = {0,0,CamParam->LensChamberSize};
   v3 TriangleNormal = 
     Cross(CameraSpacePoint1-CameraSpacePoint0, CameraSpacePoint2-CameraSpacePoint0);
   v3 TriangleCenter = (CameraSpacePoint0 + CameraSpacePoint1 + CameraSpacePoint2) * (1.0f/3.0f);
 
-  b32 CameraAndTriangleNormalsAreOrthogonal = Dot(TriangleNormal, TriangleCenter - FocalPoint) == 0;
+  //TODO(bjorn): Better name here.
+  f32 LinePlaneIntersection_Numerator = Dot(TriangleCenter - FocalPoint, TriangleNormal);
+  b32 CameraAndTriangleNormalsAreOrthogonal = LinePlaneIntersection_Numerator  == 0;
   if(CameraAndTriangleNormalsAreOrthogonal) { return; }
 
   s32 Left   = RoundF32ToS32(Min(Min(PixelSpacePoint0.X, PixelSpacePoint1.X),PixelSpacePoint2.X));
@@ -350,10 +359,14 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 
   RGBA.RGB *= RGBA.A;
 
+  b32 IsOrthogonal = CamParam->LensChamberSize == positive_infinity32;
+
+  f32 PixelToMeter = ScreenVars->PixelToMeter.A;
+
   u32 *UpperLeftPixel = Buffer->Memory + Left + Bottom * Buffer->Pitch;
   for(s32 Y = Bottom;
       Y < Top;
-			++Y)
+      ++Y)
 	{
 		u32 *Pixel = UpperLeftPixel;
 
@@ -363,47 +376,54 @@ DrawTriangleSlowly(game_bitmap *Buffer,
     {
       BEGIN_TIMED_BLOCK(TestPixel);
 
-      v2 PixelPoint = Vec2(X, Y);
+      v2 PixelPoint = {(f32)X, (f32)Y};
 
-      v3 TriangleWeights;
-      if(CamParam->LensChamberSize == positive_infinity32)
+      f32 TriangleWeight0;
+      f32 TriangleWeight1;
+      f32 TriangleWeight2;
+      if(IsOrthogonal)
       {
-        TriangleWeights = PointToBarycentricCoordinates(PixelPoint, 
-                                                        PixelSpacePoint0, 
-                                                        PixelSpacePoint1, 
-                                                        PixelSpacePoint2);
+        f32 PYmV2Y = (PixelPoint.Y - PixelSpacePoint2.Y);
+        f32 PXmV2X = (PixelPoint.X - PixelSpacePoint2.X);
+
+        TriangleWeight0 = (Bary2D_V1YmV2Y*PXmV2X + Bary2D_V2XmV1X*PYmV2Y) * Bary2D_InvDenom; 
+        TriangleWeight1 = (Bary2D_V2YmV0Y*PXmV2X + Bary2D_V0XmV2X*PYmV2Y) * Bary2D_InvDenom; 
+        TriangleWeight2 = 1.0f - TriangleWeight0 - TriangleWeight1;
       }
       else
       {
+        //NOTE(bjorn): Source: https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection
         v3 Point;
         {
-          v3 PointInCameraSpace = 
-            ToV3(ScreenVars->PixelToMeter * (PixelPoint - ScreenVars->Center), 0);
-          v3 LineDirection = PointInCameraSpace - FocalPoint;
+          f32 PointInCameraSpaceX = PixelToMeter * (PixelPoint.X - ScreenVars->Center.X);
+          f32 PointInCameraSpaceY = PixelToMeter * (PixelPoint.Y - ScreenVars->Center.Y);
 
-          //NOTE(bjorn): Source: https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection
-          //NOTE(bjorn): TriangleNormal does not actually need to be a normal
-          //since it cancles out when calculating d.
-          //TODO(bjorn): SafeRatio here?
-          f32 d = (Dot((TriangleCenter - FocalPoint), TriangleNormal) / 
-                   Dot(LineDirection, TriangleNormal));
+          v3 LineDirection = { PointInCameraSpaceX,
+                               PointInCameraSpaceY,
+                               -FocalPoint.Z};
 
-          //TODO(bjorn): Does this assertion make sense? Do I have a problem when 
-          //             NearClipPoint == LensChamberSize ?
-          //Assert(d >= 0);
+          f32 Denominator = (LineDirection.X * TriangleNormal.X +
+                             LineDirection.Y * TriangleNormal.Y +
+                             LineDirection.Z * TriangleNormal.Z);
+          f32 d = LinePlaneIntersection_Numerator / Denominator;
 
-          Point = FocalPoint + d * LineDirection;
+          Point.X = d * LineDirection.X;
+          Point.Y = d * LineDirection.Y;
+          Point.Z = (1 - d) * FocalPoint.Z;
         }
 
-        TriangleWeights = PointToBarycentricCoordinates(Point, 
-                                                        CameraSpacePoint0, 
-                                                        CameraSpacePoint1, 
-                                                        CameraSpacePoint2);
+        v3 TriangleWeights = PointToBarycentricCoordinates(Point, 
+                                                           CameraSpacePoint0, 
+                                                           CameraSpacePoint1, 
+                                                           CameraSpacePoint2);
+        TriangleWeight0 = TriangleWeights.X;
+        TriangleWeight1 = TriangleWeights.Y;
+        TriangleWeight2 = TriangleWeights.Z;
       }
 
-      b32 InsideTriangle = (TriangleWeights.X >= 0 &&
-                            TriangleWeights.Y >= 0 &&
-                            TriangleWeights.Z >= 0);
+      b32 InsideTriangle = (TriangleWeight0 >= 0 &&
+                            TriangleWeight1 >= 0 &&
+                            TriangleWeight2 >= 0);
       if(InsideTriangle)
       {
         BEGIN_TIMED_BLOCK(FillPixel);
@@ -411,12 +431,14 @@ DrawTriangleSlowly(game_bitmap *Buffer,
         v4 Texel;
         if(Bitmap)
         {
-          v2 UV = (TriangleWeights.X * UV0 +
-                   TriangleWeights.Y * UV1 +
-                   TriangleWeights.Z * UV2);
+          v2 UV = (TriangleWeight0 * UV0 +
+                   TriangleWeight1 * UV1 +
+                   TriangleWeight2 * UV2);
 
+#if 0
           Assert(0.0f <= UV.U && UV.U <= 1.0f);
           Assert(0.0f <= UV.V && UV.V <= 1.0f);
+#endif
 
           f32 tX = (1.0f + (UV.U * (f32)(Bitmap->Width -3)) + 0.5f);
           f32 tY = (1.0f + (UV.V * (f32)(Bitmap->Height-3)) + 0.5f);

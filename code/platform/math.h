@@ -2382,12 +2382,16 @@ PointToBarycentricCoordinates(v3 P, v3 V0, v3 V1, v3 V2)
 
   f32 DotAB = Dot(AreaAVector, AreaBVector);
   f32 DotBC = Dot(AreaBVector, AreaCVector);
-  f32 DotTA = Dot(TotalAreaVector, AreaAVector);
-  f32 DotTB = Dot(TotalAreaVector, AreaBVector);
+  f32 DotBB = Dot(AreaBVector, AreaBVector);
+  f32 InvDotTB = 1.0f / Dot(TotalAreaVector, AreaBVector);
 
-  Result.X = DotAB / DotTB;
-  Result.Y = DotAB / DotTA;
-  Result.Z = DotBC / DotTB;
+  Result.X = DotAB * InvDotTB;
+  Result.Y = DotBB * InvDotTB;
+  Result.Z = DotBC * InvDotTB;
+
+  //TODO(bjorn):
+  // f32 Epsilon = 0.0001f;
+  // Result.Z = 1.0f - Result.X - Result.Y + Epsilon;
 
   return Result;
 }

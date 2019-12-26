@@ -336,6 +336,9 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   f32 Bary2D_V2YmV0Y = (PixelSpacePoint2.Y - PixelSpacePoint0.Y);
   f32 Bary2D_InvDenom = 1.0f / (Bary2D_V1YmV2Y*Bary2D_V0XmV2X + Bary2D_V2XmV1X*Bary2D_V0YmV2Y);
 
+  v3 Bary3D_TotalAreaVector = Cross(CameraSpacePoint2-CameraSpacePoint0, 
+                                    CameraSpacePoint1-CameraSpacePoint0);
+
   v3 FocalPoint = {0,0,CamParam->LensChamberSize};
   v3 TriangleNormal = 
     Cross(CameraSpacePoint1-CameraSpacePoint0, CameraSpacePoint2-CameraSpacePoint0);
@@ -378,17 +381,17 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 
       v2 PixelPoint = {(f32)X, (f32)Y};
 
-      f32 TriangleWeight0;
-      f32 TriangleWeight1;
-      f32 TriangleWeight2;
+      f32 BarycentricWeight0;
+      f32 BarycentricWeight1;
+      f32 BarycentricWeight2;
       if(IsOrthogonal)
       {
         f32 PYmV2Y = (PixelPoint.Y - PixelSpacePoint2.Y);
         f32 PXmV2X = (PixelPoint.X - PixelSpacePoint2.X);
 
-        TriangleWeight0 = (Bary2D_V1YmV2Y*PXmV2X + Bary2D_V2XmV1X*PYmV2Y) * Bary2D_InvDenom; 
-        TriangleWeight1 = (Bary2D_V2YmV0Y*PXmV2X + Bary2D_V0XmV2X*PYmV2Y) * Bary2D_InvDenom; 
-        TriangleWeight2 = 1.0f - TriangleWeight0 - TriangleWeight1;
+        BarycentricWeight0 = (Bary2D_V1YmV2Y*PXmV2X + Bary2D_V2XmV1X*PYmV2Y) * Bary2D_InvDenom; 
+        BarycentricWeight1 = (Bary2D_V2YmV0Y*PXmV2X + Bary2D_V0XmV2X*PYmV2Y) * Bary2D_InvDenom; 
+        BarycentricWeight2 = 1.0f - BarycentricWeight0 - BarycentricWeight1;
       }
       else
       {
@@ -412,18 +415,31 @@ DrawTriangleSlowly(game_bitmap *Buffer,
           Point.Z = (1 - d) * FocalPoint.Z;
         }
 
-        v3 TriangleWeights = PointToBarycentricCoordinates(Point, 
-                                                           CameraSpacePoint0, 
-                                                           CameraSpacePoint1, 
-                                                           CameraSpacePoint2);
-        TriangleWeight0 = TriangleWeights.X;
-        TriangleWeight1 = TriangleWeights.Y;
-        TriangleWeight2 = TriangleWeights.Z;
+        v3 V0P = CameraSpacePoint0-Point;
+        v3 V1P = CameraSpacePoint1-Point;
+        v3 V2P = CameraSpacePoint2-Point;
+
+        v3 AreaAVector = Cross(V2P, V1P);
+        v3 AreaBVector = Cross(V0P, V2P);
+
+        f32 DotAB = Dot(AreaAVector, AreaBVector);
+        f32 DotBB = Dot(AreaBVector, AreaBVector);
+        f32 InvDotTB = 1.0f / Dot(Bary3D_TotalAreaVector, AreaBVector);
+
+        //TODO(bjorn): Deal with artefacts due to indirect calculation of the last weight.
+        f32 Epsilon = 0.0001f;
+        BarycentricWeight0 = DotAB * InvDotTB;
+        BarycentricWeight1 = DotBB * InvDotTB;
+        BarycentricWeight2 = 1.0f - BarycentricWeight0 - BarycentricWeight1;
+
+        BarycentricWeight0 += Epsilon;
+        BarycentricWeight1 += Epsilon;
+        BarycentricWeight2 += Epsilon;
       }
 
-      b32 InsideTriangle = (TriangleWeight0 >= 0 &&
-                            TriangleWeight1 >= 0 &&
-                            TriangleWeight2 >= 0);
+      b32 InsideTriangle = (BarycentricWeight0 >= 0 &&
+                            BarycentricWeight1 >= 0 &&
+                            BarycentricWeight2 >= 0);
       if(InsideTriangle)
       {
         BEGIN_TIMED_BLOCK(FillPixel);
@@ -431,23 +447,26 @@ DrawTriangleSlowly(game_bitmap *Buffer,
         v4 Texel;
         if(Bitmap)
         {
-          v2 UV = (TriangleWeight0 * UV0 +
-                   TriangleWeight1 * UV1 +
-                   TriangleWeight2 * UV2);
+          v2 UV = (BarycentricWeight0 * UV0 +
+                   BarycentricWeight1 * UV1 +
+                   BarycentricWeight2 * UV2);
 
 #if 0
           Assert(0.0f <= UV.U && UV.U <= 1.0f);
           Assert(0.0f <= UV.V && UV.V <= 1.0f);
 #endif
 
-          f32 tX = (1.0f + (UV.U * (f32)(Bitmap->Width -3)) + 0.5f);
-          f32 tY = (1.0f + (UV.V * (f32)(Bitmap->Height-3)) + 0.5f);
+          f32 tX = UV.U * (f32)(Bitmap->Width -2);
+          f32 tY = UV.V * (f32)(Bitmap->Height-2);
 
           s32 wX = (s32)tX;
           s32 wY = (s32)tY;
 
           f32 fX = tX - wX;
           f32 fY = tY - wY;
+
+          Assert(0 <= tX && tX < Bitmap->Width);
+          Assert(0 <= tY && tY < Bitmap->Height);
 
           u32* TexelPtr = Bitmap->Memory + Bitmap->Pitch * wY + wX;
           u32* TexelPtrA = TexelPtr;

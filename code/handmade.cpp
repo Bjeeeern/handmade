@@ -107,7 +107,11 @@ GenerateTile(game_state* GameState, game_bitmap* Buffer)
 
   v4 Color = {1.0f,1.0f,1.0f,1.0f};
 
+#if 0
   u32 Count = 50;
+#else
+  u32 Count = 0;
+#endif
   for(u32 Index = 0; Index < Count; Index++)
   {
     v2 Offset = Hadamard(RandomBilateralV2(&Series) * 0.5f, Buffer->Dim);
@@ -633,8 +637,16 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
   GenerateTile(GameState, &GameState->GeneratedTile);
 }
 
+#if HANDMADE_INTERNAL
+game_memory* DebugGlobalMemory; 
+#endif
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
+#if HANDMADE_INTERNAL
+  DebugGlobalMemory = Memory;
+#endif
+  BEGIN_TIMED_BLOCK(GameUpdateAndRender);
+
 #if HANDMADE_SLOW
 	{
 		s64 Amount = (&GetController(Input, 1)->Struct_Terminator - 
@@ -1577,6 +1589,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 	EndTemporaryMemory(TempMem);
 	CheckMemoryArena(FrameBoundedTransientArena);
+
+  END_TIMED_BLOCK(GameUpdateAndRender);
 }
 
 	internal_function void

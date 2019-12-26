@@ -1223,6 +1223,33 @@ Win32GetEXEFileName(win32_state *State)
 	}
 }
 
+internal_function void
+HandleDebugCycleCounters(game_memory* Memory)
+{
+#if HANDMADE_INTERNAL
+  OutputDebugStringA("DEBUG CYCLE COUNTS:\n");
+  for(s32 CounterIndex = 0;
+      CounterIndex < ArrayCount(Memory->Counters);
+      CounterIndex++)
+  {
+    debug_cycle_counter* Counter = Memory->Counters + CounterIndex;
+
+    if(Counter->HitCount)
+    {
+      char TextBuffer[256];
+      sprintf_s(TextBuffer, 
+                "%d: %I64ucy %uh %I64ucy/h\n",
+                CounterIndex, Counter->CycleCount, Counter->HitCount, 
+                Counter->CycleCount / Counter->HitCount);
+      OutputDebugStringA(TextBuffer);
+
+      Counter->CycleCount = 0;
+      Counter->HitCount = 0;
+    }
+  }
+#endif
+}
+
 	s32 CALLBACK 
 WinMain(HINSTANCE Instance,
 				HINSTANCE PrevInstance,
@@ -1621,8 +1648,12 @@ WinMain(HINSTANCE Instance,
 				Win32PlayBackInput(&Win32State, &NewGameInput);
 			}
 #endif
-			Game->Code.UpdateAndRender(TargetSecondsPerFrame, &Thread, &Game->Memory, 
-																 &NewGameInput, &GameBuffer);
+      if(Game->Code.UpdateAndRender)
+      {
+        HandleDebugCycleCounters(&Game->Memory);
+        Game->Code.UpdateAndRender(TargetSecondsPerFrame, &Thread, &Game->Memory, 
+                                   &NewGameInput, &GameBuffer);
+      }
 
 			DWORD PlayCursor;
 			DWORD WriteCursor;
@@ -1736,10 +1767,13 @@ WinMain(HINSTANCE Instance,
 				GameSoundBuffer.SampleCount = BytesToWrite / SoundOutput.BytesPerSample;
 				GameSoundBuffer.Samples = SoundSamplesBuffer;
 
-				Game->Code.GetSoundSamples(&Thread, &GameSoundBuffer, &Game->Memory);
+        if(Game->Code.GetSoundSamples)
+        {
+          Game->Code.GetSoundSamples(&Thread, &GameSoundBuffer, &Game->Memory);
+        }
 				Win32FillSoundBuffer(&SoundOutput, ByteToLock, BytesToWrite, &GameSoundBuffer,
 														 SecondarySoundBuffer);
-#if HANDMADE_INTERNAL
+#if 0//HANDMADE_INTERNAL
 				{
 					s32 WCPCDiff_ms = ((1000*((UnwrappedWriteCursor - PlayCursor) / 
 																		SoundOutput.BytesPerSample)) /
@@ -1759,7 +1793,7 @@ WinMain(HINSTANCE Instance,
 			OldGameInput = NewGameInput;
 
 			LARGE_INTEGER WorkCounter = Win32GetWallClock();
-#if HANDMADE_INTERNAL
+#if 0//HANDMADE_INTERNAL
 			{
 				u64 WorkCycleCount = __rdtsc();
 
@@ -1813,7 +1847,7 @@ WinMain(HINSTANCE Instance,
 				// TODO(bjorn): Logging.
 			}
 
-#if HANDMADE_INTERNAL
+#if 0//HANDMADE_INTERNAL
 			{
 				LARGE_INTEGER EndCounter = Win32GetWallClock();
 				u64 EndCycleCount = __rdtsc();

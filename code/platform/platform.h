@@ -45,6 +45,33 @@ typedef DEBUG_PLATFORM_FREE_FILE_MEMORY(debug_platform_free_file_memory);
 
 #define DEBUG_PLATFORM_GET_FILE_EDIT_TIMESTAMP(name) u64 name(char *FileName)
 typedef DEBUG_PLATFORM_GET_FILE_EDIT_TIMESTAMP(debug_platform_get_file_edit_timestamp);
+
+enum
+{
+  DebugCycleCounter_GameUpdateAndRender,
+  DebugCycleCounter_RenderGroupToOutput,
+  DebugCycleCounter_DrawTriangleSlowly,
+  DebugCycleCounter_TestPixel,
+  DebugCycleCounter_FillPixel,
+  DebugCycleCounter_Count,
+};
+
+struct debug_cycle_counter
+{
+  u64 CycleCount;
+  u32 HitCount;
+};
+
+extern struct game_memory* DebugGlobalMemory; 
+
+#if COMPILER_MSVC
+#define BEGIN_TIMED_BLOCK(ID) u64 StartCycleCount##ID = __rdtsc();
+#define END_TIMED_BLOCK(ID) DebugGlobalMemory->Counters[DebugCycleCounter_##ID].CycleCount += __rdtsc() - StartCycleCount##ID; DebugGlobalMemory->Counters[DebugCycleCounter_##ID].HitCount++;
+#else
+#define BEGIN_TIMED_BLOCK(ID)
+#define END_TIMED_BLOCK(ID)
+#endif
+
 #endif
 
 //
@@ -301,10 +328,14 @@ struct game_memory
 	memi TransientStorageSize;
 	void *TransientStorage; 
 
+#if HANDMADE_INTERNAL
 	debug_platform_read_entire_file *DEBUGPlatformReadEntireFile;
 	debug_platform_write_entire_file *DEBUGPlatformWriteEntireFile;
 	debug_platform_free_file_memory *DEBUGPlatformFreeFileMemory;
 	debug_platform_get_file_edit_timestamp *DEBUGPlatformGetFileEditTimestamp;
+
+  debug_cycle_counter Counters[DebugCycleCounter_Count];
+#endif
 };
 
 #define GAME_UPDATE_AND_RENDER(name) void name(f32 SecondsToUpdate, thread_context *Thread,\

@@ -252,6 +252,27 @@ DrawChar(game_bitmap *Buffer, font *Font, u32 UnicodeCodePoint,
 	}
 }
 
+//NOTE(bjorn):
+//
+// Cycle count per pixel estimation
+// 
+// bitshift 24
+// bitmask 24
+// s32tof32 2
+// f32tos32 2
+// mul 61
+// sub 29
+// add 13
+// dot 6
+// cross 4
+// div 9
+// comp 3
+// lerp 3
+// sqrt 3
+//
+// total: greater than 181 cycles, measured 270 ish.
+// target: 50 or so.
+//
 	internal_function void
 DrawTriangleSlowly(game_bitmap *Buffer, 
                    camera_parameters* CamParam, output_target_screen_variables* ScreenVars,
@@ -259,6 +280,8 @@ DrawTriangleSlowly(game_bitmap *Buffer,
                    v2 UV0, v2 UV1, v2 UV2, 
                    game_bitmap* Bitmap, v4 RGBA)
 {
+  BEGIN_TIMED_BLOCK(DrawTriangleSlowly);
+
   b32 AllPointsBehindClipPoint = false;
   {
     if(CameraSpacePoint0.Z > CamParam->NearClipPoint &&
@@ -286,21 +309,24 @@ DrawTriangleSlowly(game_bitmap *Buffer,
     f32 PerspectiveCorrection = SafeRatio0(CamParam->LensChamberSize, Divisor);
 
     PixelSpacePoint0 = 
-      (ScreenVars->Center + (ScreenVars->MeterToPixel * CameraSpacePoint0.XY) * PerspectiveCorrection);
+      (ScreenVars->Center + 
+       (ScreenVars->MeterToPixel * CameraSpacePoint0.XY) * PerspectiveCorrection);
   }
   {
     f32 Divisor = (CamParam->LensChamberSize - CameraSpacePoint1.Z);
     f32 PerspectiveCorrection = SafeRatio0(CamParam->LensChamberSize, Divisor);
 
     PixelSpacePoint1 = 
-      (ScreenVars->Center + (ScreenVars->MeterToPixel * CameraSpacePoint1.XY) * PerspectiveCorrection);
+      (ScreenVars->Center + 
+       (ScreenVars->MeterToPixel * CameraSpacePoint1.XY) * PerspectiveCorrection);
   }
   {
     f32 Divisor = (CamParam->LensChamberSize - CameraSpacePoint2.Z);
     f32 PerspectiveCorrection = SafeRatio0(CamParam->LensChamberSize, Divisor);
 
     PixelSpacePoint2 = 
-      (ScreenVars->Center + (ScreenVars->MeterToPixel * CameraSpacePoint2.XY) * PerspectiveCorrection);
+      (ScreenVars->Center + 
+       (ScreenVars->MeterToPixel * CameraSpacePoint2.XY) * PerspectiveCorrection);
   }
 
   v3 FocalPoint = {0,0,CamParam->LensChamberSize};
@@ -335,6 +361,8 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 				X < Right;
 				++X)
     {
+      BEGIN_TIMED_BLOCK(TestPixel);
+
       v2 PixelPoint = Vec2(X, Y);
 
       v3 TriangleWeights;
@@ -349,7 +377,8 @@ DrawTriangleSlowly(game_bitmap *Buffer,
       {
         v3 Point;
         {
-          v3 PointInCameraSpace = ToV3(ScreenVars->PixelToMeter * (PixelPoint - ScreenVars->Center), 0);
+          v3 PointInCameraSpace = 
+            ToV3(ScreenVars->PixelToMeter * (PixelPoint - ScreenVars->Center), 0);
           v3 LineDirection = PointInCameraSpace - FocalPoint;
 
           //NOTE(bjorn): Source: https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection
@@ -377,6 +406,8 @@ DrawTriangleSlowly(game_bitmap *Buffer,
                             TriangleWeights.Z >= 0);
       if(InsideTriangle)
       {
+        BEGIN_TIMED_BLOCK(FillPixel);
+
         v4 Texel;
         if(Bitmap)
         {
@@ -449,13 +480,19 @@ DrawTriangleSlowly(game_bitmap *Buffer,
                      ((u32)(Blended.B+0.5f) <<  0));
 
         *Pixel = Color;
+
+        END_TIMED_BLOCK(FillPixel);
       }
 
       Pixel++;
+
+      END_TIMED_BLOCK(TestPixel);
     }
 
     UpperLeftPixel += Buffer->Pitch;
   }
+
+  END_TIMED_BLOCK(DrawTriangleSlowly);
 }
 
   internal_function void
@@ -988,6 +1025,8 @@ DrawVector(render_group* RenderGroup, output_target_screen_variables* ScreenVars
   internal_function void
 RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 ScreenHeightInMeters)
 {
+  BEGIN_TIMED_BLOCK(RenderGroupToOutput);
+
   output_target_screen_variables ScreenVars = {};
   {
     Assert(ScreenHeightInMeters > 0);
@@ -1183,6 +1222,8 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
       InvalidDefaultCase;
     }
   }
+
+  END_TIMED_BLOCK(RenderGroupToOutput);
 }
 
 

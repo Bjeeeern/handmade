@@ -361,6 +361,7 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   Top = Top > Buffer->Height ? Buffer->Height : Top;
 
   RGBA.RGB *= RGBA.A;
+  f32 Inv255 = 1.0f/255.0f;
 
   b32 IsOrthogonal = CamParam->LensChamberSize == positive_infinity32;
 
@@ -444,20 +445,22 @@ DrawTriangleSlowly(game_bitmap *Buffer,
       {
         BEGIN_TIMED_BLOCK(FillPixel);
 
-        v4 Texel;
+        f32 TexelR;
+        f32 TexelG;
+        f32 TexelB;
+        f32 TexelA;
         if(Bitmap)
         {
-          v2 UV = (BarycentricWeight0 * UV0 +
-                   BarycentricWeight1 * UV1 +
-                   BarycentricWeight2 * UV2);
+          f32 U = BarycentricWeight0*UV0.U + BarycentricWeight1*UV1.U + BarycentricWeight2*UV2.U;
+          f32 V = BarycentricWeight0*UV0.V + BarycentricWeight1*UV1.V + BarycentricWeight2*UV2.V;
 
 #if 0
           Assert(0.0f <= UV.U && UV.U <= 1.0f);
           Assert(0.0f <= UV.V && UV.V <= 1.0f);
 #endif
 
-          f32 tX = UV.U * (f32)(Bitmap->Width -2);
-          f32 tY = UV.V * (f32)(Bitmap->Height-2);
+          f32 tX = U * (f32)(Bitmap->Width -2);
+          f32 tY = V * (f32)(Bitmap->Height-2);
 
           s32 wX = (s32)tX;
           s32 wY = (s32)tY;
@@ -469,56 +472,100 @@ DrawTriangleSlowly(game_bitmap *Buffer,
           Assert(0 <= tY && tY < Bitmap->Height);
 
           u32* TexelPtr = Bitmap->Memory + Bitmap->Pitch * wY + wX;
-          u32* TexelPtrA = TexelPtr;
-          u32* TexelPtrB = TexelPtr + 1;
-          u32* TexelPtrC = TexelPtr + Bitmap->Pitch;
-          u32* TexelPtrD = TexelPtr + Bitmap->Pitch + 1;
+          u32* TexelPtr0 = TexelPtr;
+          u32* TexelPtr1 = TexelPtr + 1;
+          u32* TexelPtr2 = TexelPtr + Bitmap->Pitch;
+          u32* TexelPtr3 = TexelPtr + Bitmap->Pitch + 1;
 
-          v4 TexelA = { (f32)((*TexelPtrA >> 16)&0xFF),
-                        (f32)((*TexelPtrA >>  8)&0xFF),
-                        (f32)((*TexelPtrA >>  0)&0xFF),
-                        (f32)((*TexelPtrA >> 24)&0xFF)};
-          v4 TexelB = { (f32)((*TexelPtrB >> 16)&0xFF),
-                        (f32)((*TexelPtrB >>  8)&0xFF),
-                        (f32)((*TexelPtrB >>  0)&0xFF),
-                        (f32)((*TexelPtrB >> 24)&0xFF)};
-          v4 TexelC = { (f32)((*TexelPtrC >> 16)&0xFF),
-                        (f32)((*TexelPtrC >>  8)&0xFF),
-                        (f32)((*TexelPtrC >>  0)&0xFF),
-                        (f32)((*TexelPtrC >> 24)&0xFF)};
-          v4 TexelD = { (f32)((*TexelPtrD >> 16)&0xFF),
-                        (f32)((*TexelPtrD >>  8)&0xFF),
-                        (f32)((*TexelPtrD >>  0)&0xFF),
-                        (f32)((*TexelPtrD >> 24)&0xFF)};
+          f32 TexelSmp0R = (f32)((*TexelPtr0 >> 16)&0xFF);
+          f32 TexelSmp0G = (f32)((*TexelPtr0 >>  8)&0xFF);
+          f32 TexelSmp0B = (f32)((*TexelPtr0 >>  0)&0xFF);
+          f32 TexelSmp0A = (f32)((*TexelPtr0 >> 24)&0xFF);
 
-          TexelA = sRGB255ToLinear1(TexelA);
-          TexelB = sRGB255ToLinear1(TexelB);
-          TexelC = sRGB255ToLinear1(TexelC);
-          TexelD = sRGB255ToLinear1(TexelD);
+          f32 TexelSmp1R = (f32)((*TexelPtr1 >> 16)&0xFF);
+          f32 TexelSmp1G = (f32)((*TexelPtr1 >>  8)&0xFF);
+          f32 TexelSmp1B = (f32)((*TexelPtr1 >>  0)&0xFF);
+          f32 TexelSmp1A = (f32)((*TexelPtr1 >> 24)&0xFF);
 
-          Texel = Lerp(fY, Lerp(fX, TexelA, TexelB), Lerp(fX, TexelC, TexelD));
+          f32 TexelSmp2R = (f32)((*TexelPtr2 >> 16)&0xFF);
+          f32 TexelSmp2G = (f32)((*TexelPtr2 >>  8)&0xFF);
+          f32 TexelSmp2B = (f32)((*TexelPtr2 >>  0)&0xFF);
+          f32 TexelSmp2A = (f32)((*TexelPtr2 >> 24)&0xFF);
 
-          Texel = Hadamard(Texel, RGBA);
+          f32 TexelSmp3R = (f32)((*TexelPtr3 >> 16)&0xFF);
+          f32 TexelSmp3G = (f32)((*TexelPtr3 >>  8)&0xFF);
+          f32 TexelSmp3B = (f32)((*TexelPtr3 >>  0)&0xFF);
+          f32 TexelSmp3A = (f32)((*TexelPtr3 >> 24)&0xFF);
+
+          TexelSmp0R = Square(TexelSmp0R * Inv255);
+          TexelSmp0G = Square(TexelSmp0G * Inv255);
+          TexelSmp0B = Square(TexelSmp0B * Inv255);
+          TexelSmp0A =        TexelSmp0A * Inv255;
+
+          TexelSmp1R = Square(TexelSmp1R * Inv255);
+          TexelSmp1G = Square(TexelSmp1G * Inv255);
+          TexelSmp1B = Square(TexelSmp1B * Inv255);
+          TexelSmp1A =        TexelSmp1A * Inv255;
+
+          TexelSmp2R = Square(TexelSmp2R * Inv255);
+          TexelSmp2G = Square(TexelSmp2G * Inv255);
+          TexelSmp2B = Square(TexelSmp2B * Inv255);
+          TexelSmp2A =        TexelSmp2A * Inv255;
+
+          TexelSmp3R = Square(TexelSmp3R * Inv255);
+          TexelSmp3G = Square(TexelSmp3G * Inv255);
+          TexelSmp3B = Square(TexelSmp3B * Inv255);
+          TexelSmp3A =        TexelSmp3A * Inv255;
+
+          f32 ifY = (1.0f-fY);
+          f32 ifX = (1.0f-fX);
+          f32 ifYmifX = ifY*ifX;
+          f32 ifYmfX  = ifY*fX;
+          f32 ifXmfY  = ifX*fY;
+          f32 fXmfY   = fX*fY;
+          TexelR = ifYmifX*TexelSmp0R + ifYmfX*TexelSmp1R + ifXmfY*TexelSmp2R + fXmfY*TexelSmp3R;
+          TexelG = ifYmifX*TexelSmp0G + ifYmfX*TexelSmp1G + ifXmfY*TexelSmp2G + fXmfY*TexelSmp3G;
+          TexelB = ifYmifX*TexelSmp0B + ifYmfX*TexelSmp1B + ifXmfY*TexelSmp2B + fXmfY*TexelSmp3B;
+          TexelA = ifYmifX*TexelSmp0A + ifYmfX*TexelSmp1A + ifXmfY*TexelSmp2A + fXmfY*TexelSmp3A;
+
+          TexelR = TexelR * RGBA.R;
+          TexelG = TexelG * RGBA.G;
+          TexelB = TexelB * RGBA.B;
+          TexelA = TexelA * RGBA.A;
         }
         else
         {
-          Texel = RGBA;
+          TexelR = RGBA.R;
+          TexelG = RGBA.G;
+          TexelB = RGBA.B;
+          TexelA = RGBA.A;
         }
 
-        v4 DestColor = { (f32)((*Pixel >> 16)&0xFF),
-                         (f32)((*Pixel >>  8)&0xFF),
-                         (f32)((*Pixel >>  0)&0xFF),
-                         (f32)((*Pixel >> 24)&0xFF)};
-        DestColor = sRGB255ToLinear1(DestColor);
+        f32 DestR = (f32)((*Pixel >> 16)&0xFF);
+        f32 DestG = (f32)((*Pixel >>  8)&0xFF);
+        f32 DestB = (f32)((*Pixel >>  0)&0xFF);
+        f32 DestA = (f32)((*Pixel >> 24)&0xFF);
 
-        v4 Blended = DestColor*(1.0f - Texel.A) + Texel;
+        DestR = Square(DestR * Inv255);
+        DestG = Square(DestG * Inv255);
+        DestB = Square(DestB * Inv255);
+        DestA = DestA * Inv255;
 
-        Blended = Linear1TosRGB255(Blended);
+        f32 InvTexelA = (1.0f - TexelA);
+        f32 BlendedR = DestR*InvTexelA + TexelR;
+        f32 BlendedG = DestG*InvTexelA + TexelG;
+        f32 BlendedB = DestB*InvTexelA + TexelB;
+        f32 BlendedA = DestA*InvTexelA + TexelA;
 
-        u32 Color = (((u32)(Blended.A+0.5f) << 24) | 
-                     ((u32)(Blended.R+0.5f) << 16) | 
-                     ((u32)(Blended.G+0.5f) <<  8) | 
-                     ((u32)(Blended.B+0.5f) <<  0));
+        BlendedR = SquareRoot(BlendedR) * 255.0f;
+        BlendedG = SquareRoot(BlendedG) * 255.0f;
+        BlendedB = SquareRoot(BlendedB) * 255.0f;
+        BlendedA = BlendedA * 255.0f;
+
+        u32 Color = (((u32)(BlendedA+0.5f) << 24) | 
+                     ((u32)(BlendedR+0.5f) << 16) | 
+                     ((u32)(BlendedG+0.5f) <<  8) | 
+                     ((u32)(BlendedB+0.5f) <<  0));
 
         *Pixel = Color;
 

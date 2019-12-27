@@ -329,31 +329,6 @@ DrawTriangleSlowly(game_bitmap *Buffer,
        (ScreenVars->MeterToPixel * CameraSpacePoint2.XY) * PerspectiveCorrection);
   }
 
-  f32 Bary2D_V1YmV2Y = (PixelSpacePoint1.Y - PixelSpacePoint2.Y);
-  f32 Bary2D_V0XmV2X = (PixelSpacePoint0.X - PixelSpacePoint2.X);
-  f32 Bary2D_V2XmV1X = (PixelSpacePoint2.X - PixelSpacePoint1.X);
-  f32 Bary2D_V0YmV2Y = (PixelSpacePoint0.Y - PixelSpacePoint2.Y);
-  f32 Bary2D_V2YmV0Y = (PixelSpacePoint2.Y - PixelSpacePoint0.Y);
-  f32 Bary2D_InvDenom = 1.0f / (Bary2D_V1YmV2Y*Bary2D_V0XmV2X + Bary2D_V2XmV1X*Bary2D_V0YmV2Y);
-
-  v3 Bary3D_TotalAreaVector = Cross(CameraSpacePoint2-CameraSpacePoint0, 
-                                    CameraSpacePoint1-CameraSpacePoint0);
-  f32 Bary3D_TotalAreaVectorX = Bary3D_TotalAreaVector.X;
-  f32 Bary3D_TotalAreaVectorY = Bary3D_TotalAreaVector.Y;
-  f32 Bary3D_TotalAreaVectorZ = Bary3D_TotalAreaVector.Z;
-
-  f32 CameraSpacePoint0X = CameraSpacePoint0.X;
-  f32 CameraSpacePoint0Y = CameraSpacePoint0.Y;
-  f32 CameraSpacePoint0Z = CameraSpacePoint0.Z;
-
-  f32 CameraSpacePoint1X = CameraSpacePoint1.X;
-  f32 CameraSpacePoint1Y = CameraSpacePoint1.Y;
-  f32 CameraSpacePoint1Z = CameraSpacePoint1.Z;
-
-  f32 CameraSpacePoint2X = CameraSpacePoint2.X;
-  f32 CameraSpacePoint2Y = CameraSpacePoint2.Y;
-  f32 CameraSpacePoint2Z = CameraSpacePoint2.Z;
-
   v3 FocalPoint = {0,0,CamParam->LensChamberSize};
   v3 TriangleNormal = 
     Cross(CameraSpacePoint1-CameraSpacePoint0, CameraSpacePoint2-CameraSpacePoint0);
@@ -379,7 +354,62 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 
   b32 IsOrthogonal = CamParam->LensChamberSize == positive_infinity32;
 
-  f32 PixelToMeter = ScreenVars->PixelToMeter.A;
+  //NOTE(bjorn): Ortographic barycentric calculation
+  __m128 Const1 = _mm_set1_ps(1.0f);
+
+  __m128 PixelSpacePoint0X = _mm_set1_ps(PixelSpacePoint0.X);
+  __m128 PixelSpacePoint0Y = _mm_set1_ps(PixelSpacePoint0.Y);
+
+  __m128 PixelSpacePoint1X = _mm_set1_ps(PixelSpacePoint1.X);
+  __m128 PixelSpacePoint1Y = _mm_set1_ps(PixelSpacePoint1.Y);
+
+  __m128 PixelSpacePoint2X = _mm_set1_ps(PixelSpacePoint2.X);
+  __m128 PixelSpacePoint2Y = _mm_set1_ps(PixelSpacePoint2.Y);
+
+  __m128 Bary2D_V1YmV2Y = _mm_sub_ps(PixelSpacePoint1Y, PixelSpacePoint2Y);
+  __m128 Bary2D_V0XmV2X = _mm_sub_ps(PixelSpacePoint0X, PixelSpacePoint2X);
+  __m128 Bary2D_V2XmV1X = _mm_sub_ps(PixelSpacePoint2X, PixelSpacePoint1X);
+  __m128 Bary2D_V0YmV2Y = _mm_sub_ps(PixelSpacePoint0Y, PixelSpacePoint2Y);
+  __m128 Bary2D_V2YmV0Y = _mm_sub_ps(PixelSpacePoint2Y, PixelSpacePoint0Y);
+  __m128 Bary2D_InvDenom = 
+    _mm_div_ps(Const1, 
+               _mm_add_ps( _mm_mul_ps(Bary2D_V1YmV2Y, Bary2D_V0XmV2X), 
+                           _mm_mul_ps(Bary2D_V2XmV1X, Bary2D_V0YmV2Y)));
+
+  //NOTE(bjorn): Perspective barycentric calculation
+  __m128 PixelToMeter = _mm_set1_ps(ScreenVars->PixelToMeter.A);
+  __m128 ScreenCenterX = _mm_set1_ps(ScreenVars->Center.X);
+  __m128 ScreenCenterY = _mm_set1_ps(ScreenVars->Center.Y);
+
+  __m128 FocalPointZ = _mm_set1_ps(FocalPoint.Z);
+  __m128 Bary3D_Numerator = _mm_set1_ps(LinePlaneIntersection_Numerator);
+
+  //TODO(bjorn): Deal with artefacts due to indirect calculation of the last weight.
+  __m128 Bary3D_Epsilon = _mm_set1_ps(0.0001f);
+
+  v3 Bary3D_TotalAreaVector = Cross(CameraSpacePoint2-CameraSpacePoint0, 
+                                    CameraSpacePoint1-CameraSpacePoint0);
+  __m128 Bary3D_TotalAreaVectorX = _mm_set1_ps(Bary3D_TotalAreaVector.X);
+  __m128 Bary3D_TotalAreaVectorY = _mm_set1_ps(Bary3D_TotalAreaVector.Y);
+  __m128 Bary3D_TotalAreaVectorZ = _mm_set1_ps(Bary3D_TotalAreaVector.Z);
+
+  __m128 Bary3D_TriangleNormalX = _mm_set1_ps(TriangleNormal.X);
+  __m128 Bary3D_TriangleNormalY = _mm_set1_ps(TriangleNormal.Y);
+
+  __m128 mFocalPointZ_mul_TriangleNormalZ = 
+    _mm_mul_ps(_mm_set1_ps(-FocalPoint.Z), _mm_set1_ps(TriangleNormal.Z));
+
+  __m128 CameraSpacePoint0X = _mm_set1_ps(CameraSpacePoint0.X);
+  __m128 CameraSpacePoint0Y = _mm_set1_ps(CameraSpacePoint0.Y);
+  __m128 CameraSpacePoint0Z = _mm_set1_ps(CameraSpacePoint0.Z);
+
+  __m128 CameraSpacePoint1X = _mm_set1_ps(CameraSpacePoint1.X);
+  __m128 CameraSpacePoint1Y = _mm_set1_ps(CameraSpacePoint1.Y);
+  __m128 CameraSpacePoint1Z = _mm_set1_ps(CameraSpacePoint1.Z);
+
+  __m128 CameraSpacePoint2X = _mm_set1_ps(CameraSpacePoint2.X);
+  __m128 CameraSpacePoint2Y = _mm_set1_ps(CameraSpacePoint2.Y);
+  __m128 CameraSpacePoint2Z = _mm_set1_ps(CameraSpacePoint2.Z);
 
   u32 *UpperLeftPixel = Buffer->Memory + Left + Bottom * Buffer->Pitch;
   BEGIN_TIMED_BLOCK(ProcessPixel);
@@ -393,95 +423,101 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 				IX < Right;
 				IX += 4)
     {
+      __m128 PixelPointX = _mm_cvtepi32_ps(_mm_set_epi32(IX+3, IX+2, IX+1, IX));
+      __m128 PixelPointY = _mm_cvtepi32_ps(_mm_set1_epi32(Y));
+
+
+      __m128 BarycentricWeight0;
+      __m128 BarycentricWeight1;
+      __m128 BarycentricWeight2;
+
+
+      if(IsOrthogonal)
+      {
+        __m128 PXmV2X = _mm_sub_ps(PixelPointX, PixelSpacePoint2X);
+        __m128 PYmV2Y = _mm_sub_ps(PixelPointY, PixelSpacePoint2Y);
+
+        BarycentricWeight0 = 
+          _mm_mul_ps(_mm_add_ps(_mm_mul_ps(Bary2D_V1YmV2Y, PXmV2X), 
+                                _mm_mul_ps(Bary2D_V2XmV1X, PYmV2Y)), 
+                     Bary2D_InvDenom); 
+        BarycentricWeight1 = 
+          _mm_mul_ps(_mm_add_ps(_mm_mul_ps(Bary2D_V2YmV0Y, PXmV2X), 
+                                _mm_mul_ps(Bary2D_V0XmV2X, PYmV2Y)), 
+                     Bary2D_InvDenom); 
+        BarycentricWeight2 = _mm_sub_ps(Const1, _mm_sub_ps(BarycentricWeight0, BarycentricWeight1));
+      }
+      else
+      {
+        //NOTE(bjorn): Source: https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection
+        __m128 PointX;
+        __m128 PointY;
+        __m128 PointZ;
+        {
+          __m128 PointInCameraSpaceX = 
+            _mm_mul_ps(PixelToMeter, _mm_sub_ps(PixelPointX, ScreenCenterX));
+          __m128 PointInCameraSpaceY = 
+            _mm_mul_ps(PixelToMeter, _mm_sub_ps(PixelPointY, ScreenCenterY));
+
+          __m128 Denominator = 
+            _mm_add_ps(_mm_add_ps(_mm_mul_ps(PointInCameraSpaceX, Bary3D_TriangleNormalX),
+                                  _mm_mul_ps(PointInCameraSpaceY, Bary3D_TriangleNormalY)),
+                       mFocalPointZ_mul_TriangleNormalZ);
+          __m128 d = _mm_div_ps(Bary3D_Numerator, Denominator);
+
+          PointX = _mm_mul_ps(d, PointInCameraSpaceX);
+          PointY = _mm_mul_ps(d, PointInCameraSpaceY);
+          PointZ = _mm_mul_ps(_mm_sub_ps(Const1, d), FocalPointZ);
+        }
+
+        __m128 V0PX = _mm_sub_ps(CameraSpacePoint0X, PointX);
+        __m128 V0PY = _mm_sub_ps(CameraSpacePoint0Y, PointY);
+        __m128 V0PZ = _mm_sub_ps(CameraSpacePoint0Z, PointZ);
+
+        __m128 V1PX = _mm_sub_ps(CameraSpacePoint1X, PointX);
+        __m128 V1PY = _mm_sub_ps(CameraSpacePoint1Y, PointY);
+        __m128 V1PZ = _mm_sub_ps(CameraSpacePoint1Z, PointZ);
+
+        __m128 V2PX = _mm_sub_ps(CameraSpacePoint2X, PointX);
+        __m128 V2PY = _mm_sub_ps(CameraSpacePoint2Y, PointY);
+        __m128 V2PZ = _mm_sub_ps(CameraSpacePoint2Z, PointZ);
+
+        __m128 AreaAVectorX = _mm_sub_ps(_mm_mul_ps(V2PY, V1PZ), _mm_mul_ps(V2PZ, V1PY));
+        __m128 AreaAVectorY = _mm_sub_ps(_mm_mul_ps(V2PZ, V1PX), _mm_mul_ps(V2PX, V1PZ));
+        __m128 AreaAVectorZ = _mm_sub_ps(_mm_mul_ps(V2PX, V1PY), _mm_mul_ps(V2PY, V1PX));
+
+        __m128 AreaBVectorX = _mm_sub_ps(_mm_mul_ps(V0PY, V2PZ), _mm_mul_ps(V0PZ, V2PY));
+        __m128 AreaBVectorY = _mm_sub_ps(_mm_mul_ps(V0PZ, V2PX), _mm_mul_ps(V0PX, V2PZ));
+        __m128 AreaBVectorZ = _mm_sub_ps(_mm_mul_ps(V0PX, V2PY), _mm_mul_ps(V0PY, V2PX));
+
+        __m128 DotAB = _mm_add_ps(_mm_add_ps(_mm_mul_ps(AreaAVectorX, AreaBVectorX),
+                                             _mm_mul_ps(AreaAVectorY, AreaBVectorY)),
+                                  _mm_mul_ps(AreaAVectorZ, AreaBVectorZ));
+        __m128 DotBB = _mm_add_ps(_mm_add_ps(_mm_mul_ps(AreaBVectorX, AreaBVectorX),
+                                             _mm_mul_ps(AreaBVectorY, AreaBVectorY)),
+                                  _mm_mul_ps(AreaBVectorZ, AreaBVectorZ));
+        __m128 InvDotTB  = 
+          _mm_div_ps(Const1, 
+                     _mm_add_ps(_mm_add_ps(_mm_mul_ps(Bary3D_TotalAreaVectorX, AreaBVectorX),
+                                           _mm_mul_ps(Bary3D_TotalAreaVectorY, AreaBVectorY)),
+                                _mm_mul_ps(Bary3D_TotalAreaVectorZ, AreaBVectorZ)));
+
+        BarycentricWeight0 = _mm_mul_ps(DotAB, InvDotTB);
+        BarycentricWeight1 = _mm_mul_ps(DotBB, InvDotTB);
+        BarycentricWeight2 = _mm_sub_ps(Const1, _mm_sub_ps(BarycentricWeight0, BarycentricWeight1));
+
+        BarycentricWeight0 = _mm_add_ps(BarycentricWeight0, Bary3D_Epsilon);
+        BarycentricWeight1 = _mm_add_ps(BarycentricWeight1, Bary3D_Epsilon);
+        BarycentricWeight2 = _mm_add_ps(BarycentricWeight2, Bary3D_Epsilon);
+      }
+
       for(s32 I = 0;
           I < 4;
           I++)
       {
-        s32 X = IX + I;
-
-        f32 PixelPointX = (f32)X;
-        f32 PixelPointY = (f32)Y;
-
-        f32 BarycentricWeight0;
-        f32 BarycentricWeight1;
-        f32 BarycentricWeight2;
-        if(IsOrthogonal)
-        {
-          f32 PYmV2Y = (PixelPointY - PixelSpacePoint2.Y);
-          f32 PXmV2X = (PixelPointX - PixelSpacePoint2.X);
-
-          BarycentricWeight0 = (Bary2D_V1YmV2Y*PXmV2X + Bary2D_V2XmV1X*PYmV2Y) * Bary2D_InvDenom; 
-          BarycentricWeight1 = (Bary2D_V2YmV0Y*PXmV2X + Bary2D_V0XmV2X*PYmV2Y) * Bary2D_InvDenom; 
-          BarycentricWeight2 = 1.0f - BarycentricWeight0 - BarycentricWeight1;
-        }
-        else
-        {
-          //NOTE(bjorn): Source: https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection
-          f32 PointX;
-          f32 PointY;
-          f32 PointZ;
-          {
-            f32 PointInCameraSpaceX = PixelToMeter * (PixelPointX - ScreenVars->Center.X);
-            f32 PointInCameraSpaceY = PixelToMeter * (PixelPointY - ScreenVars->Center.Y);
-
-            v3 LineDirection = { PointInCameraSpaceX,
-                                 PointInCameraSpaceY,
-                                 -FocalPoint.Z};
-
-            f32 Denominator = (LineDirection.X * TriangleNormal.X +
-                               LineDirection.Y * TriangleNormal.Y +
-                               LineDirection.Z * TriangleNormal.Z);
-            f32 d = LinePlaneIntersection_Numerator / Denominator;
-
-            PointX = d * LineDirection.X;
-            PointY = d * LineDirection.Y;
-            PointZ = (1 - d) * FocalPoint.Z;
-          }
-
-          f32 V0PX = CameraSpacePoint0X-PointX;
-          f32 V0PY = CameraSpacePoint0Y-PointY;
-          f32 V0PZ = CameraSpacePoint0Z-PointZ;
-
-          f32 V1PX = CameraSpacePoint1X-PointX;
-          f32 V1PY = CameraSpacePoint1Y-PointY;
-          f32 V1PZ = CameraSpacePoint1Z-PointZ;
-
-          f32 V2PX = CameraSpacePoint2X-PointX;
-          f32 V2PY = CameraSpacePoint2Y-PointY;
-          f32 V2PZ = CameraSpacePoint2Z-PointZ;
-
-          f32 AreaAVectorX = V2PY*V1PZ - V2PZ*V1PY;
-          f32 AreaAVectorY = V2PZ*V1PX - V2PX*V1PZ;
-          f32 AreaAVectorZ = V2PX*V1PY - V2PY*V1PX;
-
-          f32 AreaBVectorX = V0PY*V2PZ - V0PZ*V2PY;
-          f32 AreaBVectorY = V0PZ*V2PX - V0PX*V2PZ;
-          f32 AreaBVectorZ = V0PX*V2PY - V0PY*V2PX;
-
-          f32 DotAB = (AreaAVectorX*AreaBVectorX +
-                       AreaAVectorY*AreaBVectorY +
-                       AreaAVectorZ*AreaBVectorZ);
-          f32 DotBB = (AreaBVectorX*AreaBVectorX +
-                       AreaBVectorY*AreaBVectorY +
-                       AreaBVectorZ*AreaBVectorZ);
-          f32 InvDotTB  = 1.0f / (Bary3D_TotalAreaVectorX*AreaBVectorX +
-                                  Bary3D_TotalAreaVectorY*AreaBVectorY +
-                                  Bary3D_TotalAreaVectorZ*AreaBVectorZ);
-
-          //TODO(bjorn): Deal with artefacts due to indirect calculation of the last weight.
-          f32 Epsilon = 0.0001f;
-          BarycentricWeight0 = DotAB * InvDotTB;
-          BarycentricWeight1 = DotBB * InvDotTB;
-          BarycentricWeight2 = 1.0f - BarycentricWeight0 - BarycentricWeight1;
-
-          BarycentricWeight0 += Epsilon;
-          BarycentricWeight1 += Epsilon;
-          BarycentricWeight2 += Epsilon;
-        }
-
-        b32 InsideTriangle = (BarycentricWeight0 >= 0 &&
-                              BarycentricWeight1 >= 0 &&
-                              BarycentricWeight2 >= 0);
+        b32 InsideTriangle = (BarycentricWeight0.m128_f32[I] >= 0 &&
+                              BarycentricWeight1.m128_f32[I] >= 0 &&
+                              BarycentricWeight2.m128_f32[I] >= 0);
         if(InsideTriangle)
         {
           f32 TexelR;
@@ -490,8 +526,12 @@ DrawTriangleSlowly(game_bitmap *Buffer,
           f32 TexelA;
           if(Bitmap)
           {
-            f32 U = BarycentricWeight0*UV0.U + BarycentricWeight1*UV1.U + BarycentricWeight2*UV2.U;
-            f32 V = BarycentricWeight0*UV0.V + BarycentricWeight1*UV1.V + BarycentricWeight2*UV2.V;
+            f32 U = (BarycentricWeight0.m128_f32[I]*UV0.U + 
+                     BarycentricWeight1.m128_f32[I]*UV1.U + 
+                     BarycentricWeight2.m128_f32[I]*UV2.U);
+            f32 V = (BarycentricWeight0.m128_f32[I]*UV0.V + 
+                     BarycentricWeight1.m128_f32[I]*UV1.V + 
+                     BarycentricWeight2.m128_f32[I]*UV2.V);
 
 #if 0
             Assert(0.0f <= UV.U && UV.U <= 1.0f);
@@ -507,8 +547,8 @@ DrawTriangleSlowly(game_bitmap *Buffer,
             f32 fX = tX - wX;
             f32 fY = tY - wY;
 
-            Assert(0 <= tX && tX < Bitmap->Width);
-            Assert(0 <= tY && tY < Bitmap->Height);
+            // Assert(0 <= tX && tX < Bitmap->Width);
+            // Assert(0 <= tY && tY < Bitmap->Height);
 
             u32* TexelPtr = Bitmap->Memory + Bitmap->Pitch * wY + wX;
             u32* TexelPtr0 = TexelPtr;
@@ -608,12 +648,6 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 
           *Pixel = Color;
         }
-#if 0
-        else
-        {
-          *Pixel = 0xFF00FF00;
-        }
-#endif
 
         Pixel += 1;
       }

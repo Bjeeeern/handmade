@@ -1238,7 +1238,7 @@ HandleDebugCycleCounters(game_memory* Memory)
     {
       char TextBuffer[256];
       sprintf_s(TextBuffer, 
-                "%d: %I64ucy %uh %I64ucy/h\n",
+                "%d: %I64ucy %I64uh %I64ucy/h\n",
                 CounterIndex, Counter->CycleCount, Counter->HitCount, 
                 Counter->CycleCount / Counter->HitCount);
       OutputDebugStringA(TextBuffer);

@@ -338,6 +338,21 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 
   v3 Bary3D_TotalAreaVector = Cross(CameraSpacePoint2-CameraSpacePoint0, 
                                     CameraSpacePoint1-CameraSpacePoint0);
+  f32 Bary3D_TotalAreaVectorX = Bary3D_TotalAreaVector.X;
+  f32 Bary3D_TotalAreaVectorY = Bary3D_TotalAreaVector.Y;
+  f32 Bary3D_TotalAreaVectorZ = Bary3D_TotalAreaVector.Z;
+
+  f32 CameraSpacePoint0X = CameraSpacePoint0.X;
+  f32 CameraSpacePoint0Y = CameraSpacePoint0.Y;
+  f32 CameraSpacePoint0Z = CameraSpacePoint0.Z;
+
+  f32 CameraSpacePoint1X = CameraSpacePoint1.X;
+  f32 CameraSpacePoint1Y = CameraSpacePoint1.Y;
+  f32 CameraSpacePoint1Z = CameraSpacePoint1.Z;
+
+  f32 CameraSpacePoint2X = CameraSpacePoint2.X;
+  f32 CameraSpacePoint2Y = CameraSpacePoint2.Y;
+  f32 CameraSpacePoint2Z = CameraSpacePoint2.Z;
 
   v3 FocalPoint = {0,0,CamParam->LensChamberSize};
   v3 TriangleNormal = 
@@ -354,11 +369,10 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   s32 Bottom = RoundF32ToS32(Min(Min(PixelSpacePoint0.Y, PixelSpacePoint1.Y),PixelSpacePoint2.Y));
   s32 Top    = RoundF32ToS32(Max(Max(PixelSpacePoint0.Y, PixelSpacePoint1.Y),PixelSpacePoint2.Y));
 
-  Left = Left < 0 ? 0 : Left;
-  Bottom = Bottom < 0 ? 0 : Bottom;
-
-  Right = Right > Buffer->Width ? Buffer->Width : Right;
-  Top = Top > Buffer->Height ? Buffer->Height : Top;
+  Left   = Clamp(0, Left,   Buffer->Width );
+  Right  = Clamp(0, Right,  Buffer->Width );
+  Bottom = Clamp(0, Bottom, Buffer->Height);
+  Top    = Clamp(0, Top,    Buffer->Height);
 
   RGBA.RGB *= RGBA.A;
   f32 Inv255 = 1.0f/255.0f;
@@ -368,218 +382,242 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   f32 PixelToMeter = ScreenVars->PixelToMeter.A;
 
   u32 *UpperLeftPixel = Buffer->Memory + Left + Bottom * Buffer->Pitch;
-  for(s32 Y = Bottom;
-      Y < Top;
-      ++Y)
+  BEGIN_TIMED_BLOCK(ProcessPixel);
+  for(s32 IY = Bottom;
+      IY < Top;
+      ++IY)
 	{
 		u32 *Pixel = UpperLeftPixel;
 
-		for(s32 X = Left;
-				X < Right;
-				++X)
+		for(s32 IX = Left;
+				IX < Right;
+				IX += 4)
     {
-      BEGIN_TIMED_BLOCK(TestPixel);
-
-      v2 PixelPoint = {(f32)X, (f32)Y};
-
-      f32 BarycentricWeight0;
-      f32 BarycentricWeight1;
-      f32 BarycentricWeight2;
-      if(IsOrthogonal)
+      for(s32 I = 0;
+          I < 4;
+          I++)
       {
-        f32 PYmV2Y = (PixelPoint.Y - PixelSpacePoint2.Y);
-        f32 PXmV2X = (PixelPoint.X - PixelSpacePoint2.X);
+        s32 X = IX + I;
+        s32 Y = IY + I;
 
-        BarycentricWeight0 = (Bary2D_V1YmV2Y*PXmV2X + Bary2D_V2XmV1X*PYmV2Y) * Bary2D_InvDenom; 
-        BarycentricWeight1 = (Bary2D_V2YmV0Y*PXmV2X + Bary2D_V0XmV2X*PYmV2Y) * Bary2D_InvDenom; 
-        BarycentricWeight2 = 1.0f - BarycentricWeight0 - BarycentricWeight1;
-      }
-      else
-      {
-        //NOTE(bjorn): Source: https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection
-        v3 Point;
+        f32 PixelPointX = (f32)X;
+        f32 PixelPointY = (f32)Y;
+
+        f32 BarycentricWeight0;
+        f32 BarycentricWeight1;
+        f32 BarycentricWeight2;
+        if(IsOrthogonal)
         {
-          f32 PointInCameraSpaceX = PixelToMeter * (PixelPoint.X - ScreenVars->Center.X);
-          f32 PointInCameraSpaceY = PixelToMeter * (PixelPoint.Y - ScreenVars->Center.Y);
+          f32 PYmV2Y = (PixelPointY - PixelSpacePoint2.Y);
+          f32 PXmV2X = (PixelPointX - PixelSpacePoint2.X);
 
-          v3 LineDirection = { PointInCameraSpaceX,
-                               PointInCameraSpaceY,
-                               -FocalPoint.Z};
-
-          f32 Denominator = (LineDirection.X * TriangleNormal.X +
-                             LineDirection.Y * TriangleNormal.Y +
-                             LineDirection.Z * TriangleNormal.Z);
-          f32 d = LinePlaneIntersection_Numerator / Denominator;
-
-          Point.X = d * LineDirection.X;
-          Point.Y = d * LineDirection.Y;
-          Point.Z = (1 - d) * FocalPoint.Z;
-        }
-
-        v3 V0P = CameraSpacePoint0-Point;
-        v3 V1P = CameraSpacePoint1-Point;
-        v3 V2P = CameraSpacePoint2-Point;
-
-        v3 AreaAVector = Cross(V2P, V1P);
-        v3 AreaBVector = Cross(V0P, V2P);
-
-        f32 DotAB = Dot(AreaAVector, AreaBVector);
-        f32 DotBB = Dot(AreaBVector, AreaBVector);
-        f32 InvDotTB = 1.0f / Dot(Bary3D_TotalAreaVector, AreaBVector);
-
-        //TODO(bjorn): Deal with artefacts due to indirect calculation of the last weight.
-        f32 Epsilon = 0.0001f;
-        BarycentricWeight0 = DotAB * InvDotTB;
-        BarycentricWeight1 = DotBB * InvDotTB;
-        BarycentricWeight2 = 1.0f - BarycentricWeight0 - BarycentricWeight1;
-
-        BarycentricWeight0 += Epsilon;
-        BarycentricWeight1 += Epsilon;
-        BarycentricWeight2 += Epsilon;
-      }
-
-      b32 InsideTriangle = (BarycentricWeight0 >= 0 &&
-                            BarycentricWeight1 >= 0 &&
-                            BarycentricWeight2 >= 0);
-      if(InsideTriangle)
-      {
-        BEGIN_TIMED_BLOCK(FillPixel);
-
-        f32 TexelR;
-        f32 TexelG;
-        f32 TexelB;
-        f32 TexelA;
-        if(Bitmap)
-        {
-          f32 U = BarycentricWeight0*UV0.U + BarycentricWeight1*UV1.U + BarycentricWeight2*UV2.U;
-          f32 V = BarycentricWeight0*UV0.V + BarycentricWeight1*UV1.V + BarycentricWeight2*UV2.V;
-
-#if 0
-          Assert(0.0f <= UV.U && UV.U <= 1.0f);
-          Assert(0.0f <= UV.V && UV.V <= 1.0f);
-#endif
-
-          f32 tX = U * (f32)(Bitmap->Width -2);
-          f32 tY = V * (f32)(Bitmap->Height-2);
-
-          s32 wX = (s32)tX;
-          s32 wY = (s32)tY;
-
-          f32 fX = tX - wX;
-          f32 fY = tY - wY;
-
-          Assert(0 <= tX && tX < Bitmap->Width);
-          Assert(0 <= tY && tY < Bitmap->Height);
-
-          u32* TexelPtr = Bitmap->Memory + Bitmap->Pitch * wY + wX;
-          u32* TexelPtr0 = TexelPtr;
-          u32* TexelPtr1 = TexelPtr + 1;
-          u32* TexelPtr2 = TexelPtr + Bitmap->Pitch;
-          u32* TexelPtr3 = TexelPtr + Bitmap->Pitch + 1;
-
-          f32 TexelSmp0R = (f32)((*TexelPtr0 >> 16)&0xFF);
-          f32 TexelSmp0G = (f32)((*TexelPtr0 >>  8)&0xFF);
-          f32 TexelSmp0B = (f32)((*TexelPtr0 >>  0)&0xFF);
-          f32 TexelSmp0A = (f32)((*TexelPtr0 >> 24)&0xFF);
-
-          f32 TexelSmp1R = (f32)((*TexelPtr1 >> 16)&0xFF);
-          f32 TexelSmp1G = (f32)((*TexelPtr1 >>  8)&0xFF);
-          f32 TexelSmp1B = (f32)((*TexelPtr1 >>  0)&0xFF);
-          f32 TexelSmp1A = (f32)((*TexelPtr1 >> 24)&0xFF);
-
-          f32 TexelSmp2R = (f32)((*TexelPtr2 >> 16)&0xFF);
-          f32 TexelSmp2G = (f32)((*TexelPtr2 >>  8)&0xFF);
-          f32 TexelSmp2B = (f32)((*TexelPtr2 >>  0)&0xFF);
-          f32 TexelSmp2A = (f32)((*TexelPtr2 >> 24)&0xFF);
-
-          f32 TexelSmp3R = (f32)((*TexelPtr3 >> 16)&0xFF);
-          f32 TexelSmp3G = (f32)((*TexelPtr3 >>  8)&0xFF);
-          f32 TexelSmp3B = (f32)((*TexelPtr3 >>  0)&0xFF);
-          f32 TexelSmp3A = (f32)((*TexelPtr3 >> 24)&0xFF);
-
-          TexelSmp0R = Square(TexelSmp0R * Inv255);
-          TexelSmp0G = Square(TexelSmp0G * Inv255);
-          TexelSmp0B = Square(TexelSmp0B * Inv255);
-          TexelSmp0A =        TexelSmp0A * Inv255;
-
-          TexelSmp1R = Square(TexelSmp1R * Inv255);
-          TexelSmp1G = Square(TexelSmp1G * Inv255);
-          TexelSmp1B = Square(TexelSmp1B * Inv255);
-          TexelSmp1A =        TexelSmp1A * Inv255;
-
-          TexelSmp2R = Square(TexelSmp2R * Inv255);
-          TexelSmp2G = Square(TexelSmp2G * Inv255);
-          TexelSmp2B = Square(TexelSmp2B * Inv255);
-          TexelSmp2A =        TexelSmp2A * Inv255;
-
-          TexelSmp3R = Square(TexelSmp3R * Inv255);
-          TexelSmp3G = Square(TexelSmp3G * Inv255);
-          TexelSmp3B = Square(TexelSmp3B * Inv255);
-          TexelSmp3A =        TexelSmp3A * Inv255;
-
-          f32 ifY = (1.0f-fY);
-          f32 ifX = (1.0f-fX);
-          f32 ifYmifX = ifY*ifX;
-          f32 ifYmfX  = ifY*fX;
-          f32 ifXmfY  = ifX*fY;
-          f32 fXmfY   = fX*fY;
-          TexelR = ifYmifX*TexelSmp0R + ifYmfX*TexelSmp1R + ifXmfY*TexelSmp2R + fXmfY*TexelSmp3R;
-          TexelG = ifYmifX*TexelSmp0G + ifYmfX*TexelSmp1G + ifXmfY*TexelSmp2G + fXmfY*TexelSmp3G;
-          TexelB = ifYmifX*TexelSmp0B + ifYmfX*TexelSmp1B + ifXmfY*TexelSmp2B + fXmfY*TexelSmp3B;
-          TexelA = ifYmifX*TexelSmp0A + ifYmfX*TexelSmp1A + ifXmfY*TexelSmp2A + fXmfY*TexelSmp3A;
-
-          TexelR = TexelR * RGBA.R;
-          TexelG = TexelG * RGBA.G;
-          TexelB = TexelB * RGBA.B;
-          TexelA = TexelA * RGBA.A;
+          BarycentricWeight0 = (Bary2D_V1YmV2Y*PXmV2X + Bary2D_V2XmV1X*PYmV2Y) * Bary2D_InvDenom; 
+          BarycentricWeight1 = (Bary2D_V2YmV0Y*PXmV2X + Bary2D_V0XmV2X*PYmV2Y) * Bary2D_InvDenom; 
+          BarycentricWeight2 = 1.0f - BarycentricWeight0 - BarycentricWeight1;
         }
         else
         {
-          TexelR = RGBA.R;
-          TexelG = RGBA.G;
-          TexelB = RGBA.B;
-          TexelA = RGBA.A;
+          //NOTE(bjorn): Source: https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection
+          f32 PointX;
+          f32 PointY;
+          f32 PointZ;
+          {
+            f32 PointInCameraSpaceX = PixelToMeter * (PixelPointX - ScreenVars->Center.X);
+            f32 PointInCameraSpaceY = PixelToMeter * (PixelPointY - ScreenVars->Center.Y);
+
+            v3 LineDirection = { PointInCameraSpaceX,
+                                 PointInCameraSpaceY,
+                                 -FocalPoint.Z};
+
+            f32 Denominator = (LineDirection.X * TriangleNormal.X +
+                               LineDirection.Y * TriangleNormal.Y +
+                               LineDirection.Z * TriangleNormal.Z);
+            f32 d = LinePlaneIntersection_Numerator / Denominator;
+
+            PointX = d * LineDirection.X;
+            PointY = d * LineDirection.Y;
+            PointZ = (1 - d) * FocalPoint.Z;
+          }
+
+          f32 V0PX = CameraSpacePoint0X-PointX;
+          f32 V0PY = CameraSpacePoint0Y-PointY;
+          f32 V0PZ = CameraSpacePoint0Z-PointZ;
+
+          f32 V1PX = CameraSpacePoint1X-PointX;
+          f32 V1PY = CameraSpacePoint1Y-PointY;
+          f32 V1PZ = CameraSpacePoint1Z-PointZ;
+
+          f32 V2PX = CameraSpacePoint2X-PointX;
+          f32 V2PY = CameraSpacePoint2Y-PointY;
+          f32 V2PZ = CameraSpacePoint2Z-PointZ;
+
+          f32 AreaAVectorX = V2PY*V1PZ - V2PZ*V1PY;
+          f32 AreaAVectorY = V2PZ*V1PX - V2PX*V1PZ;
+          f32 AreaAVectorZ = V2PX*V1PY - V2PY*V1PX;
+
+          f32 AreaBVectorX = V0PY*V2PZ - V0PZ*V2PY;
+          f32 AreaBVectorY = V0PZ*V2PX - V0PX*V2PZ;
+          f32 AreaBVectorZ = V0PX*V2PY - V0PY*V2PX;
+
+          f32 DotAB = (AreaAVectorX*AreaBVectorX +
+                       AreaAVectorY*AreaBVectorY +
+                       AreaAVectorZ*AreaBVectorZ);
+          f32 DotBB = (AreaBVectorX*AreaBVectorX +
+                       AreaBVectorY*AreaBVectorY +
+                       AreaBVectorZ*AreaBVectorZ);
+          f32 InvDotTB  = 1.0f / (Bary3D_TotalAreaVectorX*AreaBVectorX +
+                                  Bary3D_TotalAreaVectorY*AreaBVectorY +
+                                  Bary3D_TotalAreaVectorZ*AreaBVectorZ);
+
+          //TODO(bjorn): Deal with artefacts due to indirect calculation of the last weight.
+          f32 Epsilon = 0.0001f;
+          BarycentricWeight0 = DotAB * InvDotTB;
+          BarycentricWeight1 = DotBB * InvDotTB;
+          BarycentricWeight2 = 1.0f - BarycentricWeight0 - BarycentricWeight1;
+
+          BarycentricWeight0 += Epsilon;
+          BarycentricWeight1 += Epsilon;
+          BarycentricWeight2 += Epsilon;
         }
 
-        f32 DestR = (f32)((*Pixel >> 16)&0xFF);
-        f32 DestG = (f32)((*Pixel >>  8)&0xFF);
-        f32 DestB = (f32)((*Pixel >>  0)&0xFF);
-        f32 DestA = (f32)((*Pixel >> 24)&0xFF);
+        b32 InsideTriangle = (BarycentricWeight0 >= 0 &&
+                              BarycentricWeight1 >= 0 &&
+                              BarycentricWeight2 >= 0);
+        if(InsideTriangle)
+        {
+          f32 TexelR;
+          f32 TexelG;
+          f32 TexelB;
+          f32 TexelA;
+          if(Bitmap)
+          {
+            f32 U = BarycentricWeight0*UV0.U + BarycentricWeight1*UV1.U + BarycentricWeight2*UV2.U;
+            f32 V = BarycentricWeight0*UV0.V + BarycentricWeight1*UV1.V + BarycentricWeight2*UV2.V;
 
-        DestR = Square(DestR * Inv255);
-        DestG = Square(DestG * Inv255);
-        DestB = Square(DestB * Inv255);
-        DestA = DestA * Inv255;
+#if 0
+            Assert(0.0f <= UV.U && UV.U <= 1.0f);
+            Assert(0.0f <= UV.V && UV.V <= 1.0f);
+#endif
 
-        f32 InvTexelA = (1.0f - TexelA);
-        f32 BlendedR = DestR*InvTexelA + TexelR;
-        f32 BlendedG = DestG*InvTexelA + TexelG;
-        f32 BlendedB = DestB*InvTexelA + TexelB;
-        f32 BlendedA = DestA*InvTexelA + TexelA;
+            f32 tX = U * (f32)(Bitmap->Width -2);
+            f32 tY = V * (f32)(Bitmap->Height-2);
 
-        BlendedR = SquareRoot(BlendedR) * 255.0f;
-        BlendedG = SquareRoot(BlendedG) * 255.0f;
-        BlendedB = SquareRoot(BlendedB) * 255.0f;
-        BlendedA = BlendedA * 255.0f;
+            s32 wX = (s32)tX;
+            s32 wY = (s32)tY;
 
-        u32 Color = (((u32)(BlendedA+0.5f) << 24) | 
-                     ((u32)(BlendedR+0.5f) << 16) | 
-                     ((u32)(BlendedG+0.5f) <<  8) | 
-                     ((u32)(BlendedB+0.5f) <<  0));
+            f32 fX = tX - wX;
+            f32 fY = tY - wY;
 
-        *Pixel = Color;
+            Assert(0 <= tX && tX < Bitmap->Width);
+            Assert(0 <= tY && tY < Bitmap->Height);
 
-        END_TIMED_BLOCK(FillPixel);
+            u32* TexelPtr = Bitmap->Memory + Bitmap->Pitch * wY + wX;
+            u32* TexelPtr0 = TexelPtr;
+            u32* TexelPtr1 = TexelPtr + 1;
+            u32* TexelPtr2 = TexelPtr + Bitmap->Pitch;
+            u32* TexelPtr3 = TexelPtr + Bitmap->Pitch + 1;
+
+            f32 TexelSmp0R = (f32)((*TexelPtr0 >> 16)&0xFF);
+            f32 TexelSmp0G = (f32)((*TexelPtr0 >>  8)&0xFF);
+            f32 TexelSmp0B = (f32)((*TexelPtr0 >>  0)&0xFF);
+            f32 TexelSmp0A = (f32)((*TexelPtr0 >> 24)&0xFF);
+
+            f32 TexelSmp1R = (f32)((*TexelPtr1 >> 16)&0xFF);
+            f32 TexelSmp1G = (f32)((*TexelPtr1 >>  8)&0xFF);
+            f32 TexelSmp1B = (f32)((*TexelPtr1 >>  0)&0xFF);
+            f32 TexelSmp1A = (f32)((*TexelPtr1 >> 24)&0xFF);
+
+            f32 TexelSmp2R = (f32)((*TexelPtr2 >> 16)&0xFF);
+            f32 TexelSmp2G = (f32)((*TexelPtr2 >>  8)&0xFF);
+            f32 TexelSmp2B = (f32)((*TexelPtr2 >>  0)&0xFF);
+            f32 TexelSmp2A = (f32)((*TexelPtr2 >> 24)&0xFF);
+
+            f32 TexelSmp3R = (f32)((*TexelPtr3 >> 16)&0xFF);
+            f32 TexelSmp3G = (f32)((*TexelPtr3 >>  8)&0xFF);
+            f32 TexelSmp3B = (f32)((*TexelPtr3 >>  0)&0xFF);
+            f32 TexelSmp3A = (f32)((*TexelPtr3 >> 24)&0xFF);
+
+            TexelSmp0R = Square(TexelSmp0R * Inv255);
+            TexelSmp0G = Square(TexelSmp0G * Inv255);
+            TexelSmp0B = Square(TexelSmp0B * Inv255);
+            TexelSmp0A =        TexelSmp0A * Inv255;
+
+            TexelSmp1R = Square(TexelSmp1R * Inv255);
+            TexelSmp1G = Square(TexelSmp1G * Inv255);
+            TexelSmp1B = Square(TexelSmp1B * Inv255);
+            TexelSmp1A =        TexelSmp1A * Inv255;
+
+            TexelSmp2R = Square(TexelSmp2R * Inv255);
+            TexelSmp2G = Square(TexelSmp2G * Inv255);
+            TexelSmp2B = Square(TexelSmp2B * Inv255);
+            TexelSmp2A =        TexelSmp2A * Inv255;
+
+            TexelSmp3R = Square(TexelSmp3R * Inv255);
+            TexelSmp3G = Square(TexelSmp3G * Inv255);
+            TexelSmp3B = Square(TexelSmp3B * Inv255);
+            TexelSmp3A =        TexelSmp3A * Inv255;
+
+            f32 ifY = (1.0f-fY);
+            f32 ifX = (1.0f-fX);
+            f32 ifYmifX = ifY*ifX;
+            f32 ifYmfX  = ifY*fX;
+            f32 ifXmfY  = ifX*fY;
+            f32 fXmfY   = fX*fY;
+            TexelR = ifYmifX*TexelSmp0R + ifYmfX*TexelSmp1R + ifXmfY*TexelSmp2R + fXmfY*TexelSmp3R;
+            TexelG = ifYmifX*TexelSmp0G + ifYmfX*TexelSmp1G + ifXmfY*TexelSmp2G + fXmfY*TexelSmp3G;
+            TexelB = ifYmifX*TexelSmp0B + ifYmfX*TexelSmp1B + ifXmfY*TexelSmp2B + fXmfY*TexelSmp3B;
+            TexelA = ifYmifX*TexelSmp0A + ifYmfX*TexelSmp1A + ifXmfY*TexelSmp2A + fXmfY*TexelSmp3A;
+
+            TexelR = TexelR * RGBA.R;
+            TexelG = TexelG * RGBA.G;
+            TexelB = TexelB * RGBA.B;
+            TexelA = TexelA * RGBA.A;
+          }
+          else
+          {
+            TexelR = RGBA.R;
+            TexelG = RGBA.G;
+            TexelB = RGBA.B;
+            TexelA = RGBA.A;
+          }
+
+          f32 DestR = (f32)((*Pixel >> 16)&0xFF);
+          f32 DestG = (f32)((*Pixel >>  8)&0xFF);
+          f32 DestB = (f32)((*Pixel >>  0)&0xFF);
+          f32 DestA = (f32)((*Pixel >> 24)&0xFF);
+
+          DestR = Square(DestR * Inv255);
+          DestG = Square(DestG * Inv255);
+          DestB = Square(DestB * Inv255);
+          DestA = DestA * Inv255;
+
+          f32 InvTexelA = (1.0f - TexelA);
+          f32 BlendedR = DestR*InvTexelA + TexelR;
+          f32 BlendedG = DestG*InvTexelA + TexelG;
+          f32 BlendedB = DestB*InvTexelA + TexelB;
+          f32 BlendedA = DestA*InvTexelA + TexelA;
+
+          BlendedR = SquareRoot(BlendedR) * 255.0f;
+          BlendedG = SquareRoot(BlendedG) * 255.0f;
+          BlendedB = SquareRoot(BlendedB) * 255.0f;
+          BlendedA = BlendedA * 255.0f;
+
+          u32 Color = (((u32)(BlendedA+0.5f) << 24) | 
+                       ((u32)(BlendedR+0.5f) << 16) | 
+                       ((u32)(BlendedG+0.5f) <<  8) | 
+                       ((u32)(BlendedB+0.5f) <<  0));
+
+          *Pixel = Color;
+        }
+
+        Pixel += 1;
       }
-
-      Pixel++;
-
-      END_TIMED_BLOCK(TestPixel);
     }
 
     UpperLeftPixel += Buffer->Pitch;
   }
 
+  END_TIMED_BLOCK_COUNTED(ProcessPixel, (Right-Left) * (Top-Bottom));
   END_TIMED_BLOCK(DrawTriangleSlowly);
 }
 

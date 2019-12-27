@@ -383,9 +383,9 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 
   u32 *UpperLeftPixel = Buffer->Memory + Left + Bottom * Buffer->Pitch;
   BEGIN_TIMED_BLOCK(ProcessPixel);
-  for(s32 IY = Bottom;
-      IY < Top;
-      ++IY)
+  for(s32 Y = Bottom;
+      Y < Top;
+      ++Y)
 	{
 		u32 *Pixel = UpperLeftPixel;
 
@@ -398,7 +398,6 @@ DrawTriangleSlowly(game_bitmap *Buffer,
           I++)
       {
         s32 X = IX + I;
-        s32 Y = IY + I;
 
         f32 PixelPointX = (f32)X;
         f32 PixelPointY = (f32)Y;
@@ -609,6 +608,12 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 
           *Pixel = Color;
         }
+#if 0
+        else
+        {
+          *Pixel = 0xFF00FF00;
+        }
+#endif
 
         Pixel += 1;
       }

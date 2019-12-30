@@ -396,8 +396,7 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   __m128 Bary3D_TriangleNormalX = _mm_set1_ps(TriangleNormal.X);
   __m128 Bary3D_TriangleNormalY = _mm_set1_ps(TriangleNormal.Y);
 
-  __m128 mFocalPointZ_mul_TriangleNormalZ = 
-    _mm_mul_ps(_mm_set1_ps(-FocalPoint.Z), _mm_set1_ps(TriangleNormal.Z));
+  __m128 nFocalPointZ_mul_TriangleNormalZ = _mm_set1_ps(-FocalPoint.Z * TriangleNormal.Z);
 
   __m128 CameraSpacePoint0X = _mm_set1_ps(CameraSpacePoint0.X);
   __m128 CameraSpacePoint0Y = _mm_set1_ps(CameraSpacePoint0.Y);
@@ -416,21 +415,19 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   for(s32 Y = Bottom;
       Y < Top;
       ++Y)
-	{
-		u32 *Pixel = UpperLeftPixel;
+  {
+    u32 *Pixel = UpperLeftPixel;
 
-		for(s32 IX = Left;
-				IX < Right;
-				IX += 4)
+    for(s32 IX = Left;
+        IX < Right;
+        IX += 4)
     {
       __m128 PixelPointX = _mm_cvtepi32_ps(_mm_set_epi32(IX+3, IX+2, IX+1, IX));
       __m128 PixelPointY = _mm_cvtepi32_ps(_mm_set1_epi32(Y));
 
-
       __m128 BarycentricWeight0;
       __m128 BarycentricWeight1;
       __m128 BarycentricWeight2;
-
 
       if(IsOrthogonal)
       {
@@ -445,7 +442,7 @@ DrawTriangleSlowly(game_bitmap *Buffer,
           _mm_mul_ps(_mm_add_ps(_mm_mul_ps(Bary2D_V2YmV0Y, PXmV2X), 
                                 _mm_mul_ps(Bary2D_V0XmV2X, PYmV2Y)), 
                      Bary2D_InvDenom); 
-        BarycentricWeight2 = _mm_sub_ps(Const1, _mm_sub_ps(BarycentricWeight0, BarycentricWeight1));
+        BarycentricWeight2 = _mm_sub_ps(Const1, _mm_add_ps(BarycentricWeight0, BarycentricWeight1));
       }
       else
       {
@@ -462,7 +459,7 @@ DrawTriangleSlowly(game_bitmap *Buffer,
           __m128 Denominator = 
             _mm_add_ps(_mm_add_ps(_mm_mul_ps(PointInCameraSpaceX, Bary3D_TriangleNormalX),
                                   _mm_mul_ps(PointInCameraSpaceY, Bary3D_TriangleNormalY)),
-                       mFocalPointZ_mul_TriangleNormalZ);
+                       nFocalPointZ_mul_TriangleNormalZ);
           __m128 d = _mm_div_ps(Bary3D_Numerator, Denominator);
 
           PointX = _mm_mul_ps(d, PointInCameraSpaceX);
@@ -504,7 +501,7 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 
         BarycentricWeight0 = _mm_mul_ps(DotAB, InvDotTB);
         BarycentricWeight1 = _mm_mul_ps(DotBB, InvDotTB);
-        BarycentricWeight2 = _mm_sub_ps(Const1, _mm_sub_ps(BarycentricWeight0, BarycentricWeight1));
+        BarycentricWeight2 = _mm_sub_ps(Const1, _mm_add_ps(BarycentricWeight0, BarycentricWeight1));
 
         BarycentricWeight0 = _mm_add_ps(BarycentricWeight0, Bary3D_Epsilon);
         BarycentricWeight1 = _mm_add_ps(BarycentricWeight1, Bary3D_Epsilon);

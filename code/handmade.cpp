@@ -1391,7 +1391,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
           m33 RotMat = AxisRotationMatrix(MainCamera->CamRot.X, GetMatCol(XRot, 2)) * XRot;
           m44 CamTrans = ConstructTransform(Offset, RotMat);
 
-
 #if 1
           SetCamera(RenderGroup, CamTrans, 20.0f, 20.f);
 #else

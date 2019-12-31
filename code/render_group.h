@@ -273,6 +273,10 @@ DrawChar(game_bitmap *Buffer, font *Font, u32 UnicodeCodePoint,
 // total: greater than 181 cycles, measured 270 ish.
 // target: 50 or so.
 //
+
+#if COMPILER_MSVC
+#pragma warning(disable:4701)
+#endif
 	internal_function void
 DrawTriangleSlowly(game_bitmap *Buffer, 
                    camera_parameters* CamParam, output_target_screen_variables* ScreenVars,
@@ -350,12 +354,18 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   Top    = Clamp(0, Top,    Buffer->Height);
 
   RGBA.RGB *= RGBA.A;
-  f32 Inv255 = 1.0f/255.0f;
+
+  __m128 ColorModifierR = _mm_set1_ps(RGBA.R);
+  __m128 ColorModifierG = _mm_set1_ps(RGBA.G);
+  __m128 ColorModifierB = _mm_set1_ps(RGBA.B);
+  __m128 ColorModifierA = _mm_set1_ps(RGBA.A);
 
   b32 IsOrthogonal = CamParam->LensChamberSize == positive_infinity32;
 
   //NOTE(bjorn): Ortographic barycentric calculation
   __m128 Const1 = _mm_set1_ps(1.0f);
+  __m128 Const0 = _mm_set1_ps(0.0f);
+  __m128 Const255 = _mm_set1_ps(255.0f);
 
   __m128 PixelSpacePoint0X = _mm_set1_ps(PixelSpacePoint0.X);
   __m128 PixelSpacePoint0Y = _mm_set1_ps(PixelSpacePoint0.Y);
@@ -409,6 +419,24 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   __m128 CameraSpacePoint2X = _mm_set1_ps(CameraSpacePoint2.X);
   __m128 CameraSpacePoint2Y = _mm_set1_ps(CameraSpacePoint2.Y);
   __m128 CameraSpacePoint2Z = _mm_set1_ps(CameraSpacePoint2.Z);
+
+  __m128 UV0U = _mm_set1_ps(UV0.U);
+  __m128 UV0V = _mm_set1_ps(UV0.V);
+                                 
+  __m128 UV1U = _mm_set1_ps(UV1.U);
+  __m128 UV1V = _mm_set1_ps(UV1.V);
+                                 
+  __m128 UV2U = _mm_set1_ps(UV2.U);
+  __m128 UV2V = _mm_set1_ps(UV2.V);
+
+  __m128 UVBitmapWidth  = _mm_set1_ps((f32)(Bitmap->Width -2));
+  __m128 UVBitmapHeight = _mm_set1_ps((f32)(Bitmap->Height-2));
+
+  u32 DefaultSSERoundingMode = _MM_GET_ROUNDING_MODE();
+  _MM_SET_ROUNDING_MODE(DefaultSSERoundingMode);
+
+  __m128 Inv255 = _mm_set1_ps( 1.0f/255.0f);
+  __m128 SquareInv255 = _mm_set1_ps(Square(1.0f/255.0f));
 
   u32 *UpperLeftPixel = Buffer->Memory + Left + Bottom * Buffer->Pitch;
   BEGIN_TIMED_BLOCK(ProcessPixel);
@@ -507,155 +535,229 @@ DrawTriangleSlowly(game_bitmap *Buffer,
         BarycentricWeight1 = _mm_add_ps(BarycentricWeight1, Bary3D_Epsilon);
         BarycentricWeight2 = _mm_add_ps(BarycentricWeight2, Bary3D_Epsilon);
       }
+      __m128 DrawMask = 
+        _mm_and_ps(_mm_and_ps(_mm_cmpge_ps(BarycentricWeight0, Const0), 
+                              _mm_cmpge_ps(BarycentricWeight1, Const0)),
+                   _mm_cmpge_ps(BarycentricWeight2, Const0));
+
+      __m128 TexelR;
+      __m128 TexelG;
+      __m128 TexelB;
+      __m128 TexelA;
+
+      __m128i wX;
+      __m128i wY;
+
+      __m128 fX;
+      __m128 fY;
+      if(Bitmap)
+      {
+        __m128 U = _mm_add_ps(_mm_add_ps(_mm_mul_ps(BarycentricWeight0, UV0U), 
+                                         _mm_mul_ps(BarycentricWeight1, UV1U)), 
+                              _mm_mul_ps(BarycentricWeight2, UV2U));
+        __m128 V = _mm_add_ps(_mm_add_ps(_mm_mul_ps(BarycentricWeight0, UV0V), 
+                                         _mm_mul_ps(BarycentricWeight1, UV1V)), 
+                              _mm_mul_ps(BarycentricWeight2, UV2V));
+
+#if 0
+        for(s32 I = 0;
+            I < 4;
+            I++)
+        {
+          if(DrawMask.m128_i32[I] == 0) { continue; }
+          Assert(0.0f <= U.m128_f32[I] && U.m128_f32[I] <= 1.0f);
+          Assert(0.0f <= V.m128_f32[I] && V.m128_f32[I] <= 1.0f);
+        }
+#endif
+
+        __m128 tX = _mm_mul_ps(U, UVBitmapWidth); 
+        __m128 tY = _mm_mul_ps(V, UVBitmapHeight);
+
+        //NOTE(bjorn): Rounding mode is set to _MM_ROUND_DOWN
+        wX = _mm_cvtps_epi32(tX);
+        wY = _mm_cvtps_epi32(tY);
+
+        fX = _mm_sub_ps(tX, _mm_cvtepi32_ps(wX));
+        fY = _mm_sub_ps(tY, _mm_cvtepi32_ps(wY));
+
+#if 0
+        for(s32 I = 0;
+            I < 4;
+            I++)
+        {
+          if(DrawMask.m128_i32[I] == 0) { continue; }
+          Assert(0 <= tX.m128_f32[I] && tX.m128_f32[I] < Bitmap->Width);
+          Assert(0 <= tY.m128_f32[I] && tY.m128_f32[I] < Bitmap->Height);
+        }
+#endif
+      }
+
+      __m128 TexelSmp0R;
+      __m128 TexelSmp0G;
+      __m128 TexelSmp0B;
+      __m128 TexelSmp0A;
+
+      __m128 TexelSmp1R;
+      __m128 TexelSmp1G;
+      __m128 TexelSmp1B;
+      __m128 TexelSmp1A;
+
+      __m128 TexelSmp2R;
+      __m128 TexelSmp2G;
+      __m128 TexelSmp2B;
+      __m128 TexelSmp2A;
+
+      __m128 TexelSmp3R;
+      __m128 TexelSmp3G;
+      __m128 TexelSmp3B;
+      __m128 TexelSmp3A;
+
+      __m128 DestR;
+      __m128 DestG;
+      __m128 DestB;
+      __m128 DestA;
 
       for(s32 I = 0;
           I < 4;
           I++)
       {
-        b32 InsideTriangle = (BarycentricWeight0.m128_f32[I] >= 0 &&
-                              BarycentricWeight1.m128_f32[I] >= 0 &&
-                              BarycentricWeight2.m128_f32[I] >= 0);
-        if(InsideTriangle)
+        if(DrawMask.m128_i32[I] == 0) { continue; }
+
+        if(Bitmap)
         {
-          f32 TexelR;
-          f32 TexelG;
-          f32 TexelB;
-          f32 TexelA;
-          if(Bitmap)
-          {
-            f32 U = (BarycentricWeight0.m128_f32[I]*UV0.U + 
-                     BarycentricWeight1.m128_f32[I]*UV1.U + 
-                     BarycentricWeight2.m128_f32[I]*UV2.U);
-            f32 V = (BarycentricWeight0.m128_f32[I]*UV0.V + 
-                     BarycentricWeight1.m128_f32[I]*UV1.V + 
-                     BarycentricWeight2.m128_f32[I]*UV2.V);
+          u32* TexelPtr = Bitmap->Memory + Bitmap->Pitch * wY.m128i_i32[I] + wX.m128i_i32[I];
+          u32* TexelPtr0 = TexelPtr;
+          u32* TexelPtr1 = TexelPtr + 1;
+          u32* TexelPtr2 = TexelPtr + Bitmap->Pitch;
+          u32* TexelPtr3 = TexelPtr + Bitmap->Pitch + 1;
 
-#if 0
-            Assert(0.0f <= UV.U && UV.U <= 1.0f);
-            Assert(0.0f <= UV.V && UV.V <= 1.0f);
-#endif
+          TexelSmp0R.m128_f32[I] = (f32)((*TexelPtr0 >> 16)&0xFF);
+          TexelSmp0G.m128_f32[I] = (f32)((*TexelPtr0 >>  8)&0xFF);
+          TexelSmp0B.m128_f32[I] = (f32)((*TexelPtr0 >>  0)&0xFF);
+          TexelSmp0A.m128_f32[I] = (f32)((*TexelPtr0 >> 24)&0xFF);
 
-            f32 tX = U * (f32)(Bitmap->Width -2);
-            f32 tY = V * (f32)(Bitmap->Height-2);
+          TexelSmp1R.m128_f32[I] = (f32)((*TexelPtr1 >> 16)&0xFF);
+          TexelSmp1G.m128_f32[I] = (f32)((*TexelPtr1 >>  8)&0xFF);
+          TexelSmp1B.m128_f32[I] = (f32)((*TexelPtr1 >>  0)&0xFF);
+          TexelSmp1A.m128_f32[I] = (f32)((*TexelPtr1 >> 24)&0xFF);
 
-            s32 wX = (s32)tX;
-            s32 wY = (s32)tY;
+          TexelSmp2R.m128_f32[I] = (f32)((*TexelPtr2 >> 16)&0xFF);
+          TexelSmp2G.m128_f32[I] = (f32)((*TexelPtr2 >>  8)&0xFF);
+          TexelSmp2B.m128_f32[I] = (f32)((*TexelPtr2 >>  0)&0xFF);
+          TexelSmp2A.m128_f32[I] = (f32)((*TexelPtr2 >> 24)&0xFF);
 
-            f32 fX = tX - wX;
-            f32 fY = tY - wY;
-
-            // Assert(0 <= tX && tX < Bitmap->Width);
-            // Assert(0 <= tY && tY < Bitmap->Height);
-
-            u32* TexelPtr = Bitmap->Memory + Bitmap->Pitch * wY + wX;
-            u32* TexelPtr0 = TexelPtr;
-            u32* TexelPtr1 = TexelPtr + 1;
-            u32* TexelPtr2 = TexelPtr + Bitmap->Pitch;
-            u32* TexelPtr3 = TexelPtr + Bitmap->Pitch + 1;
-
-            f32 TexelSmp0R = (f32)((*TexelPtr0 >> 16)&0xFF);
-            f32 TexelSmp0G = (f32)((*TexelPtr0 >>  8)&0xFF);
-            f32 TexelSmp0B = (f32)((*TexelPtr0 >>  0)&0xFF);
-            f32 TexelSmp0A = (f32)((*TexelPtr0 >> 24)&0xFF);
-
-            f32 TexelSmp1R = (f32)((*TexelPtr1 >> 16)&0xFF);
-            f32 TexelSmp1G = (f32)((*TexelPtr1 >>  8)&0xFF);
-            f32 TexelSmp1B = (f32)((*TexelPtr1 >>  0)&0xFF);
-            f32 TexelSmp1A = (f32)((*TexelPtr1 >> 24)&0xFF);
-
-            f32 TexelSmp2R = (f32)((*TexelPtr2 >> 16)&0xFF);
-            f32 TexelSmp2G = (f32)((*TexelPtr2 >>  8)&0xFF);
-            f32 TexelSmp2B = (f32)((*TexelPtr2 >>  0)&0xFF);
-            f32 TexelSmp2A = (f32)((*TexelPtr2 >> 24)&0xFF);
-
-            f32 TexelSmp3R = (f32)((*TexelPtr3 >> 16)&0xFF);
-            f32 TexelSmp3G = (f32)((*TexelPtr3 >>  8)&0xFF);
-            f32 TexelSmp3B = (f32)((*TexelPtr3 >>  0)&0xFF);
-            f32 TexelSmp3A = (f32)((*TexelPtr3 >> 24)&0xFF);
-
-            TexelSmp0R = Square(TexelSmp0R * Inv255);
-            TexelSmp0G = Square(TexelSmp0G * Inv255);
-            TexelSmp0B = Square(TexelSmp0B * Inv255);
-            TexelSmp0A =        TexelSmp0A * Inv255;
-
-            TexelSmp1R = Square(TexelSmp1R * Inv255);
-            TexelSmp1G = Square(TexelSmp1G * Inv255);
-            TexelSmp1B = Square(TexelSmp1B * Inv255);
-            TexelSmp1A =        TexelSmp1A * Inv255;
-
-            TexelSmp2R = Square(TexelSmp2R * Inv255);
-            TexelSmp2G = Square(TexelSmp2G * Inv255);
-            TexelSmp2B = Square(TexelSmp2B * Inv255);
-            TexelSmp2A =        TexelSmp2A * Inv255;
-
-            TexelSmp3R = Square(TexelSmp3R * Inv255);
-            TexelSmp3G = Square(TexelSmp3G * Inv255);
-            TexelSmp3B = Square(TexelSmp3B * Inv255);
-            TexelSmp3A =        TexelSmp3A * Inv255;
-
-            f32 ifY = (1.0f-fY);
-            f32 ifX = (1.0f-fX);
-            f32 ifYmifX = ifY*ifX;
-            f32 ifYmfX  = ifY*fX;
-            f32 ifXmfY  = ifX*fY;
-            f32 fXmfY   = fX*fY;
-            TexelR = ifYmifX*TexelSmp0R + ifYmfX*TexelSmp1R + ifXmfY*TexelSmp2R + fXmfY*TexelSmp3R;
-            TexelG = ifYmifX*TexelSmp0G + ifYmfX*TexelSmp1G + ifXmfY*TexelSmp2G + fXmfY*TexelSmp3G;
-            TexelB = ifYmifX*TexelSmp0B + ifYmfX*TexelSmp1B + ifXmfY*TexelSmp2B + fXmfY*TexelSmp3B;
-            TexelA = ifYmifX*TexelSmp0A + ifYmfX*TexelSmp1A + ifXmfY*TexelSmp2A + fXmfY*TexelSmp3A;
-
-            TexelR = TexelR * RGBA.R;
-            TexelG = TexelG * RGBA.G;
-            TexelB = TexelB * RGBA.B;
-            TexelA = TexelA * RGBA.A;
-          }
-          else
-          {
-            TexelR = RGBA.R;
-            TexelG = RGBA.G;
-            TexelB = RGBA.B;
-            TexelA = RGBA.A;
-          }
-
-          f32 DestR = (f32)((*Pixel >> 16)&0xFF);
-          f32 DestG = (f32)((*Pixel >>  8)&0xFF);
-          f32 DestB = (f32)((*Pixel >>  0)&0xFF);
-          f32 DestA = (f32)((*Pixel >> 24)&0xFF);
-
-          DestR = Square(DestR * Inv255);
-          DestG = Square(DestG * Inv255);
-          DestB = Square(DestB * Inv255);
-          DestA = DestA * Inv255;
-
-          f32 InvTexelA = (1.0f - TexelA);
-          f32 BlendedR = DestR*InvTexelA + TexelR;
-          f32 BlendedG = DestG*InvTexelA + TexelG;
-          f32 BlendedB = DestB*InvTexelA + TexelB;
-          f32 BlendedA = DestA*InvTexelA + TexelA;
-
-          BlendedR = SquareRoot(BlendedR) * 255.0f;
-          BlendedG = SquareRoot(BlendedG) * 255.0f;
-          BlendedB = SquareRoot(BlendedB) * 255.0f;
-          BlendedA = BlendedA * 255.0f;
-
-          u32 Color = (((u32)(BlendedA+0.5f) << 24) | 
-                       ((u32)(BlendedR+0.5f) << 16) | 
-                       ((u32)(BlendedG+0.5f) <<  8) | 
-                       ((u32)(BlendedB+0.5f) <<  0));
-
-          *Pixel = Color;
+          TexelSmp3R.m128_f32[I] = (f32)((*TexelPtr3 >> 16)&0xFF);
+          TexelSmp3G.m128_f32[I] = (f32)((*TexelPtr3 >>  8)&0xFF);
+          TexelSmp3B.m128_f32[I] = (f32)((*TexelPtr3 >>  0)&0xFF);
+          TexelSmp3A.m128_f32[I] = (f32)((*TexelPtr3 >> 24)&0xFF);
         }
 
-        Pixel += 1;
+        DestR.m128_f32[I] = (f32)((*(Pixel+I) >> 16)&0xFF);
+        DestG.m128_f32[I] = (f32)((*(Pixel+I) >>  8)&0xFF);
+        DestB.m128_f32[I] = (f32)((*(Pixel+I) >>  0)&0xFF);
+        DestA.m128_f32[I] = (f32)((*(Pixel+I) >> 24)&0xFF);
       }
+
+      if(Bitmap)
+      {
+        TexelSmp0R = _mm_mul_ps(TexelSmp0R, _mm_mul_ps(TexelSmp0R, SquareInv255));
+        TexelSmp0G = _mm_mul_ps(TexelSmp0G, _mm_mul_ps(TexelSmp0G, SquareInv255));
+        TexelSmp0B = _mm_mul_ps(TexelSmp0B, _mm_mul_ps(TexelSmp0B, SquareInv255));
+        TexelSmp0A = _mm_mul_ps(TexelSmp0A, Inv255);
+
+        TexelSmp1R = _mm_mul_ps(TexelSmp1R, _mm_mul_ps(TexelSmp1R, SquareInv255));
+        TexelSmp1G = _mm_mul_ps(TexelSmp1G, _mm_mul_ps(TexelSmp1G, SquareInv255));
+        TexelSmp1B = _mm_mul_ps(TexelSmp1B, _mm_mul_ps(TexelSmp1B, SquareInv255));
+        TexelSmp1A = _mm_mul_ps(TexelSmp1A, Inv255);
+
+        TexelSmp2R = _mm_mul_ps(TexelSmp2R, _mm_mul_ps(TexelSmp2R, SquareInv255));
+        TexelSmp2G = _mm_mul_ps(TexelSmp2G, _mm_mul_ps(TexelSmp2G, SquareInv255));
+        TexelSmp2B = _mm_mul_ps(TexelSmp2B, _mm_mul_ps(TexelSmp2B, SquareInv255));
+        TexelSmp2A = _mm_mul_ps(TexelSmp2A, Inv255);
+
+        TexelSmp3R = _mm_mul_ps(TexelSmp3R, _mm_mul_ps(TexelSmp3R, SquareInv255));
+        TexelSmp3G = _mm_mul_ps(TexelSmp3G, _mm_mul_ps(TexelSmp3G, SquareInv255));
+        TexelSmp3B = _mm_mul_ps(TexelSmp3B, _mm_mul_ps(TexelSmp3B, SquareInv255));
+        TexelSmp3A = _mm_mul_ps(TexelSmp3A, Inv255);
+
+        __m128 ifY = _mm_sub_ps(Const1, fY);
+        __m128 ifX = _mm_sub_ps(Const1, fX);
+        __m128 ifYmifX = _mm_mul_ps(ifY, ifX);
+        __m128 ifYmfX  = _mm_mul_ps(ifY,  fX);
+        __m128 ifXmfY  = _mm_mul_ps(ifX,  fY);
+        __m128 fXmfY   = _mm_mul_ps( fX,  fY);
+
+        TexelR = 
+          _mm_add_ps(_mm_add_ps(_mm_mul_ps(ifYmifX, TexelSmp0R), _mm_mul_ps(ifYmfX, TexelSmp1R)), 
+                     _mm_add_ps(_mm_mul_ps(ifXmfY,  TexelSmp2R), _mm_mul_ps(fXmfY,  TexelSmp3R)));
+        TexelG = 
+          _mm_add_ps(_mm_add_ps(_mm_mul_ps(ifYmifX, TexelSmp0G), _mm_mul_ps(ifYmfX, TexelSmp1G)), 
+                     _mm_add_ps(_mm_mul_ps(ifXmfY,  TexelSmp2G), _mm_mul_ps(fXmfY,  TexelSmp3G)));
+        TexelB = 
+          _mm_add_ps(_mm_add_ps(_mm_mul_ps(ifYmifX, TexelSmp0B), _mm_mul_ps(ifYmfX, TexelSmp1B)), 
+                     _mm_add_ps(_mm_mul_ps(ifXmfY,  TexelSmp2B), _mm_mul_ps(fXmfY,  TexelSmp3B)));
+        TexelA = 
+          _mm_add_ps(_mm_add_ps(_mm_mul_ps(ifYmifX, TexelSmp0A), _mm_mul_ps(ifYmfX, TexelSmp1A)), 
+                     _mm_add_ps(_mm_mul_ps(ifXmfY,  TexelSmp2A), _mm_mul_ps(fXmfY,  TexelSmp3A)));
+
+        TexelR = _mm_mul_ps(TexelR, ColorModifierR);
+        TexelG = _mm_mul_ps(TexelG, ColorModifierG);
+        TexelB = _mm_mul_ps(TexelB, ColorModifierB);
+        TexelA = _mm_mul_ps(TexelA, ColorModifierA);
+      }
+      else
+      {
+        TexelR = ColorModifierR;
+        TexelG = ColorModifierG;
+        TexelB = ColorModifierB;
+        TexelA = ColorModifierA;
+      }
+
+      DestR = _mm_mul_ps(DestR, _mm_mul_ps(DestR, SquareInv255));
+      DestG = _mm_mul_ps(DestG, _mm_mul_ps(DestG, SquareInv255));
+      DestB = _mm_mul_ps(DestB, _mm_mul_ps(DestB, SquareInv255));
+      DestA = _mm_mul_ps(DestA, Inv255);
+
+      __m128 InvTexelA = _mm_sub_ps(Const1, TexelA);
+      __m128 BlendedR = _mm_add_ps(_mm_mul_ps(DestR, InvTexelA), TexelR);
+      __m128 BlendedG = _mm_add_ps(_mm_mul_ps(DestG, InvTexelA), TexelG);
+      __m128 BlendedB = _mm_add_ps(_mm_mul_ps(DestB, InvTexelA), TexelB);
+      __m128 BlendedA = _mm_add_ps(_mm_mul_ps(DestA, InvTexelA), TexelA);
+
+      BlendedR = _mm_mul_ps(_mm_sqrt_ps(BlendedR), Const255);
+      BlendedG = _mm_mul_ps(_mm_sqrt_ps(BlendedG), Const255);
+      BlendedB = _mm_mul_ps(_mm_sqrt_ps(BlendedB), Const255);
+      BlendedA = _mm_mul_ps(BlendedA, Const255);
+
+      for(s32 I = 0;
+          I < 4;
+          I++)
+      {
+        if(DrawMask.m128_i32[I] != 0)
+        {
+          u32 Color = (((u32)(BlendedA.m128_f32[I]+0.5f) << 24) | 
+                       ((u32)(BlendedR.m128_f32[I]+0.5f) << 16) | 
+                       ((u32)(BlendedG.m128_f32[I]+0.5f) <<  8) | 
+                       ((u32)(BlendedB.m128_f32[I]+0.5f) <<  0));
+
+          *(Pixel+I) = Color;
+        }
+      }
+      Pixel += 4;
     }
 
     UpperLeftPixel += Buffer->Pitch;
   }
 
   END_TIMED_BLOCK_COUNTED(ProcessPixel, (Right-Left) * (Top-Bottom));
+
+  _MM_SET_ROUNDING_MODE(_MM_ROUND_DOWN);
+
   END_TIMED_BLOCK(DrawTriangleSlowly);
 }
+#if COMPILER_MSVC
+#pragma warning(default:4701)
+#endif
 
   internal_function void
 DrawRectangle(game_bitmap *Buffer, rectangle2 Rect, v3 RGB)
@@ -677,117 +779,117 @@ DrawRectangle(game_bitmap *Buffer, rectangle2 Rect, v3 RGB)
 
   s32 PixelPitch = Buffer->Width;
 
-	u32 *UpperLeftPixel = (u32 *)Buffer->Memory + Left + Bottom * PixelPitch;
+  u32 *UpperLeftPixel = (u32 *)Buffer->Memory + Left + Bottom * PixelPitch;
 
-	for(s32 Y = Bottom;
-			Y < Top;
-			++Y)
-	{
-		u32 *Pixel = UpperLeftPixel;
+  for(s32 Y = Bottom;
+      Y < Top;
+      ++Y)
+  {
+    u32 *Pixel = UpperLeftPixel;
 
-		for(s32 X = Left;
-				X < Right;
-				++X)
-		{
-			*Pixel++ = Color;
-		}
+    for(s32 X = Left;
+        X < Right;
+        ++X)
+    {
+      *Pixel++ = Color;
+    }
 
-		UpperLeftPixel += PixelPitch;
-	}
+    UpperLeftPixel += PixelPitch;
+  }
 }
 
 // TODO(bjorn): There is a visual bug when drawn from BottomRight to TopLeft.
-	internal_function void
+  internal_function void
 DrawFrame(game_bitmap *Buffer, rectangle2 R, v2 WorldDir, v3 Color)
 {
-	v2 ScreenSpaceDir = v2{WorldDir.X, WorldDir.Y};
-	Assert(LengthSquared(WorldDir) <= 1.001f);
-	Assert(LengthSquared(WorldDir) >= 0.999f);
+  v2 ScreenSpaceDir = v2{WorldDir.X, WorldDir.Y};
+  Assert(LengthSquared(WorldDir) <= 1.001f);
+  Assert(LengthSquared(WorldDir) >= 0.999f);
 
-	m22 Rot90CCW = {0,-1,
-								 1, 0};
-	v2 Origo = (R.Min + R.Max)*0.5f;
-	v2 YAxis = ScreenSpaceDir * Absolute(R.Max.Y - R.Min.Y)*0.5f;
-	v2 XAxis = (Rot90CCW * ScreenSpaceDir) * Absolute(R.Max.X - R.Min.X)*0.5f;
+  m22 Rot90CCW = {0,-1,
+                   1, 0};
+  v2 Origo = (R.Min + R.Max)*0.5f;
+  v2 YAxis = ScreenSpaceDir * Absolute(R.Max.Y - R.Min.Y)*0.5f;
+  v2 XAxis = (Rot90CCW * ScreenSpaceDir) * Absolute(R.Max.X - R.Min.X)*0.5f;
 
-	v2 TopLeft     = Origo - XAxis + YAxis;
-	v2 TopRight    = Origo + XAxis + YAxis;
-	v2 BottomLeft  = Origo - XAxis - YAxis;
-	v2 BottomRight = Origo + XAxis - YAxis;
+  v2 TopLeft     = Origo - XAxis + YAxis;
+  v2 TopRight    = Origo + XAxis + YAxis;
+  v2 BottomLeft  = Origo - XAxis - YAxis;
+  v2 BottomRight = Origo + XAxis - YAxis;
 
-	DrawLine(Buffer, TopLeft,     TopRight,    Color);
-	DrawLine(Buffer, TopRight,    BottomRight, Color);
-	DrawLine(Buffer, BottomRight, BottomLeft,  Color);
-	DrawLine(Buffer, BottomLeft,  TopLeft,     Color);
+  DrawLine(Buffer, TopLeft,     TopRight,    Color);
+  DrawLine(Buffer, TopRight,    BottomRight, Color);
+  DrawLine(Buffer, BottomRight, BottomLeft,  Color);
+  DrawLine(Buffer, BottomLeft,  TopLeft,     Color);
 }
 
 #if 0
-	internal_function void
+  internal_function void
 DrawBitmap(game_bitmap* Buffer, game_bitmap* Bitmap, 
-					 v2 TopLeft, v2 RealDim, f32 Alpha = 1.0f)
+           v2 TopLeft, v2 RealDim, f32 Alpha = 1.0f)
 {
-	v2 BottomRight = TopLeft + RealDim;
+  v2 BottomRight = TopLeft + RealDim;
 
-	f32 BitmapPixelPerScreenPixelX = (f32)Bitmap->Width / Absolute(BottomRight.X - TopLeft.X); 
-	f32 BitmapPixelPerScreenPixelY = (f32)Bitmap->Height / Absolute(BottomRight.Y - TopLeft.Y);
+  f32 BitmapPixelPerScreenPixelX = (f32)Bitmap->Width / Absolute(BottomRight.X - TopLeft.X); 
+  f32 BitmapPixelPerScreenPixelY = (f32)Bitmap->Height / Absolute(BottomRight.Y - TopLeft.Y);
 
-	s32 DestLeft   = RoundF32ToS32(TopLeft.X);
-	s32 DestTop    = RoundF32ToS32(TopLeft.Y);
-	s32 DestRight  = RoundF32ToS32(BottomRight.X);
-	s32 DestBottom = RoundF32ToS32(BottomRight.Y);
+  s32 DestLeft   = RoundF32ToS32(TopLeft.X);
+  s32 DestTop    = RoundF32ToS32(TopLeft.Y);
+  s32 DestRight  = RoundF32ToS32(BottomRight.X);
+  s32 DestBottom = RoundF32ToS32(BottomRight.Y);
 
-	DestLeft = DestLeft < 0 ? 0 : DestLeft;
-	DestTop = DestTop < 0 ? 0 : DestTop;
-	DestRight = DestRight > Buffer->Width ? Buffer->Width : DestRight;
-	DestBottom = DestBottom > Buffer->Height ? Buffer->Height : DestBottom;
+  DestLeft = DestLeft < 0 ? 0 : DestLeft;
+  DestTop = DestTop < 0 ? 0 : DestTop;
+  DestRight = DestRight > Buffer->Width ? Buffer->Width : DestRight;
+  DestBottom = DestBottom > Buffer->Height ? Buffer->Height : DestBottom;
 
-	Assert(DestLeft >= 0);
-	Assert(DestRight <= Buffer->Width);
-	Assert(DestTop >= 0);
-	Assert(DestBottom <= Buffer->Height);
+  Assert(DestLeft >= 0);
+  Assert(DestRight <= Buffer->Width);
+  Assert(DestTop >= 0);
+  Assert(DestBottom <= Buffer->Height);
 
-	u32 *DestBufferRow = Buffer->Memory + (Buffer->Pitch * DestTop + DestLeft);
+  u32 *DestBufferRow = Buffer->Memory + (Buffer->Pitch * DestTop + DestLeft);
 
-	for(s32 DestY = DestTop;
-			DestY < DestBottom;
-			++DestY)
-	{
-		u32 *DestPixel = DestBufferRow;
+  for(s32 DestY = DestTop;
+      DestY < DestBottom;
+      ++DestY)
+  {
+    u32 *DestPixel = DestBufferRow;
 
-		for(s32 DestX = DestLeft;
-				DestX < DestRight;
-				++DestX)
-		{
+    for(s32 DestX = DestLeft;
+        DestX < DestRight;
+        ++DestX)
+    {
 
-			f32 BitmapPixelX = (DestX - TopLeft.X) * BitmapPixelPerScreenPixelX;
-			f32 BitmapPixelY = (DestY - TopLeft.Y) * BitmapPixelPerScreenPixelY;
+      f32 BitmapPixelX = (DestX - TopLeft.X) * BitmapPixelPerScreenPixelX;
+      f32 BitmapPixelY = (DestY - TopLeft.Y) * BitmapPixelPerScreenPixelY;
 
-			s32 SrcX = RoundF32ToS32(BitmapPixelX);
-			s32 SrcY = RoundF32ToS32(BitmapPixelY);
+      s32 SrcX = RoundF32ToS32(BitmapPixelX);
+      s32 SrcY = RoundF32ToS32(BitmapPixelY);
 
-			if(0 <= SrcX && SrcX < Bitmap->Width &&
-				 0 <= SrcY && SrcY < Bitmap->Height)
-			{
-				u32 SourceColor = Bitmap->Memory[Bitmap->Pitch * SrcY + SrcX];
-				u32 DestColor = *DestPixel;
+      if(0 <= SrcX && SrcX < Bitmap->Width &&
+         0 <= SrcY && SrcY < Bitmap->Height)
+      {
+        u32 SourceColor = Bitmap->Memory[Bitmap->Pitch * SrcY + SrcX];
+        u32 DestColor = *DestPixel;
 
-				f32 SA = (f32)((SourceColor >> 24)&0xFF)*Alpha;
-				f32 SR = (f32)((SourceColor >> 16)&0xFF)*Alpha;
-				f32 SG = (f32)((SourceColor >>  8)&0xFF)*Alpha;
-				f32 SB = (f32)((SourceColor >>  0)&0xFF)*Alpha;
+        f32 SA = (f32)((SourceColor >> 24)&0xFF)*Alpha;
+        f32 SR = (f32)((SourceColor >> 16)&0xFF)*Alpha;
+        f32 SG = (f32)((SourceColor >>  8)&0xFF)*Alpha;
+        f32 SB = (f32)((SourceColor >>  0)&0xFF)*Alpha;
         f32 RSA = SA / 255.0f;
 
         f32 DA = (f32)((DestColor   >> 24)&0xFF);
-				f32 DR = (f32)((DestColor   >> 16)&0xFF);
-				f32 DG = (f32)((DestColor   >>  8)&0xFF);
-				f32 DB = (f32)((DestColor   >>  0)&0xFF);
+        f32 DR = (f32)((DestColor   >> 16)&0xFF);
+        f32 DG = (f32)((DestColor   >>  8)&0xFF);
+        f32 DB = (f32)((DestColor   >>  0)&0xFF);
         f32 RDA = DA / 255.0f;
 
-				f32 InvRSA = (1.0f - RSA);
-				f32 A = 255.0f*(RSA + RDA - RSA*RDA);
- 				f32 R = InvRSA*DR + SR;
-				f32 G = InvRSA*DG + SG;
-				f32 B = InvRSA*DB + SB;
+        f32 InvRSA = (1.0f - RSA);
+        f32 A = 255.0f*(RSA + RDA - RSA*RDA);
+        f32 R = InvRSA*DR + SR;
+        f32 G = InvRSA*DG + SG;
+        f32 B = InvRSA*DB + SB;
 
         *DestPixel = (((u32)(A+0.5f) << 24) | 
                       ((u32)(R+0.5f) << 16) | 
@@ -795,45 +897,45 @@ DrawBitmap(game_bitmap* Buffer, game_bitmap* Bitmap,
                       ((u32)(B+0.5f) <<  0));
       }
 
-			DestPixel++;
-		}
+      DestPixel++;
+    }
 
-		DestBufferRow += Buffer->Pitch;
-	}
+    DestBufferRow += Buffer->Pitch;
+  }
 }
 #endif
 
-	internal_function void
+  internal_function void
 DrawCircle(game_bitmap *Buffer, 
-					 f32 RealX, f32 RealY, f32 RealRadius,
-					 f32 R, f32 G, f32 B, f32 A)
+           f32 RealX, f32 RealY, f32 RealRadius,
+           f32 R, f32 G, f32 B, f32 A)
 {
-	s32 CenterX = RoundF32ToS32(RealX);
-	s32 CenterY = RoundF32ToS32(RealY);
-	s32 Left    = RoundF32ToS32(RealX - RealRadius);
-	s32 Right   = RoundF32ToS32(RealX + RealRadius);
-	s32 Bottom  = RoundF32ToS32(RealY - RealRadius);
-	s32 Top     = RoundF32ToS32(RealY + RealRadius);
+  s32 CenterX = RoundF32ToS32(RealX);
+  s32 CenterY = RoundF32ToS32(RealY);
+  s32 Left    = RoundF32ToS32(RealX - RealRadius);
+  s32 Right   = RoundF32ToS32(RealX + RealRadius);
+  s32 Bottom  = RoundF32ToS32(RealY - RealRadius);
+  s32 Top     = RoundF32ToS32(RealY + RealRadius);
 
-	s32 RadiusSquared = RoundF32ToS32(Square(RealRadius));
+  s32 RadiusSquared = RoundF32ToS32(Square(RealRadius));
 
-	Left = Left < 0 ? 0 : Left;
-	Bottom = Bottom < 0 ? 0 : Bottom;
-	Right = Right > Buffer->Width ? Buffer->Width : Right;
-	Top = Top > Buffer->Height ? Buffer->Height : Top;
+  Left = Left < 0 ? 0 : Left;
+  Bottom = Bottom < 0 ? 0 : Bottom;
+  Right = Right > Buffer->Width ? Buffer->Width : Right;
+  Top = Top > Buffer->Height ? Buffer->Height : Top;
 
-	u32 *UpperLeftPixel = (u32 *)Buffer->Memory + Left + Bottom * Buffer->Pitch;
+  u32 *UpperLeftPixel = (u32 *)Buffer->Memory + Left + Bottom * Buffer->Pitch;
 
-	for(s32 Y = Bottom;
-			Y < Top;
-			++Y)
-	{
-		u32 *Pixel = UpperLeftPixel;
+  for(s32 Y = Bottom;
+      Y < Top;
+      ++Y)
+  {
+    u32 *Pixel = UpperLeftPixel;
 
-		for(s32 X = Left;
-				X < Right;
-				++X)
-		{
+    for(s32 X = Left;
+        X < Right;
+        ++X)
+    {
 			s32 dX = X-CenterX;
 			s32 dY = Y-CenterY;
 			if((Square(dX)+Square(dY)) < RadiusSquared)

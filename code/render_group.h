@@ -433,7 +433,6 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   __m128 UVBitmapHeight = _mm_set1_ps((f32)(Bitmap->Height-2));
 
   u32 DefaultSSERoundingMode = _MM_GET_ROUNDING_MODE();
-  _MM_SET_ROUNDING_MODE(DefaultSSERoundingMode);
 
   __m128 Inv255 = _mm_set1_ps( 1.0f/255.0f);
   __m128 SquareInv255 = _mm_set1_ps(Square(1.0f/255.0f));
@@ -573,9 +572,8 @@ DrawTriangleSlowly(game_bitmap *Buffer,
         __m128 tX = _mm_mul_ps(U, UVBitmapWidth); 
         __m128 tY = _mm_mul_ps(V, UVBitmapHeight);
 
-        //NOTE(bjorn): Rounding mode is set to _MM_ROUND_DOWN
-        wX = _mm_cvtps_epi32(tX);
-        wY = _mm_cvtps_epi32(tY);
+        wX = _mm_cvttps_epi32(tX);
+        wY = _mm_cvttps_epi32(tY);
 
         fX = _mm_sub_ps(tX, _mm_cvtepi32_ps(wX));
         fY = _mm_sub_ps(tY, _mm_cvtepi32_ps(wY));
@@ -729,20 +727,27 @@ DrawTriangleSlowly(game_bitmap *Buffer,
       BlendedB = _mm_mul_ps(_mm_sqrt_ps(BlendedB), Const255);
       BlendedA = _mm_mul_ps(BlendedA, Const255);
 
-      for(s32 I = 0;
-          I < 4;
-          I++)
-      {
-        if(DrawMask.m128_i32[I] != 0)
-        {
-          u32 Color = (((u32)(BlendedA.m128_f32[I]+0.5f) << 24) | 
-                       ((u32)(BlendedR.m128_f32[I]+0.5f) << 16) | 
-                       ((u32)(BlendedG.m128_f32[I]+0.5f) <<  8) | 
-                       ((u32)(BlendedB.m128_f32[I]+0.5f) <<  0));
+      BlendedR = _mm_max_ps(Const0, _mm_min_ps(BlendedR, Const255));
+      BlendedG = _mm_max_ps(Const0, _mm_min_ps(BlendedG, Const255));
+      BlendedB = _mm_max_ps(Const0, _mm_min_ps(BlendedB, Const255));
+      BlendedA = _mm_max_ps(Const0, _mm_min_ps(BlendedA, Const255));
 
-          *(Pixel+I) = Color;
-        }
-      }
+        _MM_SET_ROUNDING_MODE(_MM_ROUND_NEAREST);
+      __m128i IntR = _mm_cvtps_epi32(BlendedR);
+      __m128i IntG = _mm_cvtps_epi32(BlendedG);
+      __m128i IntB = _mm_cvtps_epi32(BlendedB);
+      __m128i IntA = _mm_cvtps_epi32(BlendedA);
+
+      IntR = _mm_slli_epi32(IntR, 16);
+      IntG = _mm_slli_epi32(IntG,  8);
+      IntA = _mm_slli_epi32(IntA, 24);
+
+      __m128i Out = _mm_or_si128(_mm_or_si128(IntR,
+                                              IntG), 
+                                 _mm_or_si128(IntB,
+                                              IntA));
+      _mm_storeu_si128((__m128i*)Pixel, Out);
+
       Pixel += 4;
     }
 
@@ -751,7 +756,7 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 
   END_TIMED_BLOCK_COUNTED(ProcessPixel, (Right-Left) * (Top-Bottom));
 
-  _MM_SET_ROUNDING_MODE(_MM_ROUND_DOWN);
+  _MM_SET_ROUNDING_MODE(DefaultSSERoundingMode);
 
   END_TIMED_BLOCK(DrawTriangleSlowly);
 }

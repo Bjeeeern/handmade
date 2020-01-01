@@ -101,14 +101,13 @@ GenerateTile(game_state* GameState, game_bitmap* Buffer)
 {
   temporary_memory TempMem = BeginTemporaryMemory(&GameState->TransientArena);
   render_group* RenderGroup = AllocateRenderGroup(&GameState->TransientArena, Megabytes(4));
-  SetCamera(RenderGroup, M44Identity(), 1.0f, 1.0f);
 
   random_series Series = Seed(0);
 
   v4 Color = {1.0f,1.0f,1.0f,1.0f};
 
-#if 0
-  u32 Count = 50;
+#if 1
+  u32 Count = 200;
 #else
   u32 Count = 0;
 #endif
@@ -130,12 +129,12 @@ GenerateTile(game_state* GameState, game_bitmap* Buffer)
     PushQuad(RenderGroup, ConstructTransform(Offset, Bitmap->Dim), Bitmap, Color);
   }
 
-  for(u32 Index = 0; Index < Count; Index++)
+  for(u32 Index = 0; Index < Count/2; Index++)
   {
     v2 Offset = Hadamard(RandomBilateralV2(&Series) * 0.5f, Buffer->Dim);
 
     game_bitmap* Bitmap = 0;
-    if(RandomChoice(&Series, 2) > 0.8f)
+    if(RandomUnilateral(&Series) > 0.8f)
     {
       Bitmap = GameState->Rock + RandomChoice(&Series, 4);
     }
@@ -147,6 +146,7 @@ GenerateTile(game_state* GameState, game_bitmap* Buffer)
     PushQuad(RenderGroup, ConstructTransform(Offset, Bitmap->Dim), Bitmap, Color);
   }
 
+  SetCamera(RenderGroup, M44Identity(), 1.0f, 1.0f);
   RenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
 
 	EndTemporaryMemory(TempMem);
@@ -904,7 +904,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     v4 Color = {1,1,1,1};
 #endif
 
-#if 0
+#if 1
     PushQuad(RenderGroup, Transform, &GameState->GeneratedTile, Color);
 #else
     PushQuad(RenderGroup, Transform, &GameState->Tree[1], Color);

@@ -433,9 +433,12 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   __m128 UVBitmapHeight = _mm_set1_ps((f32)(Bitmap->Height-2));
 
   u32 DefaultSSERoundingMode = _MM_GET_ROUNDING_MODE();
+  _MM_SET_ROUNDING_MODE(_MM_ROUND_NEAREST);
 
   __m128 Inv255 = _mm_set1_ps( 1.0f/255.0f);
   __m128 SquareInv255 = _mm_set1_ps(Square(1.0f/255.0f));
+
+  __m128i Mask0xFF = _mm_set1_epi32(0x000000FF);
 
   u32 *UpperLeftPixel = Buffer->Memory + Left + Bottom * Buffer->Pitch;
   BEGIN_TIMED_BLOCK(ProcessPixel);
@@ -534,219 +537,175 @@ DrawTriangleSlowly(game_bitmap *Buffer,
         BarycentricWeight1 = _mm_add_ps(BarycentricWeight1, Bary3D_Epsilon);
         BarycentricWeight2 = _mm_add_ps(BarycentricWeight2, Bary3D_Epsilon);
       }
-      __m128 DrawMask = 
-        _mm_and_ps(_mm_and_ps(_mm_cmpge_ps(BarycentricWeight0, Const0), 
-                              _mm_cmpge_ps(BarycentricWeight1, Const0)),
-                   _mm_cmpge_ps(BarycentricWeight2, Const0));
-
-      __m128 TexelR;
-      __m128 TexelG;
-      __m128 TexelB;
-      __m128 TexelA;
-
-      __m128i wX;
-      __m128i wY;
-
-      __m128 fX;
-      __m128 fY;
-      if(Bitmap)
+      __m128i DrawMask = 
+        _mm_castps_si128(_mm_and_ps(_mm_and_ps(_mm_cmpge_ps(BarycentricWeight0, Const0), 
+                                               _mm_cmpge_ps(BarycentricWeight1, Const0)),
+                                    _mm_cmpge_ps(BarycentricWeight2, Const0)));
+      if(_mm_movemask_epi8(DrawMask))
       {
-        __m128 U = _mm_add_ps(_mm_add_ps(_mm_mul_ps(BarycentricWeight0, UV0U), 
-                                         _mm_mul_ps(BarycentricWeight1, UV1U)), 
-                              _mm_mul_ps(BarycentricWeight2, UV2U));
-        __m128 V = _mm_add_ps(_mm_add_ps(_mm_mul_ps(BarycentricWeight0, UV0V), 
-                                         _mm_mul_ps(BarycentricWeight1, UV1V)), 
-                              _mm_mul_ps(BarycentricWeight2, UV2V));
+        __m128i Dest = _mm_loadu_si128((__m128i*)Pixel);
 
-#if 0
-        for(s32 I = 0;
-            I < 4;
-            I++)
-        {
-          if(DrawMask.m128_i32[I] == 0) { continue; }
-          Assert(0.0f <= U.m128_f32[I] && U.m128_f32[I] <= 1.0f);
-          Assert(0.0f <= V.m128_f32[I] && V.m128_f32[I] <= 1.0f);
-        }
-#endif
+        __m128 DestR = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(Dest, 16), Mask0xFF));
+        __m128 DestG = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(Dest,  8), Mask0xFF));
+        __m128 DestB = _mm_cvtepi32_ps(_mm_and_si128(               Dest,      Mask0xFF));
+        __m128 DestA = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(Dest, 24), Mask0xFF));
 
-        __m128 tX = _mm_mul_ps(U, UVBitmapWidth); 
-        __m128 tY = _mm_mul_ps(V, UVBitmapHeight);
-
-        wX = _mm_cvttps_epi32(tX);
-        wY = _mm_cvttps_epi32(tY);
-
-        fX = _mm_sub_ps(tX, _mm_cvtepi32_ps(wX));
-        fY = _mm_sub_ps(tY, _mm_cvtepi32_ps(wY));
-
-#if 0
-        for(s32 I = 0;
-            I < 4;
-            I++)
-        {
-          if(DrawMask.m128_i32[I] == 0) { continue; }
-          Assert(0 <= tX.m128_f32[I] && tX.m128_f32[I] < Bitmap->Width);
-          Assert(0 <= tY.m128_f32[I] && tY.m128_f32[I] < Bitmap->Height);
-        }
-#endif
-      }
-
-      __m128 TexelSmp0R;
-      __m128 TexelSmp0G;
-      __m128 TexelSmp0B;
-      __m128 TexelSmp0A;
-
-      __m128 TexelSmp1R;
-      __m128 TexelSmp1G;
-      __m128 TexelSmp1B;
-      __m128 TexelSmp1A;
-
-      __m128 TexelSmp2R;
-      __m128 TexelSmp2G;
-      __m128 TexelSmp2B;
-      __m128 TexelSmp2A;
-
-      __m128 TexelSmp3R;
-      __m128 TexelSmp3G;
-      __m128 TexelSmp3B;
-      __m128 TexelSmp3A;
-
-      __m128 DestR;
-      __m128 DestG;
-      __m128 DestB;
-      __m128 DestA;
-
-      for(s32 I = 0;
-          I < 4;
-          I++)
-      {
-        if(DrawMask.m128_i32[I] == 0) { continue; }
-
+        __m128 TexelR;
+        __m128 TexelG;
+        __m128 TexelB;
+        __m128 TexelA;
         if(Bitmap)
         {
-          u32* TexelPtr = Bitmap->Memory + Bitmap->Pitch * wY.m128i_i32[I] + wX.m128i_i32[I];
-          u32* TexelPtr0 = TexelPtr;
-          u32* TexelPtr1 = TexelPtr + 1;
-          u32* TexelPtr2 = TexelPtr + Bitmap->Pitch;
-          u32* TexelPtr3 = TexelPtr + Bitmap->Pitch + 1;
+          __m128 U = _mm_add_ps(_mm_add_ps(_mm_mul_ps(BarycentricWeight0, UV0U), 
+                                           _mm_mul_ps(BarycentricWeight1, UV1U)), 
+                                _mm_mul_ps(BarycentricWeight2, UV2U));
+          __m128 V = _mm_add_ps(_mm_add_ps(_mm_mul_ps(BarycentricWeight0, UV0V), 
+                                           _mm_mul_ps(BarycentricWeight1, UV1V)), 
+                                _mm_mul_ps(BarycentricWeight2, UV2V));
 
-          TexelSmp0R.m128_f32[I] = (f32)((*TexelPtr0 >> 16)&0xFF);
-          TexelSmp0G.m128_f32[I] = (f32)((*TexelPtr0 >>  8)&0xFF);
-          TexelSmp0B.m128_f32[I] = (f32)((*TexelPtr0 >>  0)&0xFF);
-          TexelSmp0A.m128_f32[I] = (f32)((*TexelPtr0 >> 24)&0xFF);
+          U = _mm_max_ps(Const0, _mm_min_ps(U, Const1));
+          V = _mm_max_ps(Const0, _mm_min_ps(V, Const1));
 
-          TexelSmp1R.m128_f32[I] = (f32)((*TexelPtr1 >> 16)&0xFF);
-          TexelSmp1G.m128_f32[I] = (f32)((*TexelPtr1 >>  8)&0xFF);
-          TexelSmp1B.m128_f32[I] = (f32)((*TexelPtr1 >>  0)&0xFF);
-          TexelSmp1A.m128_f32[I] = (f32)((*TexelPtr1 >> 24)&0xFF);
+          __m128 tX = _mm_mul_ps(U, UVBitmapWidth); 
+          __m128 tY = _mm_mul_ps(V, UVBitmapHeight);
 
-          TexelSmp2R.m128_f32[I] = (f32)((*TexelPtr2 >> 16)&0xFF);
-          TexelSmp2G.m128_f32[I] = (f32)((*TexelPtr2 >>  8)&0xFF);
-          TexelSmp2B.m128_f32[I] = (f32)((*TexelPtr2 >>  0)&0xFF);
-          TexelSmp2A.m128_f32[I] = (f32)((*TexelPtr2 >> 24)&0xFF);
+          __m128i wX = _mm_cvttps_epi32(tX);
+          __m128i wY = _mm_cvttps_epi32(tY);
 
-          TexelSmp3R.m128_f32[I] = (f32)((*TexelPtr3 >> 16)&0xFF);
-          TexelSmp3G.m128_f32[I] = (f32)((*TexelPtr3 >>  8)&0xFF);
-          TexelSmp3B.m128_f32[I] = (f32)((*TexelPtr3 >>  0)&0xFF);
-          TexelSmp3A.m128_f32[I] = (f32)((*TexelPtr3 >> 24)&0xFF);
+          __m128 fX = _mm_sub_ps(tX, _mm_cvtepi32_ps(wX));
+          __m128 fY = _mm_sub_ps(tY, _mm_cvtepi32_ps(wY));
+
+          __m128i TexSmp0;
+          __m128i TexSmp1;
+          __m128i TexSmp2;
+          __m128i TexSmp3;
+          for(s32 I = 0;
+              I < 4;
+              I++)
+          {
+            u32* TexelPtr = Bitmap->Memory + Bitmap->Pitch * wY.m128i_i32[I] + wX.m128i_i32[I];
+            u32* TexelPtr0 = TexelPtr;
+            u32* TexelPtr1 = TexelPtr + 1;
+            u32* TexelPtr2 = TexelPtr + Bitmap->Pitch;
+            u32* TexelPtr3 = TexelPtr + Bitmap->Pitch + 1;
+
+            TexSmp0.m128i_i32[I] = *TexelPtr0;
+            TexSmp1.m128i_i32[I] = *TexelPtr1;
+            TexSmp2.m128i_i32[I] = *TexelPtr2;
+            TexSmp3.m128i_i32[I] = *TexelPtr3;
+          }
+
+          __m128 TexSmp0R = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(TexSmp0, 16), Mask0xFF));
+          __m128 TexSmp0G = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(TexSmp0,  8), Mask0xFF));
+          __m128 TexSmp0B = _mm_cvtepi32_ps(_mm_and_si128(               TexSmp0,      Mask0xFF));
+          __m128 TexSmp0A = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(TexSmp0, 24), Mask0xFF));
+
+          __m128 TexSmp1R = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(TexSmp1, 16), Mask0xFF));
+          __m128 TexSmp1G = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(TexSmp1,  8), Mask0xFF));
+          __m128 TexSmp1B = _mm_cvtepi32_ps(_mm_and_si128(               TexSmp1,      Mask0xFF));
+          __m128 TexSmp1A = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(TexSmp1, 24), Mask0xFF));
+
+          __m128 TexSmp2R = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(TexSmp2, 16), Mask0xFF));
+          __m128 TexSmp2G = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(TexSmp2,  8), Mask0xFF));
+          __m128 TexSmp2B = _mm_cvtepi32_ps(_mm_and_si128(               TexSmp2,      Mask0xFF));
+          __m128 TexSmp2A = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(TexSmp2, 24), Mask0xFF));
+
+          __m128 TexSmp3R = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(TexSmp3, 16), Mask0xFF));
+          __m128 TexSmp3G = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(TexSmp3,  8), Mask0xFF));
+          __m128 TexSmp3B = _mm_cvtepi32_ps(_mm_and_si128(               TexSmp3,      Mask0xFF));
+          __m128 TexSmp3A = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(TexSmp3, 24), Mask0xFF));
+
+          TexSmp0R = _mm_mul_ps(TexSmp0R, _mm_mul_ps(TexSmp0R, SquareInv255));
+          TexSmp0G = _mm_mul_ps(TexSmp0G, _mm_mul_ps(TexSmp0G, SquareInv255));
+          TexSmp0B = _mm_mul_ps(TexSmp0B, _mm_mul_ps(TexSmp0B, SquareInv255));
+          TexSmp0A = _mm_mul_ps(TexSmp0A, Inv255);
+
+          TexSmp1R = _mm_mul_ps(TexSmp1R, _mm_mul_ps(TexSmp1R, SquareInv255));
+          TexSmp1G = _mm_mul_ps(TexSmp1G, _mm_mul_ps(TexSmp1G, SquareInv255));
+          TexSmp1B = _mm_mul_ps(TexSmp1B, _mm_mul_ps(TexSmp1B, SquareInv255));
+          TexSmp1A = _mm_mul_ps(TexSmp1A, Inv255);
+
+          TexSmp2R = _mm_mul_ps(TexSmp2R, _mm_mul_ps(TexSmp2R, SquareInv255));
+          TexSmp2G = _mm_mul_ps(TexSmp2G, _mm_mul_ps(TexSmp2G, SquareInv255));
+          TexSmp2B = _mm_mul_ps(TexSmp2B, _mm_mul_ps(TexSmp2B, SquareInv255));
+          TexSmp2A = _mm_mul_ps(TexSmp2A, Inv255);
+
+          TexSmp3R = _mm_mul_ps(TexSmp3R, _mm_mul_ps(TexSmp3R, SquareInv255));
+          TexSmp3G = _mm_mul_ps(TexSmp3G, _mm_mul_ps(TexSmp3G, SquareInv255));
+          TexSmp3B = _mm_mul_ps(TexSmp3B, _mm_mul_ps(TexSmp3B, SquareInv255));
+          TexSmp3A = _mm_mul_ps(TexSmp3A, Inv255);
+
+          __m128 ifY = _mm_sub_ps(Const1, fY);
+          __m128 ifX = _mm_sub_ps(Const1, fX);
+          __m128 ifYmifX = _mm_mul_ps(ifY, ifX);
+          __m128 ifYmfX  = _mm_mul_ps(ifY,  fX);
+          __m128 ifXmfY  = _mm_mul_ps(ifX,  fY);
+          __m128 fXmfY   = _mm_mul_ps( fX,  fY);
+
+          TexelR = 
+            _mm_add_ps(_mm_add_ps(_mm_mul_ps(ifYmifX, TexSmp0R), _mm_mul_ps(ifYmfX, TexSmp1R)), 
+                       _mm_add_ps(_mm_mul_ps(ifXmfY,  TexSmp2R), _mm_mul_ps(fXmfY,  TexSmp3R)));
+          TexelG = 
+            _mm_add_ps(_mm_add_ps(_mm_mul_ps(ifYmifX, TexSmp0G), _mm_mul_ps(ifYmfX, TexSmp1G)), 
+                       _mm_add_ps(_mm_mul_ps(ifXmfY,  TexSmp2G), _mm_mul_ps(fXmfY,  TexSmp3G)));
+          TexelB = 
+            _mm_add_ps(_mm_add_ps(_mm_mul_ps(ifYmifX, TexSmp0B), _mm_mul_ps(ifYmfX, TexSmp1B)), 
+                       _mm_add_ps(_mm_mul_ps(ifXmfY,  TexSmp2B), _mm_mul_ps(fXmfY,  TexSmp3B)));
+          TexelA = 
+            _mm_add_ps(_mm_add_ps(_mm_mul_ps(ifYmifX, TexSmp0A), _mm_mul_ps(ifYmfX, TexSmp1A)), 
+                       _mm_add_ps(_mm_mul_ps(ifXmfY,  TexSmp2A), _mm_mul_ps(fXmfY,  TexSmp3A)));
+
+          TexelR = _mm_mul_ps(TexelR, ColorModifierR);
+          TexelG = _mm_mul_ps(TexelG, ColorModifierG);
+          TexelB = _mm_mul_ps(TexelB, ColorModifierB);
+          TexelA = _mm_mul_ps(TexelA, ColorModifierA);
+        }
+        else
+        {
+          TexelR = ColorModifierR;
+          TexelG = ColorModifierG;
+          TexelB = ColorModifierB;
+          TexelA = ColorModifierA;
         }
 
-        DestR.m128_f32[I] = (f32)((*(Pixel+I) >> 16)&0xFF);
-        DestG.m128_f32[I] = (f32)((*(Pixel+I) >>  8)&0xFF);
-        DestB.m128_f32[I] = (f32)((*(Pixel+I) >>  0)&0xFF);
-        DestA.m128_f32[I] = (f32)((*(Pixel+I) >> 24)&0xFF);
+        DestR = _mm_mul_ps(DestR, _mm_mul_ps(DestR, SquareInv255));
+        DestG = _mm_mul_ps(DestG, _mm_mul_ps(DestG, SquareInv255));
+        DestB = _mm_mul_ps(DestB, _mm_mul_ps(DestB, SquareInv255));
+        DestA = _mm_mul_ps(DestA, Inv255);
+
+        __m128 InvTexelA = _mm_sub_ps(Const1, TexelA);
+        __m128 BlendedR = _mm_add_ps(_mm_mul_ps(DestR, InvTexelA), TexelR);
+        __m128 BlendedG = _mm_add_ps(_mm_mul_ps(DestG, InvTexelA), TexelG);
+        __m128 BlendedB = _mm_add_ps(_mm_mul_ps(DestB, InvTexelA), TexelB);
+        __m128 BlendedA = _mm_add_ps(_mm_mul_ps(DestA, InvTexelA), TexelA);
+
+        BlendedR = _mm_mul_ps(_mm_sqrt_ps(BlendedR), Const255);
+        BlendedG = _mm_mul_ps(_mm_sqrt_ps(BlendedG), Const255);
+        BlendedB = _mm_mul_ps(_mm_sqrt_ps(BlendedB), Const255);
+        BlendedA = _mm_mul_ps(BlendedA, Const255);
+
+        BlendedR = _mm_max_ps(Const0, _mm_min_ps(BlendedR, Const255));
+        BlendedG = _mm_max_ps(Const0, _mm_min_ps(BlendedG, Const255));
+        BlendedB = _mm_max_ps(Const0, _mm_min_ps(BlendedB, Const255));
+        BlendedA = _mm_max_ps(Const0, _mm_min_ps(BlendedA, Const255));
+
+        __m128i IntR = _mm_cvtps_epi32(BlendedR);
+        __m128i IntG = _mm_cvtps_epi32(BlendedG);
+        __m128i IntB = _mm_cvtps_epi32(BlendedB);
+        __m128i IntA = _mm_cvtps_epi32(BlendedA);
+
+        IntR = _mm_slli_epi32(IntR, 16);
+        IntG = _mm_slli_epi32(IntG,  8);
+        IntA = _mm_slli_epi32(IntA, 24);
+
+        __m128i Out = _mm_or_si128(_mm_or_si128(IntR,
+                                                IntG), 
+                                   _mm_or_si128(IntB,
+                                                IntA));
+        __m128i MaskedOut = _mm_or_si128(_mm_and_si128(DrawMask, Out),
+                                         _mm_andnot_si128(DrawMask, Dest));
+        _mm_storeu_si128((__m128i*)Pixel, MaskedOut);
       }
-
-      if(Bitmap)
-      {
-        TexelSmp0R = _mm_mul_ps(TexelSmp0R, _mm_mul_ps(TexelSmp0R, SquareInv255));
-        TexelSmp0G = _mm_mul_ps(TexelSmp0G, _mm_mul_ps(TexelSmp0G, SquareInv255));
-        TexelSmp0B = _mm_mul_ps(TexelSmp0B, _mm_mul_ps(TexelSmp0B, SquareInv255));
-        TexelSmp0A = _mm_mul_ps(TexelSmp0A, Inv255);
-
-        TexelSmp1R = _mm_mul_ps(TexelSmp1R, _mm_mul_ps(TexelSmp1R, SquareInv255));
-        TexelSmp1G = _mm_mul_ps(TexelSmp1G, _mm_mul_ps(TexelSmp1G, SquareInv255));
-        TexelSmp1B = _mm_mul_ps(TexelSmp1B, _mm_mul_ps(TexelSmp1B, SquareInv255));
-        TexelSmp1A = _mm_mul_ps(TexelSmp1A, Inv255);
-
-        TexelSmp2R = _mm_mul_ps(TexelSmp2R, _mm_mul_ps(TexelSmp2R, SquareInv255));
-        TexelSmp2G = _mm_mul_ps(TexelSmp2G, _mm_mul_ps(TexelSmp2G, SquareInv255));
-        TexelSmp2B = _mm_mul_ps(TexelSmp2B, _mm_mul_ps(TexelSmp2B, SquareInv255));
-        TexelSmp2A = _mm_mul_ps(TexelSmp2A, Inv255);
-
-        TexelSmp3R = _mm_mul_ps(TexelSmp3R, _mm_mul_ps(TexelSmp3R, SquareInv255));
-        TexelSmp3G = _mm_mul_ps(TexelSmp3G, _mm_mul_ps(TexelSmp3G, SquareInv255));
-        TexelSmp3B = _mm_mul_ps(TexelSmp3B, _mm_mul_ps(TexelSmp3B, SquareInv255));
-        TexelSmp3A = _mm_mul_ps(TexelSmp3A, Inv255);
-
-        __m128 ifY = _mm_sub_ps(Const1, fY);
-        __m128 ifX = _mm_sub_ps(Const1, fX);
-        __m128 ifYmifX = _mm_mul_ps(ifY, ifX);
-        __m128 ifYmfX  = _mm_mul_ps(ifY,  fX);
-        __m128 ifXmfY  = _mm_mul_ps(ifX,  fY);
-        __m128 fXmfY   = _mm_mul_ps( fX,  fY);
-
-        TexelR = 
-          _mm_add_ps(_mm_add_ps(_mm_mul_ps(ifYmifX, TexelSmp0R), _mm_mul_ps(ifYmfX, TexelSmp1R)), 
-                     _mm_add_ps(_mm_mul_ps(ifXmfY,  TexelSmp2R), _mm_mul_ps(fXmfY,  TexelSmp3R)));
-        TexelG = 
-          _mm_add_ps(_mm_add_ps(_mm_mul_ps(ifYmifX, TexelSmp0G), _mm_mul_ps(ifYmfX, TexelSmp1G)), 
-                     _mm_add_ps(_mm_mul_ps(ifXmfY,  TexelSmp2G), _mm_mul_ps(fXmfY,  TexelSmp3G)));
-        TexelB = 
-          _mm_add_ps(_mm_add_ps(_mm_mul_ps(ifYmifX, TexelSmp0B), _mm_mul_ps(ifYmfX, TexelSmp1B)), 
-                     _mm_add_ps(_mm_mul_ps(ifXmfY,  TexelSmp2B), _mm_mul_ps(fXmfY,  TexelSmp3B)));
-        TexelA = 
-          _mm_add_ps(_mm_add_ps(_mm_mul_ps(ifYmifX, TexelSmp0A), _mm_mul_ps(ifYmfX, TexelSmp1A)), 
-                     _mm_add_ps(_mm_mul_ps(ifXmfY,  TexelSmp2A), _mm_mul_ps(fXmfY,  TexelSmp3A)));
-
-        TexelR = _mm_mul_ps(TexelR, ColorModifierR);
-        TexelG = _mm_mul_ps(TexelG, ColorModifierG);
-        TexelB = _mm_mul_ps(TexelB, ColorModifierB);
-        TexelA = _mm_mul_ps(TexelA, ColorModifierA);
-      }
-      else
-      {
-        TexelR = ColorModifierR;
-        TexelG = ColorModifierG;
-        TexelB = ColorModifierB;
-        TexelA = ColorModifierA;
-      }
-
-      DestR = _mm_mul_ps(DestR, _mm_mul_ps(DestR, SquareInv255));
-      DestG = _mm_mul_ps(DestG, _mm_mul_ps(DestG, SquareInv255));
-      DestB = _mm_mul_ps(DestB, _mm_mul_ps(DestB, SquareInv255));
-      DestA = _mm_mul_ps(DestA, Inv255);
-
-      __m128 InvTexelA = _mm_sub_ps(Const1, TexelA);
-      __m128 BlendedR = _mm_add_ps(_mm_mul_ps(DestR, InvTexelA), TexelR);
-      __m128 BlendedG = _mm_add_ps(_mm_mul_ps(DestG, InvTexelA), TexelG);
-      __m128 BlendedB = _mm_add_ps(_mm_mul_ps(DestB, InvTexelA), TexelB);
-      __m128 BlendedA = _mm_add_ps(_mm_mul_ps(DestA, InvTexelA), TexelA);
-
-      BlendedR = _mm_mul_ps(_mm_sqrt_ps(BlendedR), Const255);
-      BlendedG = _mm_mul_ps(_mm_sqrt_ps(BlendedG), Const255);
-      BlendedB = _mm_mul_ps(_mm_sqrt_ps(BlendedB), Const255);
-      BlendedA = _mm_mul_ps(BlendedA, Const255);
-
-      BlendedR = _mm_max_ps(Const0, _mm_min_ps(BlendedR, Const255));
-      BlendedG = _mm_max_ps(Const0, _mm_min_ps(BlendedG, Const255));
-      BlendedB = _mm_max_ps(Const0, _mm_min_ps(BlendedB, Const255));
-      BlendedA = _mm_max_ps(Const0, _mm_min_ps(BlendedA, Const255));
-
-        _MM_SET_ROUNDING_MODE(_MM_ROUND_NEAREST);
-      __m128i IntR = _mm_cvtps_epi32(BlendedR);
-      __m128i IntG = _mm_cvtps_epi32(BlendedG);
-      __m128i IntB = _mm_cvtps_epi32(BlendedB);
-      __m128i IntA = _mm_cvtps_epi32(BlendedA);
-
-      IntR = _mm_slli_epi32(IntR, 16);
-      IntG = _mm_slli_epi32(IntG,  8);
-      IntA = _mm_slli_epi32(IntA, 24);
-
-      __m128i Out = _mm_or_si128(_mm_or_si128(IntR,
-                                              IntG), 
-                                 _mm_or_si128(IntB,
-                                              IntA));
-      _mm_storeu_si128((__m128i*)Pixel, Out);
 
       Pixel += 4;
     }

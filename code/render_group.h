@@ -359,6 +359,10 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   __m128 ColorModifierG = _mm_set1_ps(RGBA.G);
   __m128 ColorModifierB = _mm_set1_ps(RGBA.B);
   __m128 ColorModifierA = _mm_set1_ps(RGBA.A);
+  __m128 ColorModifierR255x255 = _mm_set1_ps(RGBA.R*RGBA.R*255.0f*255.0f);
+  __m128 ColorModifierG255x255 = _mm_set1_ps(RGBA.G*RGBA.G*255.0f*255.0f);
+  __m128 ColorModifierB255x255 = _mm_set1_ps(RGBA.B*RGBA.B*255.0f*255.0f);
+  __m128 ColorModifierA255 = _mm_set1_ps(RGBA.A*255.0f);
 
   b32 IsOrthogonal = CamParam->LensChamberSize == positive_infinity32;
 
@@ -440,6 +444,11 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 
   __m128i Mask0xFF = _mm_set1_epi32(0x000000FF);
 
+  __m128 Const4444 = _mm_set_ps(4.0f, 4.0f, 4.0f, 4.0f);
+
+  u32* BitmapMemory = Bitmap->Memory;
+  u32 BitmapPitch = Bitmap->Pitch;
+
   u32 *UpperLeftPixel = Buffer->Memory + Left + Bottom * Buffer->Pitch;
   BEGIN_TIMED_BLOCK(ProcessPixel);
   for(s32 Y = Bottom;
@@ -448,13 +457,13 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   {
     u32 *Pixel = UpperLeftPixel;
 
+    __m128 PixelPointX = _mm_cvtepi32_ps(_mm_set_epi32(Left+3, Left+2, Left+1, Left));
+    __m128 PixelPointY = _mm_cvtepi32_ps(_mm_set1_epi32(Y));
+
     for(s32 IX = Left;
         IX < Right;
         IX += 4)
     {
-      __m128 PixelPointX = _mm_cvtepi32_ps(_mm_set_epi32(IX+3, IX+2, IX+1, IX));
-      __m128 PixelPointY = _mm_cvtepi32_ps(_mm_set1_epi32(Y));
-
       __m128 BarycentricWeight0;
       __m128 BarycentricWeight1;
       __m128 BarycentricWeight2;
@@ -537,6 +546,9 @@ DrawTriangleSlowly(game_bitmap *Buffer,
         BarycentricWeight1 = _mm_add_ps(BarycentricWeight1, Bary3D_Epsilon);
         BarycentricWeight2 = _mm_add_ps(BarycentricWeight2, Bary3D_Epsilon);
       }
+
+      PixelPointX = _mm_add_ps(PixelPointX, Const4444);
+
       __m128i DrawMask = 
         _mm_castps_si128(_mm_and_ps(_mm_and_ps(_mm_cmpge_ps(BarycentricWeight0, Const0), 
                                                _mm_cmpge_ps(BarycentricWeight1, Const0)),
@@ -583,11 +595,11 @@ DrawTriangleSlowly(game_bitmap *Buffer,
               I < 4;
               I++)
           {
-            u32* TexelPtr = Bitmap->Memory + Bitmap->Pitch * wY.m128i_i32[I] + wX.m128i_i32[I];
+            u32* TexelPtr = BitmapMemory + BitmapPitch * wY.m128i_i32[I] + wX.m128i_i32[I];
             u32* TexelPtr0 = TexelPtr;
             u32* TexelPtr1 = TexelPtr + 1;
-            u32* TexelPtr2 = TexelPtr + Bitmap->Pitch;
-            u32* TexelPtr3 = TexelPtr + Bitmap->Pitch + 1;
+            u32* TexelPtr2 = TexelPtr + BitmapPitch;
+            u32* TexelPtr3 = TexelPtr + BitmapPitch + 1;
 
             TexSmp0.m128i_i32[I] = *TexelPtr0;
             TexSmp1.m128i_i32[I] = *TexelPtr1;
@@ -615,25 +627,21 @@ DrawTriangleSlowly(game_bitmap *Buffer,
           __m128 TexSmp3B = _mm_cvtepi32_ps(_mm_and_si128(               TexSmp3,      Mask0xFF));
           __m128 TexSmp3A = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(TexSmp3, 24), Mask0xFF));
 
-          TexSmp0R = _mm_mul_ps(TexSmp0R, _mm_mul_ps(TexSmp0R, SquareInv255));
-          TexSmp0G = _mm_mul_ps(TexSmp0G, _mm_mul_ps(TexSmp0G, SquareInv255));
-          TexSmp0B = _mm_mul_ps(TexSmp0B, _mm_mul_ps(TexSmp0B, SquareInv255));
-          TexSmp0A = _mm_mul_ps(TexSmp0A, Inv255);
+          TexSmp0R = _mm_mul_ps(TexSmp0R, TexSmp0R);
+          TexSmp0G = _mm_mul_ps(TexSmp0G, TexSmp0G);
+          TexSmp0B = _mm_mul_ps(TexSmp0B, TexSmp0B);
 
-          TexSmp1R = _mm_mul_ps(TexSmp1R, _mm_mul_ps(TexSmp1R, SquareInv255));
-          TexSmp1G = _mm_mul_ps(TexSmp1G, _mm_mul_ps(TexSmp1G, SquareInv255));
-          TexSmp1B = _mm_mul_ps(TexSmp1B, _mm_mul_ps(TexSmp1B, SquareInv255));
-          TexSmp1A = _mm_mul_ps(TexSmp1A, Inv255);
+          TexSmp1R = _mm_mul_ps(TexSmp1R, TexSmp1R);
+          TexSmp1G = _mm_mul_ps(TexSmp1G, TexSmp1G);
+          TexSmp1B = _mm_mul_ps(TexSmp1B, TexSmp1B);
 
-          TexSmp2R = _mm_mul_ps(TexSmp2R, _mm_mul_ps(TexSmp2R, SquareInv255));
-          TexSmp2G = _mm_mul_ps(TexSmp2G, _mm_mul_ps(TexSmp2G, SquareInv255));
-          TexSmp2B = _mm_mul_ps(TexSmp2B, _mm_mul_ps(TexSmp2B, SquareInv255));
-          TexSmp2A = _mm_mul_ps(TexSmp2A, Inv255);
+          TexSmp2R = _mm_mul_ps(TexSmp2R, TexSmp2R);
+          TexSmp2G = _mm_mul_ps(TexSmp2G, TexSmp2G);
+          TexSmp2B = _mm_mul_ps(TexSmp2B, TexSmp2B);
 
-          TexSmp3R = _mm_mul_ps(TexSmp3R, _mm_mul_ps(TexSmp3R, SquareInv255));
-          TexSmp3G = _mm_mul_ps(TexSmp3G, _mm_mul_ps(TexSmp3G, SquareInv255));
-          TexSmp3B = _mm_mul_ps(TexSmp3B, _mm_mul_ps(TexSmp3B, SquareInv255));
-          TexSmp3A = _mm_mul_ps(TexSmp3A, Inv255);
+          TexSmp3R = _mm_mul_ps(TexSmp3R, TexSmp3R);
+          TexSmp3G = _mm_mul_ps(TexSmp3G, TexSmp3G);
+          TexSmp3B = _mm_mul_ps(TexSmp3B, TexSmp3B);
 
           __m128 ifY = _mm_sub_ps(Const1, fY);
           __m128 ifX = _mm_sub_ps(Const1, fX);
@@ -662,27 +670,32 @@ DrawTriangleSlowly(game_bitmap *Buffer,
         }
         else
         {
-          TexelR = ColorModifierR;
-          TexelG = ColorModifierG;
-          TexelB = ColorModifierB;
-          TexelA = ColorModifierA;
+          TexelR = ColorModifierR255x255;
+          TexelG = ColorModifierG255x255;
+          TexelB = ColorModifierB255x255;
+          TexelA = ColorModifierA255;
         }
 
-        DestR = _mm_mul_ps(DestR, _mm_mul_ps(DestR, SquareInv255));
-        DestG = _mm_mul_ps(DestG, _mm_mul_ps(DestG, SquareInv255));
-        DestB = _mm_mul_ps(DestB, _mm_mul_ps(DestB, SquareInv255));
-        DestA = _mm_mul_ps(DestA, Inv255);
+        DestR = _mm_mul_ps(DestR, DestR);
+        DestG = _mm_mul_ps(DestG, DestG);
+        DestB = _mm_mul_ps(DestB, DestB);
 
-        __m128 InvTexelA = _mm_sub_ps(Const1, TexelA);
+        __m128 InvTexelA = _mm_sub_ps(Const1, _mm_mul_ps(TexelA, Inv255));
         __m128 BlendedR = _mm_add_ps(_mm_mul_ps(DestR, InvTexelA), TexelR);
         __m128 BlendedG = _mm_add_ps(_mm_mul_ps(DestG, InvTexelA), TexelG);
         __m128 BlendedB = _mm_add_ps(_mm_mul_ps(DestB, InvTexelA), TexelB);
         __m128 BlendedA = _mm_add_ps(_mm_mul_ps(DestA, InvTexelA), TexelA);
 
-        BlendedR = _mm_mul_ps(_mm_sqrt_ps(BlendedR), Const255);
-        BlendedG = _mm_mul_ps(_mm_sqrt_ps(BlendedG), Const255);
-        BlendedB = _mm_mul_ps(_mm_sqrt_ps(BlendedB), Const255);
-        BlendedA = _mm_mul_ps(BlendedA, Const255);
+#if 0
+        //TODO(bjorn): Why is this producing artifacts when A == 0.
+        BlendedR = _mm_mul_ps(_mm_rsqrt_ps(BlendedR), BlendedR);
+        BlendedG = _mm_mul_ps(_mm_rsqrt_ps(BlendedG), BlendedG);
+        BlendedB = _mm_mul_ps(_mm_rsqrt_ps(BlendedB), BlendedB);
+#else
+        BlendedR = _mm_sqrt_ps(BlendedR);
+        BlendedG = _mm_sqrt_ps(BlendedG);
+        BlendedB = _mm_sqrt_ps(BlendedB);
+#endif
 
         BlendedR = _mm_max_ps(Const0, _mm_min_ps(BlendedR, Const255));
         BlendedG = _mm_max_ps(Const0, _mm_min_ps(BlendedG, Const255));

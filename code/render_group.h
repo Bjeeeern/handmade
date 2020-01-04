@@ -448,6 +448,7 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 
   u32* BitmapMemory = Bitmap->Memory;
   u32 BitmapPitch = Bitmap->Pitch;
+  __m128i BitmapPitchWide = _mm_set1_epi32(Bitmap->Pitch);
 
   u32 *UpperLeftPixel = Buffer->Memory + Left + Bottom * Buffer->Pitch;
   BEGIN_TIMED_BLOCK(ProcessPixel);
@@ -587,25 +588,31 @@ DrawTriangleSlowly(game_bitmap *Buffer,
           __m128 fX = _mm_sub_ps(tX, _mm_cvtepi32_ps(wX));
           __m128 fY = _mm_sub_ps(tY, _mm_cvtepi32_ps(wY));
 
-          __m128i TexSmp0;
-          __m128i TexSmp1;
-          __m128i TexSmp2;
-          __m128i TexSmp3;
-          for(s32 I = 0;
-              I < 4;
-              I++)
-          {
-            u32* TexelPtr = BitmapMemory + BitmapPitch * wY.m128i_i32[I] + wX.m128i_i32[I];
-            u32* TexelPtr0 = TexelPtr;
-            u32* TexelPtr1 = TexelPtr + 1;
-            u32* TexelPtr2 = TexelPtr + BitmapPitch;
-            u32* TexelPtr3 = TexelPtr + BitmapPitch + 1;
+          __m128i Fetch = _mm_add_epi32(_mm_mullo_epi32(BitmapPitchWide, wY), wX);
+          u32* TexelPtr0 = BitmapMemory + Fetch.m128i_i32[0];
+          u32* TexelPtr1 = BitmapMemory + Fetch.m128i_i32[1];
+          u32* TexelPtr2 = BitmapMemory + Fetch.m128i_i32[2];
+          u32* TexelPtr3 = BitmapMemory + Fetch.m128i_i32[3];
 
-            TexSmp0.m128i_i32[I] = *TexelPtr0;
-            TexSmp1.m128i_i32[I] = *TexelPtr1;
-            TexSmp2.m128i_i32[I] = *TexelPtr2;
-            TexSmp3.m128i_i32[I] = *TexelPtr3;
-          }
+          __m128i TexSmp0 = _mm_setr_epi32(*TexelPtr0,
+                                           *TexelPtr1,
+                                           *TexelPtr2,
+                                           *TexelPtr3);
+
+          __m128i TexSmp1 = _mm_setr_epi32(*(TexelPtr0 + 1),
+                                           *(TexelPtr1 + 1),
+                                           *(TexelPtr2 + 1),
+                                           *(TexelPtr3 + 1));
+
+          __m128i TexSmp2 = _mm_setr_epi32(*(TexelPtr0 + BitmapPitch),
+                                           *(TexelPtr1 + BitmapPitch),
+                                           *(TexelPtr2 + BitmapPitch),
+                                           *(TexelPtr3 + BitmapPitch));
+
+          __m128i TexSmp3 = _mm_setr_epi32(*(TexelPtr0 + BitmapPitch + 1),
+                                           *(TexelPtr1 + BitmapPitch + 1),
+                                           *(TexelPtr2 + BitmapPitch + 1),
+                                           *(TexelPtr3 + BitmapPitch + 1));
 
           __m128 TexSmp0R = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(TexSmp0, 16), Mask0xFF));
           __m128 TexSmp0G = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(TexSmp0,  8), Mask0xFF));

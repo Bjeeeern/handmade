@@ -1879,6 +1879,12 @@ struct rectangle3s
 };
 
 inline rectangle2
+Rect2sToRect2(rectangle2s Rect)
+{
+  return {(v2)Rect.Min, (v2)Rect.Max};
+}
+
+inline rectangle2
 RectMinMax(v2 Min, v2 Max)
 {
 	return {Min, Max};
@@ -1906,6 +1912,12 @@ HasNoArea(rectangle2s Rect)
   return Rect.Min.X > Rect.Max.X && Rect.Min.Y > Rect.Max.Y;
 }
 
+inline b32
+HasNoArea(rectangle2 Rect)
+{
+  return Rect.Min.X > Rect.Max.X && Rect.Min.Y > Rect.Max.Y;
+}
+
 inline rectangle2u
 RectCenterDim(v2u Center, v2u Dim)
 {
@@ -1926,6 +1938,36 @@ RectCenterDim(v2s Center, v2u Dim)
 	rectangle2s Result = {Center - HalfDim, Center + HalfDim};
 	return Result;
 }
+
+inline v2
+GetRectDim(rectangle2 Rect)
+{
+	v2 Result = {};
+	Result = Rect.Max - Rect.Min;
+  return Result;
+};
+
+struct rect_corner_v2_result
+{
+  union
+  {
+    v2 E[4];
+    struct
+    {
+      v2 A,B,C,D;
+    };
+  };
+};
+inline rect_corner_v2_result
+GetRectCorners(rectangle2 Rect)
+{
+	rect_corner_v2_result Result = {};
+	Result.E[0] = Rect.Min;
+	Result.E[1] = v2{Rect.Min.X, Rect.Max.Y};
+	Result.E[2] = Rect.Max;
+	Result.E[3] = v2{Rect.Max.X, Rect.Min.Y};
+  return Result;
+};
 
 struct center_dim_v3_result
 {
@@ -1971,6 +2013,19 @@ inline rectangle2s
 Intersect(rectangle2s A, rectangle2s B)
 {
   rectangle2s Result;
+
+  Result.Min.X = Max(A.Min.X, B.Min.X);
+  Result.Max.X = Min(A.Max.X, B.Max.X);
+  Result.Min.Y = Max(A.Min.Y, B.Min.Y);
+  Result.Max.Y = Min(A.Max.Y, B.Max.Y);
+
+  return Result;
+}
+
+inline rectangle2
+Intersect(rectangle2 A, rectangle2 B)
+{
+  rectangle2 Result;
 
   Result.Min.X = Max(A.Min.X, B.Min.X);
   Result.Max.X = Min(A.Max.X, B.Max.X);

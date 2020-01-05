@@ -51,170 +51,149 @@ Linear1TosRGB255(v4 Linear)
 
 	internal_function void
 DrawLine(game_bitmap* Buffer, 
-				 f32 AX, f32 AY, f32 BX, f32 BY, 
-				 f32 R, f32 G, f32 B)
+         v2 A, v2 B, v3 RGB,
+         rectangle2s ClipRect, b32 Odd)
 {
-	b32 AIsInside = (((0 <= AX) && (AX < Buffer->Width)) &&
-									 ((0 <= AY) && (AY < Buffer->Height)));
-	b32 BIsInside = (((0 <= BX) && (BX < Buffer->Width)) &&
-									 ((0 <= BY) && (BY < Buffer->Height)));
+  //TODO(bjorn): Implement.
+#if 1
+  v2s Min = { Min(RoundF32ToS32(A.X), RoundF32ToS32(B.X)), 
+              Min(RoundF32ToS32(A.Y), RoundF32ToS32(B.Y))};
+  v2s Max = { Max(RoundF32ToS32(A.X), RoundF32ToS32(B.X)), 
+              Max(RoundF32ToS32(A.Y), RoundF32ToS32(B.Y))};
+  rectangle2s FillRect = RectMinMax(Min, Max);
 
-	v2 Start = {};
-	v2 End = {};
+  FillRect = Intersect(FillRect, ClipRect);
 
-	if(AIsInside)
-	{
-		Start.X = AX;
-		Start.Y = AY;
-		End.X = BX;
-		End.Y = BY;
-	}
-	else if(BIsInside)
-	{
-		Start.X = BX;
-		Start.Y = BY;
-		End.X = AX;
-		End.Y = AY;
-	}
-	else
-	{
-		for(int times = 2;
-				times > 0;
-				times--)
-		{
-			if(AIsInside)
-			{
-				break;
-			}
-			else
-			{
-				if(AX < 0)
-				{
-					if(Absolute(BX - AX) != 0)
-					{
-						f32 t = (0 - AX) / (BX - AX);
-						if(0.0f <= t && t <= 1.0f)
-						{
-							f32 a = t * (BY - AY) + AY;
-							Start.X = 0;
-							Start.Y = a;
-							AX = Start.X;
-							AY = Start.Y;
-							AIsInside = (((0 <= AX) && (AX < Buffer->Width)) &&
-													 ((0 <= AY) && (AY < Buffer->Height)));
-							continue;
-						}
-					}
-					return;
-				}
-				else if(AX >= Buffer->Width)
-				{
-					if(Absolute(BX - AX) != 0)
-					{
-						f32 t = (Buffer->Width - AX) / (BX - AX);
-						if(0.0f <= t && t <= 1.0f)
-						{
-							f32 a = t * (BY - AY) + AY;
-							Start.X = Buffer->Width - 1.0f;
-							Start.Y = a;
-							AX = Start.X;
-							AY = Start.Y;
-							AIsInside = (((0 <= AX) && (AX < Buffer->Width)) &&
-													 ((0 <= AY) && (AY < Buffer->Height)));
-							continue;
-						}
-					}
-					return;
-				}
-				else if(AY < 0)
-				{
-					if(Absolute(BY - AY) != 0)
-					{
-						f32 t = (0 - AY) / (BY - AY);
-						if(0.0f <= t && t <= 1.0f)
-						{
-							f32 a = t * (BX - AX) + AX;
-							Start.X = a;
-							Start.Y = 0;
-							AX = Start.X;
-							AY = Start.Y;
-							AIsInside = (((0 <= AX) && (AX < Buffer->Width)) &&
-													 ((0 <= AY) && (AY < Buffer->Height)));
-							continue;
-						}
-					}
-					return;
-				}
-				else if(AY >= Buffer->Height)
-				{
-					if(Absolute(BY - AY) != 0)
-					{
-						f32 t = (Buffer->Height - AY) / (BY - AY);
-						if(0.0f <= t && t <= 1.0f)
-						{
-							f32 a = t * (BX - AX) + AX;
-							Start.X = a;
-							Start.Y = Buffer->Height - 1.0f;
-							AX = Start.X;
-							AY = Start.Y;
-							AIsInside = (((0 <= AX) && (AX < Buffer->Width)) &&
-													 ((0 <= AY) && (AY < Buffer->Height)));
-							continue;
-						}
-					}
-					return;
-				}
-				else { return; }
-			}
-		}
+  rect_corner_v2_result Corner = GetRectCorners(Rect2sToRect2(FillRect));
+  b32 AOutside = !IsInRectangle(Rect2sToRect2(FillRect), A);
+  b32 BOutside = !IsInRectangle(Rect2sToRect2(FillRect), B);
+  if(AOutside || BOutside)
+  {
+    f32 SmallestT = positive_infinity32;
+    f32 BiggestT = negative_infinity32;
+    {
+      f32 Denom = Determinant(A-B, Corner.A-Corner.B);
+      if(Denom != 0.0f)
+      {
+        f32 t = Determinant(A-Corner.A, Corner.A-Corner.B)/Denom;
+        if(0 < t && t < 1.0f)
+        {
+          if(AOutside)
+          {
+            SmallestT = SmallestT < t ? SmallestT : t;
+          }
+          if(BOutside)
+          {
+            BiggestT = BiggestT > t ? BiggestT : t;
+          }
+        }
+      }
+    }
+    {
+      f32 Denom = Determinant(A-B, Corner.B-Corner.C);
+      if(Denom != 0.0f)
+      {
+        f32 t = Determinant(A-Corner.B, Corner.B-Corner.C)/Denom;
+        if(0 < t && t < 1.0f)
+        {
+          if(AOutside)
+          {
+            SmallestT = SmallestT < t ? SmallestT : t;
+          }
+          if(BOutside)
+          {
+            BiggestT = BiggestT > t ? BiggestT : t;
+          }
+        }
+      }
+    }
+    {
+      f32 Denom = Determinant(A-B, Corner.C-Corner.D);
+      if(Denom != 0.0f)
+      {
+        f32 t = Determinant(A-Corner.C, Corner.C-Corner.D)/Denom;
+        if(0 < t && t < 1.0f)
+        {
+          if(AOutside)
+          {
+            SmallestT = SmallestT < t ? SmallestT : t;
+          }
+          if(BOutside)
+          {
+            BiggestT = BiggestT > t ? BiggestT : t;
+          }
+        }
+      }
+    }
+    {
+      f32 Denom = Determinant(A-B, Corner.D-Corner.A);
+      if(Denom != 0.0f)
+      {
+        f32 t = Determinant(A-Corner.D, Corner.D-Corner.A)/Denom;
+        if(0 < t && t < 1.0f)
+        {
+          if(AOutside)
+          {
+            SmallestT = SmallestT < t ? SmallestT : t;
+          }
+          if(BOutside)
+          {
+            BiggestT = BiggestT > t ? BiggestT : t;
+          }
+        }
+      }
+    }
 
-		End.X = BX;
-		End.Y = BY;
-	}
+    v2 NewA = A + (B-A) * SmallestT;
+    v2 NewB = A + (B-A) * BiggestT;
 
-	u32 Color = ((RoundF32ToS32(R * 255.0f) << 16) |
-							 (RoundF32ToS32(G * 255.0f) << 8) |
-							 (RoundF32ToS32(B * 255.0f) << 0));
+    if(AOutside && SmallestT != positive_infinity32) { A = NewA; }
+    if(BOutside && BiggestT != negative_infinity32) { B = NewB; }
+  }
+#endif
 
-	f32 Length = Distance(Start, End);
-	if(Distance(Start, End) < 1.0f)
+	u32 Color = ((RoundF32ToS32(RGB.R * 255.0f) << 16) |
+							 (RoundF32ToS32(RGB.G * 255.0f) << 8) |
+							 (RoundF32ToS32(RGB.B * 255.0f) << 0));
+
+	f32 Length = Distance(A, B);
+	if(Distance(A, B) < 1.0f)
 	{
 		Length = 1.0f;
 	}
 
 	f32 InverseLength = 1.0f / Length;
-	v2 Normal = (End - Start) * InverseLength;
+	v2 Normal = (B - A) * InverseLength;
 
 	f32 StepLength = 0.0f;
 	while(StepLength < Length)
 	{
-		v2 Point = Start + (Normal * StepLength);
+		v2 Point = A + (Normal * StepLength);
 		s32 X = RoundF32ToS32(Point.X);
 		s32 Y = RoundF32ToS32(Point.Y);
 
 		if(((0 <= X) && (X < Buffer->Width)) &&
 			 ((0 <= Y) && (Y < Buffer->Height)))
 		{
-			u32 *Pixel = (u32 *)Buffer->Memory + Buffer->Pitch * Y + X;
-			*Pixel = Color;
+      if(!(Y % 2) == !Odd)
+      {
+        u32 *Pixel = (u32 *)Buffer->Memory + Buffer->Pitch * Y + X;
+        *Pixel = Color;
+      }
 		}
-		else
-		{
-			return;
-		}
+    else
+    {
+      return;
+    }
 
 		StepLength += 1.0f;
 	}
 }
 
+//TODO(bjorn): reintroduce this function.
+#if 0
 	internal_function void
-DrawLine(game_bitmap* Buffer, v2 A, v2 B, v3 C)
-{
-	DrawLine(Buffer, A.X, A.Y, B.X, B.Y, C.R, C.G, C.B);
-}
-
-	internal_function void
-DrawChar(game_bitmap *Buffer, font *Font, u32 UnicodeCodePoint, 
+DrawChar_(game_bitmap *Buffer, font *Font, u32 UnicodeCodePoint, 
 				 f32 GlyphPixelWidth, f32 GlyphPixelHeight, 
 				 f32 GlyphOriginLeft, f32 GlyphOriginBottom,
 				 f32 RealR, f32 RealG, f32 RealB)
@@ -248,9 +227,10 @@ DrawChar(game_bitmap *Buffer, font *Font, u32 UnicodeCodePoint,
 		v2 Start = Hadamard(Curve.Srt, GlyphDim) + GlyphOrigin;
 		v2 End = Hadamard(Curve.End, GlyphDim) + GlyphOrigin;
 
-		DrawLine(Buffer, Start.X, Start.Y, End.X, End.Y, RealR, RealG, RealB);
+		DrawLine(Buffer, Start, End, v3{RealR, RealG, RealB});
 	}
 }
+#endif
 
 //NOTE(bjorn):
 //
@@ -283,7 +263,7 @@ DrawTriangleSlowly(game_bitmap *Buffer,
                    v3 CameraSpacePoint0, v3 CameraSpacePoint1, v3 CameraSpacePoint2, 
                    v2 UV0, v2 UV1, v2 UV2, 
                    game_bitmap* Bitmap, v4 RGBA,
-                   rectangle2s ClampRect, b32 Odd)
+                   rectangle2s ClipRect, b32 Odd)
 {
   BEGIN_TIMED_BLOCK(DrawTriangleSlowly);
 
@@ -344,7 +324,7 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   FillRect.Max.Y = 
     RoundF32ToS32(Max(Max(PixelSpacePoint0.Y, PixelSpacePoint1.Y),PixelSpacePoint2.Y));
 
-  FillRect = Intersect(FillRect, ClampRect);
+  FillRect = Intersect(FillRect, ClipRect);
   if(HasNoArea(FillRect)) { return; }
 
   __m128i StartupClipMask = _mm_set1_epi32(0xFFFFFFFF);
@@ -796,30 +776,39 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 #endif
 
   internal_function void
-DrawRectangle(game_bitmap *Buffer, rectangle2 Rect, v3 RGB)
+DrawRectangle(game_bitmap *Buffer, rectangle2 Rect, v3 RGB, rectangle2s ClipRect, b32 Odd)
 {
-  s32 Left   = RoundF32ToS32(Rect.Min.X);
-  s32 Right  = RoundF32ToS32(Rect.Max.X);
-  s32 Bottom = RoundF32ToS32(Rect.Min.Y);
-  s32 Top    = RoundF32ToS32(Rect.Max.Y);
+  rectangle2s FillRect;
+  FillRect.Min.X = RoundF32ToS32(Rect.Min.X);
+  FillRect.Max.X = RoundF32ToS32(Rect.Max.X);
+  FillRect.Min.Y = RoundF32ToS32(Rect.Min.Y);
+  FillRect.Max.Y = RoundF32ToS32(Rect.Max.Y);
 
-  Left = Left < 0 ? 0 : Left;
-  Bottom = Bottom < 0 ? 0 : Bottom;
+  FillRect = Intersect(FillRect, ClipRect);
+  if(HasNoArea(FillRect)) { return; }
 
-  Right = Right > Buffer->Width ? Buffer->Width : Right;
-  Top = Top > Buffer->Height ? Buffer->Height : Top;
+  b32 ShiftY = !(FillRect.Min.Y % 2) == Odd;
+  if(ShiftY)
+  {
+    FillRect.Min.Y += 1;
+  }
+
+  s32 Left   = FillRect.Min.X;
+  s32 Bottom = FillRect.Min.Y;
+  s32 Right  = FillRect.Max.X;
+  s32 Top    = FillRect.Max.Y;
 
   u32 Color = ((RoundF32ToS32(RGB.R * 255.0f) << 16) |
                (RoundF32ToS32(RGB.G * 255.0f) << 8) |
                (RoundF32ToS32(RGB.B * 255.0f) << 0));
 
-  s32 PixelPitch = Buffer->Width;
+  s32 PixelPitch = Buffer->Pitch;
 
   u32 *UpperLeftPixel = (u32 *)Buffer->Memory + Left + Bottom * PixelPitch;
 
   for(s32 Y = Bottom;
       Y < Top;
-      ++Y)
+      Y += 2)
   {
     u32 *Pixel = UpperLeftPixel;
 
@@ -830,141 +819,46 @@ DrawRectangle(game_bitmap *Buffer, rectangle2 Rect, v3 RGB)
       *Pixel++ = Color;
     }
 
-    UpperLeftPixel += PixelPitch;
+    UpperLeftPixel += PixelPitch*2;
   }
 }
-
-// TODO(bjorn): There is a visual bug when drawn from BottomRight to TopLeft.
-  internal_function void
-DrawFrame(game_bitmap *Buffer, rectangle2 R, v2 WorldDir, v3 Color)
-{
-  v2 ScreenSpaceDir = v2{WorldDir.X, WorldDir.Y};
-  Assert(LengthSquared(WorldDir) <= 1.001f);
-  Assert(LengthSquared(WorldDir) >= 0.999f);
-
-  m22 Rot90CCW = {0,-1,
-                   1, 0};
-  v2 Origo = (R.Min + R.Max)*0.5f;
-  v2 YAxis = ScreenSpaceDir * Absolute(R.Max.Y - R.Min.Y)*0.5f;
-  v2 XAxis = (Rot90CCW * ScreenSpaceDir) * Absolute(R.Max.X - R.Min.X)*0.5f;
-
-  v2 TopLeft     = Origo - XAxis + YAxis;
-  v2 TopRight    = Origo + XAxis + YAxis;
-  v2 BottomLeft  = Origo - XAxis - YAxis;
-  v2 BottomRight = Origo + XAxis - YAxis;
-
-  DrawLine(Buffer, TopLeft,     TopRight,    Color);
-  DrawLine(Buffer, TopRight,    BottomRight, Color);
-  DrawLine(Buffer, BottomRight, BottomLeft,  Color);
-  DrawLine(Buffer, BottomLeft,  TopLeft,     Color);
-}
-
-#if 0
-  internal_function void
-DrawBitmap(game_bitmap* Buffer, game_bitmap* Bitmap, 
-           v2 TopLeft, v2 RealDim, f32 Alpha = 1.0f)
-{
-  v2 BottomRight = TopLeft + RealDim;
-
-  f32 BitmapPixelPerScreenPixelX = (f32)Bitmap->Width / Absolute(BottomRight.X - TopLeft.X); 
-  f32 BitmapPixelPerScreenPixelY = (f32)Bitmap->Height / Absolute(BottomRight.Y - TopLeft.Y);
-
-  s32 DestLeft   = RoundF32ToS32(TopLeft.X);
-  s32 DestTop    = RoundF32ToS32(TopLeft.Y);
-  s32 DestRight  = RoundF32ToS32(BottomRight.X);
-  s32 DestBottom = RoundF32ToS32(BottomRight.Y);
-
-  DestLeft = DestLeft < 0 ? 0 : DestLeft;
-  DestTop = DestTop < 0 ? 0 : DestTop;
-  DestRight = DestRight > Buffer->Width ? Buffer->Width : DestRight;
-  DestBottom = DestBottom > Buffer->Height ? Buffer->Height : DestBottom;
-
-  Assert(DestLeft >= 0);
-  Assert(DestRight <= Buffer->Width);
-  Assert(DestTop >= 0);
-  Assert(DestBottom <= Buffer->Height);
-
-  u32 *DestBufferRow = Buffer->Memory + (Buffer->Pitch * DestTop + DestLeft);
-
-  for(s32 DestY = DestTop;
-      DestY < DestBottom;
-      ++DestY)
-  {
-    u32 *DestPixel = DestBufferRow;
-
-    for(s32 DestX = DestLeft;
-        DestX < DestRight;
-        ++DestX)
-    {
-
-      f32 BitmapPixelX = (DestX - TopLeft.X) * BitmapPixelPerScreenPixelX;
-      f32 BitmapPixelY = (DestY - TopLeft.Y) * BitmapPixelPerScreenPixelY;
-
-      s32 SrcX = RoundF32ToS32(BitmapPixelX);
-      s32 SrcY = RoundF32ToS32(BitmapPixelY);
-
-      if(0 <= SrcX && SrcX < Bitmap->Width &&
-         0 <= SrcY && SrcY < Bitmap->Height)
-      {
-        u32 SourceColor = Bitmap->Memory[Bitmap->Pitch * SrcY + SrcX];
-        u32 DestColor = *DestPixel;
-
-        f32 SA = (f32)((SourceColor >> 24)&0xFF)*Alpha;
-        f32 SR = (f32)((SourceColor >> 16)&0xFF)*Alpha;
-        f32 SG = (f32)((SourceColor >>  8)&0xFF)*Alpha;
-        f32 SB = (f32)((SourceColor >>  0)&0xFF)*Alpha;
-        f32 RSA = SA / 255.0f;
-
-        f32 DA = (f32)((DestColor   >> 24)&0xFF);
-        f32 DR = (f32)((DestColor   >> 16)&0xFF);
-        f32 DG = (f32)((DestColor   >>  8)&0xFF);
-        f32 DB = (f32)((DestColor   >>  0)&0xFF);
-        f32 RDA = DA / 255.0f;
-
-        f32 InvRSA = (1.0f - RSA);
-        f32 A = 255.0f*(RSA + RDA - RSA*RDA);
-        f32 R = InvRSA*DR + SR;
-        f32 G = InvRSA*DG + SG;
-        f32 B = InvRSA*DB + SB;
-
-        *DestPixel = (((u32)(A+0.5f) << 24) | 
-                      ((u32)(R+0.5f) << 16) | 
-                      ((u32)(G+0.5f) <<  8) | 
-                      ((u32)(B+0.5f) <<  0));
-      }
-
-      DestPixel++;
-    }
-
-    DestBufferRow += Buffer->Pitch;
-  }
-}
-#endif
 
   internal_function void
 DrawCircle(game_bitmap *Buffer, 
            f32 RealX, f32 RealY, f32 RealRadius,
-           f32 R, f32 G, f32 B, f32 A)
+           f32 R, f32 G, f32 B, f32 A,
+           rectangle2s ClipRect, b32 Odd)
 {
-  s32 CenterX = RoundF32ToS32(RealX);
-  s32 CenterY = RoundF32ToS32(RealY);
-  s32 Left    = RoundF32ToS32(RealX - RealRadius);
-  s32 Right   = RoundF32ToS32(RealX + RealRadius);
-  s32 Bottom  = RoundF32ToS32(RealY - RealRadius);
-  s32 Top     = RoundF32ToS32(RealY + RealRadius);
+  rectangle2s FillRect;
+  FillRect.Min.X = RoundF32ToS32(RealX - RealRadius);
+  FillRect.Max.X = RoundF32ToS32(RealX + RealRadius);
+  FillRect.Min.Y = RoundF32ToS32(RealY - RealRadius);
+  FillRect.Max.Y = RoundF32ToS32(RealY + RealRadius);
+
+  FillRect = Intersect(FillRect, ClipRect);
+  if(HasNoArea(FillRect)) { return; }
+
+  b32 ShiftY = !(FillRect.Min.Y % 2) == Odd;
+  if(ShiftY)
+  {
+    FillRect.Min.Y += 1;
+  }
+
+  s32 Left   = FillRect.Min.X;
+  s32 Bottom = FillRect.Min.Y;
+  s32 Right  = FillRect.Max.X;
+  s32 Top    = FillRect.Max.Y;
 
   s32 RadiusSquared = RoundF32ToS32(Square(RealRadius));
 
-  Left = Left < 0 ? 0 : Left;
-  Bottom = Bottom < 0 ? 0 : Bottom;
-  Right = Right > Buffer->Width ? Buffer->Width : Right;
-  Top = Top > Buffer->Height ? Buffer->Height : Top;
+  s32 CenterX = RoundF32ToS32(RealX);
+  s32 CenterY = RoundF32ToS32(RealY);
 
   u32 *UpperLeftPixel = (u32 *)Buffer->Memory + Left + Bottom * Buffer->Pitch;
 
   for(s32 Y = Bottom;
       Y < Top;
-      ++Y)
+      Y += 2)
   {
     u32 *Pixel = UpperLeftPixel;
 
@@ -989,14 +883,14 @@ DrawCircle(game_bitmap *Buffer,
 			Pixel++;
 		}
 
-		UpperLeftPixel += Buffer->Pitch;
+		UpperLeftPixel += Buffer->Pitch*2;
 	}
 }
 
 	internal_function void
-DrawCircle(game_bitmap *Buffer, v2 P, f32 R, v4 C)
+DrawCircle(game_bitmap *Buffer, v2 P, f32 R, v4 C, rectangle2s ClipRect, b32 Odd)
 {
-	DrawCircle(Buffer, P.X, P.Y, R, C.R, C.G, C.B, C.A);
+	DrawCircle(Buffer, P.X, P.Y, R, C.R, C.G, C.B, C.A, ClipRect, Odd);
 }
 
 enum render_group_entry_type
@@ -1251,14 +1145,15 @@ ProjectSegmentToScreen(m44 WorldToCamera, camera_parameters* CamParam,
 
 internal_function void
 DrawVector(render_group* RenderGroup, output_target_screen_variables* ScreenVars, 
-           game_bitmap* OutputTarget, v3 V0, v3 V1, v3 Color)
+           game_bitmap* OutputTarget, v3 V0, v3 V1, v3 Color,
+           rectangle2s ClipRect, b32 Odd)
 {
   pixel_line_segment_result LineSegment = 
     ProjectSegmentToScreen(RenderGroup->WorldToCamera, &RenderGroup->CamParam, 
                            ScreenVars, V0, V1);
   if(LineSegment.PartOfSegmentInView)
   {
-    DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Color);
+    DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Color, ClipRect, Odd);
   }
 
   v3 n = Normalize(V1-V0);
@@ -1299,7 +1194,7 @@ DrawVector(render_group* RenderGroup, output_target_screen_variables* ScreenVars
                              ScreenVars, V0, V1);
     if(LineSegment.PartOfSegmentInView)
     {
-      DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Color);
+      DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Color, ClipRect, Odd);
     }
   }
   for(int VertIndex = 0; 
@@ -1313,7 +1208,7 @@ DrawVector(render_group* RenderGroup, output_target_screen_variables* ScreenVars
                              ScreenVars, V0, V1);
     if(LineSegment.PartOfSegmentInView)
     {
-      DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Color);
+      DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Color, ClipRect, Odd);
     }
   }
 }
@@ -1323,7 +1218,8 @@ DrawVector(render_group* RenderGroup, output_target_screen_variables* ScreenVars
   PushBufferByteOffset += sizeof(render_entry_header) + sizeof(type)
 
   internal_function void
-RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 ScreenHeightInMeters)
+RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 ScreenHeightInMeters,
+                    rectangle2s ClipRect, b32 Odd)
 {
   BEGIN_TIMED_BLOCK(RenderGroupToOutput);
 
@@ -1343,7 +1239,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
   if(RenderGroup->ClearScreen)
   {
     DrawRectangle(OutputTarget, RectMinMax(v2{0.0f, 0.0f}, OutputTarget->Dim), 
-                  RenderGroup->ClearScreenColor.RGB);
+                  RenderGroup->ClearScreenColor.RGB, ClipRect, Odd);
   }
 
   for(u32 PushBufferByteOffset = 0;
@@ -1362,18 +1258,18 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_vector);
 
           DrawVector(RenderGroup, &ScreenVars, OutputTarget,
-                     Entry->A, Entry->B, Entry->Color.RGB);
+                     Entry->A, Entry->B, Entry->Color.RGB, ClipRect, Odd);
         } break;
       case RenderGroupEntryType_render_entry_coordinate_system
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_coordinate_system);
 
           DrawVector(RenderGroup, &ScreenVars, OutputTarget,
-                     Entry->Tran*v3{0,0,0}, Entry->Tran*v3{1,0,0}, v3{1,0,0});
+                     Entry->Tran*v3{0,0,0}, Entry->Tran*v3{1,0,0}, v3{1,0,0}, ClipRect, Odd);
           DrawVector(RenderGroup, &ScreenVars, OutputTarget,
-                     Entry->Tran*v3{0,0,0}, Entry->Tran*v3{0,1,0}, v3{0,1,0});
+                     Entry->Tran*v3{0,0,0}, Entry->Tran*v3{0,1,0}, v3{0,1,0}, ClipRect, Odd);
           DrawVector(RenderGroup, &ScreenVars, OutputTarget,
-                     Entry->Tran*v3{0,0,0}, Entry->Tran*v3{0,0,1}, v3{0,0,1});
+                     Entry->Tran*v3{0,0,0}, Entry->Tran*v3{0,0,1}, v3{0,0,1}, ClipRect, Odd);
         } break;
       case RenderGroupEntryType_render_entry_wire_cube
         : {
@@ -1392,7 +1288,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                                      &ScreenVars, V0, V1);
             if(LineSegment.PartOfSegmentInView)
             {
-              DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Entry->Color.RGB);
+              DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Entry->Color.RGB, ClipRect, Odd);
             }
           }
           for(u32 VertIndex = 0; 
@@ -1406,7 +1302,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                                      &ScreenVars, V0, V1);
             if(LineSegment.PartOfSegmentInView)
             {
-              DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Entry->Color.RGB);
+              DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Entry->Color.RGB, ClipRect, Odd);
             }
           }
           for(u32 VertIndex = 0; 
@@ -1420,7 +1316,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                                      &ScreenVars, V0, V1);
             if(LineSegment.PartOfSegmentInView)
             {
-              DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Entry->Color.RGB);
+              DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Entry->Color.RGB, ClipRect, Odd);
             }
           }
         } break;
@@ -1429,12 +1325,31 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_blank_quad);
 
           //TODO(bjorn): Think about how and when in the pipeline to render the hit-points.
-#if 0
-          v2 PixelDim = Entry->Dim.XY * (PixelsPerMeter * f);
-          rectangle2 Rect = RectCenterDim(PixelPos, PixelDim);
+          quad_verts_result Quad = GetQuadVertices(&Entry->Tran);
 
-          DrawRectangle(OutputTarget, Rect, Entry->Color.RGB);
-#endif
+          DrawTriangleSlowly(OutputTarget, 
+                             &RenderGroup->CamParam, &ScreenVars, 
+                             RenderGroup->WorldToCamera * Quad.Verts[0], 
+                             RenderGroup->WorldToCamera * Quad.Verts[1], 
+                             RenderGroup->WorldToCamera * Quad.Verts[2], 
+                             {0,0},
+                             {0,1},
+                             {1,1},
+                             0,
+                             Entry->Color,
+                             ClipRect, Odd);
+
+          DrawTriangleSlowly(OutputTarget, 
+                             &RenderGroup->CamParam, &ScreenVars,
+                             RenderGroup->WorldToCamera * Quad.Verts[0], 
+                             RenderGroup->WorldToCamera * Quad.Verts[2], 
+                             RenderGroup->WorldToCamera * Quad.Verts[3], 
+                             {0,0},
+                             {1,1},
+                             {1,0},
+                             0,
+                             Entry->Color,
+                             ClipRect, Odd);
         } break;
       case RenderGroupEntryType_render_entry_quad
         : {
@@ -1442,6 +1357,31 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
 
           quad_verts_result Quad = GetQuadVertices(&Entry->Tran);
 
+          DrawTriangleSlowly(OutputTarget, 
+                             &RenderGroup->CamParam, &ScreenVars, 
+                             RenderGroup->WorldToCamera * Quad.Verts[0], 
+                             RenderGroup->WorldToCamera * Quad.Verts[1], 
+                             RenderGroup->WorldToCamera * Quad.Verts[2], 
+                             {0,0},
+                             {0,1},
+                             {1,1},
+                             Entry->Bitmap,
+                             Entry->Color,
+                             ClipRect, Odd);
+
+          DrawTriangleSlowly(OutputTarget, 
+                             &RenderGroup->CamParam, &ScreenVars,
+                             RenderGroup->WorldToCamera * Quad.Verts[0], 
+                             RenderGroup->WorldToCamera * Quad.Verts[2], 
+                             RenderGroup->WorldToCamera * Quad.Verts[3], 
+                             {0,0},
+                             {1,1},
+                             {1,0},
+                             Entry->Bitmap,
+                             Entry->Color,
+                             ClipRect, Odd);
+
+#if 0
           v2 PixVerts[4] = {};
           for(u32 VertIndex = 0; 
               VertIndex < 4; 
@@ -1459,58 +1399,6 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
             }
           }
 
-#if 1
-          rectangle2s ClampRect = RectMinMax(v2s{0,0}, OutputTarget->Dim);
-#else
-          rectangle2s ClampRect = RectMinMax(v2s{200,200}, v2s{400,400});
-#endif
-          DrawTriangleSlowly(OutputTarget, 
-                             &RenderGroup->CamParam, &ScreenVars, 
-                             RenderGroup->WorldToCamera * Quad.Verts[0], 
-                             RenderGroup->WorldToCamera * Quad.Verts[1], 
-                             RenderGroup->WorldToCamera * Quad.Verts[2], 
-                             {0,0},
-                             {0,1},
-                             {1,1},
-                             Entry->Bitmap,
-                             Entry->Color,
-                             ClampRect, true);
-          DrawTriangleSlowly(OutputTarget, 
-                             &RenderGroup->CamParam, &ScreenVars, 
-                             RenderGroup->WorldToCamera * Quad.Verts[0], 
-                             RenderGroup->WorldToCamera * Quad.Verts[1], 
-                             RenderGroup->WorldToCamera * Quad.Verts[2], 
-                             {0,0},
-                             {0,1},
-                             {1,1},
-                             Entry->Bitmap,
-                             Entry->Color,
-                             ClampRect, false);
-
-          DrawTriangleSlowly(OutputTarget, 
-                             &RenderGroup->CamParam, &ScreenVars,
-                             RenderGroup->WorldToCamera * Quad.Verts[0], 
-                             RenderGroup->WorldToCamera * Quad.Verts[2], 
-                             RenderGroup->WorldToCamera * Quad.Verts[3], 
-                             {0,0},
-                             {1,1},
-                             {1,0},
-                             Entry->Bitmap,
-                             Entry->Color,
-                             ClampRect, true);
-          DrawTriangleSlowly(OutputTarget, 
-                             &RenderGroup->CamParam, &ScreenVars,
-                             RenderGroup->WorldToCamera * Quad.Verts[0], 
-                             RenderGroup->WorldToCamera * Quad.Verts[2], 
-                             RenderGroup->WorldToCamera * Quad.Verts[3], 
-                             {0,0},
-                             {1,1},
-                             {1,0},
-                             Entry->Bitmap,
-                             Entry->Color,
-                             ClampRect, false);
-
-#if 0
           DrawLine(OutputTarget, PixVerts[0], PixVerts[2], {1.0f, 0.25f, 1.0f});
           DrawCircle(OutputTarget, (PixVerts[0] + PixVerts[2]) * 0.5f, 3.0f, {1.0f, 1.0f, 0.0f, 1.0f});
 
@@ -1546,7 +1434,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                         Magnitude(P1 - P0) * 
                         PixPos.PerspectiveCorrection);
 
-            DrawCircle(OutputTarget, PixPos.P, PixR, Entry->Color);
+            DrawCircle(OutputTarget, PixPos.P, PixR, Entry->Color, ClipRect, Odd);
           }
         } break;
       InvalidDefaultCase;
@@ -1554,6 +1442,24 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
   }
 
   END_TIMED_BLOCK(RenderGroupToOutput);
+}
+
+  internal_function void
+TiledRenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, 
+                         f32 ScreenHeightInMeters)
+{
+#if 1
+  rectangle2s ClipRect = RectMinMax(v2s{0,0}, OutputTarget->Dim);
+#else
+  rectangle2s ClipRect = RectMinMax(v2s{200,200}, v2s{400,400});
+#endif
+
+  Assert(ClipRect.Min.X >= 0);
+  Assert(ClipRect.Min.Y >= 0);
+  Assert(ClipRect.Max.X <= OutputTarget->Dim.X);
+  Assert(ClipRect.Max.Y <= OutputTarget->Dim.Y);
+  RenderGroupToOutput(RenderGroup, OutputTarget, ScreenHeightInMeters, ClipRect, false);
+  RenderGroupToOutput(RenderGroup, OutputTarget, ScreenHeightInMeters, ClipRect, true);
 }
 
 

@@ -147,7 +147,7 @@ GenerateTile(game_state* GameState, game_bitmap* Buffer)
   }
 
   SetCamera(RenderGroup, M44Identity(), 1.0f, 1.0f);
-  RenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
+  TiledRenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
 
 	EndTemporaryMemory(TempMem);
 	CheckMemoryArena(&GameState->TransientArena);
@@ -1584,7 +1584,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	// NOTE(bjorn): Rendering
 	//
-  RenderGroupToOutput(RenderGroup, Buffer, 1.4f*9.0f);
+  TiledRenderGroupToOutput(RenderGroup, Buffer, 1.4f*9.0f);
 
 	EndTemporaryMemory(TempMem);
 	CheckMemoryArena(FrameBoundedTransientArena);

@@ -360,7 +360,6 @@ DrawTriangleSlowly(game_bitmap *Buffer,
       case 3: { StartupClipMask = _mm_slli_si128(StartupClipMask, 4*3); } break;
     }
     FillWidth += Adjustment;
-    //TODO(bjorn): Rect is in lower left corner and goes out of bounds. Crashes on mem read.
     FillRect.Min.X = FillRect.Max.X - FillWidth;
   }
 
@@ -369,6 +368,13 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   {
     FillRect.Min.Y += 1;
   }
+
+  //TODO(bjorn): Rect is in lower left corner and goes out of bounds. Crashes on mem read.
+  if(FillRect.Min.Y == 0 && FillRect.Min.X < 0)
+  {
+    FillRect.Min.X = 0;
+  }
+
 
   v3 FocalPoint = {0,0,CamParam->LensChamberSize};
   v3 TriangleNormal = 
@@ -1466,7 +1472,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                              {0,0},
                              {0,1},
                              {1,1},
-                             0,//Entry->Bitmap,
+                             Entry->Bitmap,
                              Entry->Color,
                              ClampRect, true);
           DrawTriangleSlowly(OutputTarget, 
@@ -1477,7 +1483,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                              {0,0},
                              {0,1},
                              {1,1},
-                             0,//Entry->Bitmap,
+                             Entry->Bitmap,
                              Entry->Color,
                              ClampRect, false);
 
@@ -1489,7 +1495,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                              {0,0},
                              {1,1},
                              {1,0},
-                             0,//Entry->Bitmap,
+                             Entry->Bitmap,
                              Entry->Color,
                              ClampRect, true);
           DrawTriangleSlowly(OutputTarget, 
@@ -1500,7 +1506,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                              {0,0},
                              {1,1},
                              {1,0},
-                             0,//Entry->Bitmap,
+                             Entry->Bitmap,
                              Entry->Color,
                              ClampRect, false);
 

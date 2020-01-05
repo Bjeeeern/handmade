@@ -282,7 +282,8 @@ DrawTriangleSlowly(game_bitmap *Buffer,
                    camera_parameters* CamParam, output_target_screen_variables* ScreenVars,
                    v3 CameraSpacePoint0, v3 CameraSpacePoint1, v3 CameraSpacePoint2, 
                    v2 UV0, v2 UV1, v2 UV2, 
-                   game_bitmap* Bitmap, v4 RGBA)
+                   game_bitmap* Bitmap, v4 RGBA,
+                   rectangle2s ClampRect, b32 Odd)
 {
   BEGIN_TIMED_BLOCK(DrawTriangleSlowly);
 
@@ -333,6 +334,42 @@ DrawTriangleSlowly(game_bitmap *Buffer,
        (ScreenVars->MeterToPixel * CameraSpacePoint2.XY) * PerspectiveCorrection);
   }
 
+  rectangle2s FillRect;
+  FillRect.Min.X = 
+    RoundF32ToS32(Min(Min(PixelSpacePoint0.X, PixelSpacePoint1.X),PixelSpacePoint2.X));
+  FillRect.Max.X = 
+    RoundF32ToS32(Max(Max(PixelSpacePoint0.X, PixelSpacePoint1.X),PixelSpacePoint2.X));
+  FillRect.Min.Y = 
+    RoundF32ToS32(Min(Min(PixelSpacePoint0.Y, PixelSpacePoint1.Y),PixelSpacePoint2.Y));
+  FillRect.Max.Y = 
+    RoundF32ToS32(Max(Max(PixelSpacePoint0.Y, PixelSpacePoint1.Y),PixelSpacePoint2.Y));
+
+  FillRect = Intersect(FillRect, ClampRect);
+  if(HasNoArea(FillRect)) { return; }
+
+  __m128i StartupClipMask = _mm_set1_epi32(0xFFFFFFFF);
+  s32 FillWidth = FillRect.Max.X - FillRect.Min.X;
+  s32 FillWidthAlign = FillWidth % 4;
+  if(FillWidthAlign > 0)
+  {
+    s32 Adjustment = 4 - FillWidthAlign;
+    switch(Adjustment)
+    {
+      case 1: { StartupClipMask = _mm_slli_si128(StartupClipMask, 4*1); } break;
+      case 2: { StartupClipMask = _mm_slli_si128(StartupClipMask, 4*2); } break;
+      case 3: { StartupClipMask = _mm_slli_si128(StartupClipMask, 4*3); } break;
+    }
+    FillWidth += Adjustment;
+    //TODO(bjorn): Rect is in lower left corner and goes out of bounds. Crashes on mem read.
+    FillRect.Min.X = FillRect.Max.X - FillWidth;
+  }
+
+  b32 ShiftY = !(FillRect.Min.Y % 2) == Odd;
+  if(ShiftY)
+  {
+    FillRect.Min.Y += 1;
+  }
+
   v3 FocalPoint = {0,0,CamParam->LensChamberSize};
   v3 TriangleNormal = 
     Cross(CameraSpacePoint1-CameraSpacePoint0, CameraSpacePoint2-CameraSpacePoint0);
@@ -342,16 +379,6 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   f32 LinePlaneIntersection_Numerator = Dot(TriangleCenter - FocalPoint, TriangleNormal);
   b32 CameraAndTriangleNormalsAreOrthogonal = LinePlaneIntersection_Numerator  == 0;
   if(CameraAndTriangleNormalsAreOrthogonal) { return; }
-
-  s32 Left   = RoundF32ToS32(Min(Min(PixelSpacePoint0.X, PixelSpacePoint1.X),PixelSpacePoint2.X));
-  s32 Right  = RoundF32ToS32(Max(Max(PixelSpacePoint0.X, PixelSpacePoint1.X),PixelSpacePoint2.X));
-  s32 Bottom = RoundF32ToS32(Min(Min(PixelSpacePoint0.Y, PixelSpacePoint1.Y),PixelSpacePoint2.Y));
-  s32 Top    = RoundF32ToS32(Max(Max(PixelSpacePoint0.Y, PixelSpacePoint1.Y),PixelSpacePoint2.Y));
-
-  Left   = Clamp(0, Left,   Buffer->Width );
-  Right  = Clamp(0, Right,  Buffer->Width );
-  Bottom = Clamp(0, Bottom, Buffer->Height);
-  Top    = Clamp(0, Top,    Buffer->Height);
 
   RGBA.RGB *= RGBA.A;
 
@@ -433,8 +460,20 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   __m128 UV2U = _mm_set1_ps(UV2.U);
   __m128 UV2V = _mm_set1_ps(UV2.V);
 
-  __m128 UVBitmapWidth  = _mm_set1_ps((f32)(Bitmap->Width -2));
-  __m128 UVBitmapHeight = _mm_set1_ps((f32)(Bitmap->Height-2));
+  __m128 UVBitmapWidth = {};
+  __m128 UVBitmapHeight = {};
+  u32* BitmapMemory = 0;
+  u32 BitmapPitch = 0;
+  __m128i BitmapPitchWide = {};
+  if(Bitmap)
+  {
+    UVBitmapWidth  = _mm_set1_ps((f32)(Bitmap->Width -2));
+    UVBitmapHeight = _mm_set1_ps((f32)(Bitmap->Height-2));
+
+    BitmapMemory = Bitmap->Memory;
+    BitmapPitch = Bitmap->Pitch;
+    BitmapPitchWide = _mm_set1_epi32(Bitmap->Pitch);
+  }
 
   u32 DefaultSSERoundingMode = _MM_GET_ROUNDING_MODE();
   _MM_SET_ROUNDING_MODE(_MM_ROUND_NEAREST);
@@ -446,23 +485,29 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 
   __m128 Const4444 = _mm_set_ps(4.0f, 4.0f, 4.0f, 4.0f);
 
-  u32* BitmapMemory = Bitmap->Memory;
-  u32 BitmapPitch = Bitmap->Pitch;
-  __m128i BitmapPitchWide = _mm_set1_epi32(Bitmap->Pitch);
+  s32 MinX = FillRect.Min.X;
+  s32 MaxX = FillRect.Max.X;
+  s32 MinY = FillRect.Min.Y;
+  s32 MaxY = FillRect.Max.Y;
+  __m128 LeftmostX = _mm_cvtepi32_ps(_mm_setr_epi32(MinX+0, MinX+1, MinX+2, MinX+3));
 
-  u32 *UpperLeftPixel = Buffer->Memory + Left + Bottom * Buffer->Pitch;
+  s32 RowAdvance = Buffer->Pitch*2;
+
+  u32 *UpperLeftPixel = Buffer->Memory + MinY * Buffer->Pitch + MinX;
   BEGIN_TIMED_BLOCK(ProcessPixel);
-  for(s32 Y = Bottom;
-      Y < Top;
-      ++Y)
+  for(s32 Y = MinY;
+      Y < MaxY;
+      Y += 2)
   {
     u32 *Pixel = UpperLeftPixel;
 
-    __m128 PixelPointX = _mm_cvtepi32_ps(_mm_set_epi32(Left+3, Left+2, Left+1, Left));
+    __m128 PixelPointX = LeftmostX;
     __m128 PixelPointY = _mm_cvtepi32_ps(_mm_set1_epi32(Y));
 
-    for(s32 IX = Left;
-        IX < Right;
+    __m128i ClipMask = StartupClipMask;
+
+    for(s32 IX = MinX;
+        IX < MaxX;
         IX += 4)
     {
       __m128 BarycentricWeight0;
@@ -548,12 +593,11 @@ DrawTriangleSlowly(game_bitmap *Buffer,
         BarycentricWeight2 = _mm_add_ps(BarycentricWeight2, Bary3D_Epsilon);
       }
 
-      PixelPointX = _mm_add_ps(PixelPointX, Const4444);
-
       __m128i DrawMask = 
         _mm_castps_si128(_mm_and_ps(_mm_and_ps(_mm_cmpge_ps(BarycentricWeight0, Const0), 
                                                _mm_cmpge_ps(BarycentricWeight1, Const0)),
                                     _mm_cmpge_ps(BarycentricWeight2, Const0)));
+      DrawMask = _mm_and_si128(DrawMask, ClipMask);
       if(_mm_movemask_epi8(DrawMask))
       {
         __m128i Dest = _mm_loadu_si128((__m128i*)Pixel);
@@ -728,12 +772,14 @@ DrawTriangleSlowly(game_bitmap *Buffer,
       }
 
       Pixel += 4;
+      PixelPointX = _mm_add_ps(PixelPointX, Const4444);
+      ClipMask = _mm_set1_epi32(0xFFFFFFFF);
     }
 
-    UpperLeftPixel += Buffer->Pitch;
+    UpperLeftPixel += RowAdvance;
   }
 
-  END_TIMED_BLOCK_COUNTED(ProcessPixel, (Right-Left) * (Top-Bottom));
+  END_TIMED_BLOCK_COUNTED(ProcessPixel, ((MaxX-MinX) * (MaxY-MinY))/2);
 
   _MM_SET_ROUNDING_MODE(DefaultSSERoundingMode);
 
@@ -1407,6 +1453,11 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
             }
           }
 
+#if 1
+          rectangle2s ClampRect = RectMinMax(v2s{0,0}, OutputTarget->Dim);
+#else
+          rectangle2s ClampRect = RectMinMax(v2s{200,200}, v2s{400,400});
+#endif
           DrawTriangleSlowly(OutputTarget, 
                              &RenderGroup->CamParam, &ScreenVars, 
                              RenderGroup->WorldToCamera * Quad.Verts[0], 
@@ -1415,8 +1466,21 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                              {0,0},
                              {0,1},
                              {1,1},
-                             Entry->Bitmap,
-                             Entry->Color);
+                             0,//Entry->Bitmap,
+                             Entry->Color,
+                             ClampRect, true);
+          DrawTriangleSlowly(OutputTarget, 
+                             &RenderGroup->CamParam, &ScreenVars, 
+                             RenderGroup->WorldToCamera * Quad.Verts[0], 
+                             RenderGroup->WorldToCamera * Quad.Verts[1], 
+                             RenderGroup->WorldToCamera * Quad.Verts[2], 
+                             {0,0},
+                             {0,1},
+                             {1,1},
+                             0,//Entry->Bitmap,
+                             Entry->Color,
+                             ClampRect, false);
+
           DrawTriangleSlowly(OutputTarget, 
                              &RenderGroup->CamParam, &ScreenVars,
                              RenderGroup->WorldToCamera * Quad.Verts[0], 
@@ -1425,8 +1489,20 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                              {0,0},
                              {1,1},
                              {1,0},
-                             Entry->Bitmap,
-                             Entry->Color);
+                             0,//Entry->Bitmap,
+                             Entry->Color,
+                             ClampRect, true);
+          DrawTriangleSlowly(OutputTarget, 
+                             &RenderGroup->CamParam, &ScreenVars,
+                             RenderGroup->WorldToCamera * Quad.Verts[0], 
+                             RenderGroup->WorldToCamera * Quad.Verts[2], 
+                             RenderGroup->WorldToCamera * Quad.Verts[3], 
+                             {0,0},
+                             {1,1},
+                             {1,0},
+                             0,//Entry->Bitmap,
+                             Entry->Color,
+                             ClampRect, false);
 
 #if 0
           DrawLine(OutputTarget, PixVerts[0], PixVerts[2], {1.0f, 0.25f, 1.0f});

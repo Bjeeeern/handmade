@@ -1900,6 +1900,12 @@ RectCenterDim(v2 Center, v2 Dim)
 	return {Center - HalfDim, Center + HalfDim};
 }
 
+inline b32
+HasNoArea(rectangle2s Rect)
+{
+  return Rect.Min.X > Rect.Max.X && Rect.Min.Y > Rect.Max.Y;
+}
+
 inline rectangle2u
 RectCenterDim(v2u Center, v2u Dim)
 {
@@ -1959,6 +1965,32 @@ AddMarginToRect(rectangle3 Rect, f32 Margin)
 {
 	rectangle3 Result = {Rect.Min - v3{1,1,1}*Margin, Rect.Max + v3{1,1,1}*Margin};
 	return Result;
+}
+
+inline rectangle2s
+Intersect(rectangle2s A, rectangle2s B)
+{
+  rectangle2s Result;
+
+  Result.Min.X = Max(A.Min.X, B.Min.X);
+  Result.Max.X = Min(A.Max.X, B.Max.X);
+  Result.Min.Y = Max(A.Min.Y, B.Min.Y);
+  Result.Max.Y = Min(A.Max.Y, B.Max.Y);
+
+  return Result;
+}
+
+inline rectangle2s
+Union(rectangle2s A, rectangle2s B)
+{
+  rectangle2s Result;
+
+  Result.Min.X = Min(A.Min.X, B.Min.X);
+  Result.Max.X = Max(A.Max.X, B.Max.X);
+  Result.Min.Y = Min(A.Min.Y, B.Min.Y);
+  Result.Max.Y = Max(A.Max.Y, B.Max.Y);
+
+  return Result;
 }
 
 inline b32

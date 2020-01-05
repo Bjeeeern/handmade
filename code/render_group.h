@@ -618,7 +618,10 @@ DrawTriangleSlowly(game_bitmap *Buffer,
           __m128 fX = _mm_sub_ps(tX, _mm_cvtepi32_ps(wX));
           __m128 fY = _mm_sub_ps(tY, _mm_cvtepi32_ps(wY));
 
-          __m128i Fetch = _mm_add_epi32(_mm_mullo_epi32(BitmapPitchWide, wY), wX);
+          __m128i Fetch = 
+            _mm_add_epi32(_mm_or_si128(_mm_mullo_epi16(BitmapPitchWide, wY),
+                                       _mm_slli_epi32(_mm_mulhi_epi16(BitmapPitchWide, wY), 16)), 
+                          wX);
           u32* TexelPtr0 = BitmapMemory + Fetch.m128i_i32[0];
           u32* TexelPtr1 = BitmapMemory + Fetch.m128i_i32[1];
           u32* TexelPtr2 = BitmapMemory + Fetch.m128i_i32[2];
@@ -1448,18 +1451,39 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
 TiledRenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, 
                          f32 ScreenHeightInMeters)
 {
+  s32 TileCountY = 4;
+  s32 TileCountX = 4;
+
+  s32 TileHeight = OutputTarget->Height / TileCountY;
+  s32 TileWidth = OutputTarget->Width / TileCountX;
+
+  for(s32 TileY = 0;
+      TileY < TileCountY;
+      TileY++)
+  {
+    for(s32 TileX = 0;
+        TileX < TileCountX;
+        TileX++)
+    {
 #if 1
-  rectangle2s ClipRect = RectMinMax(v2s{0,0}, OutputTarget->Dim);
+      rectangle2s ClipRect;
+      ClipRect.Min.X = TileX*TileWidth + 4;
+      ClipRect.Min.Y = TileY*TileHeight + 4;
+      ClipRect.Max.X = ClipRect.Min.X + TileWidth - 4;
+      ClipRect.Max.Y = ClipRect.Min.Y + TileHeight - 4;
 #else
-  rectangle2s ClipRect = RectMinMax(v2s{200,200}, v2s{400,400});
+      rectangle2s ClipRect = RectMinMax(v2s{200,200}, v2s{400,400});
 #endif
 
-  Assert(ClipRect.Min.X >= 0);
-  Assert(ClipRect.Min.Y >= 0);
-  Assert(ClipRect.Max.X <= OutputTarget->Dim.X);
-  Assert(ClipRect.Max.Y <= OutputTarget->Dim.Y);
-  RenderGroupToOutput(RenderGroup, OutputTarget, ScreenHeightInMeters, ClipRect, false);
-  RenderGroupToOutput(RenderGroup, OutputTarget, ScreenHeightInMeters, ClipRect, true);
+      Assert(ClipRect.Min.X >= 0);
+      Assert(ClipRect.Min.Y >= 0);
+      Assert(ClipRect.Max.X <= OutputTarget->Dim.X);
+      Assert(ClipRect.Max.Y <= OutputTarget->Dim.Y);
+
+      RenderGroupToOutput(RenderGroup, OutputTarget, ScreenHeightInMeters, ClipRect, false);
+      RenderGroupToOutput(RenderGroup, OutputTarget, ScreenHeightInMeters, ClipRect, true);
+    }
+  }
 }
 
 

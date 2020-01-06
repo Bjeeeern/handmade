@@ -1604,7 +1604,9 @@ WinMain(HINSTANCE Instance,
 				Mouse->P.X = Clamp01(RelativeMouseX);
 				Mouse->P.Y = Clamp01(RelativeMouseY);
 
-				Assert(0.0f <= Mouse->P.X && 1.0f >= Mouse->P.X);
+        Mouse->P.Y = 1.0f - Mouse->P.Y;
+
+        Assert(0.0f <= Mouse->P.X && 1.0f >= Mouse->P.X);
 				Assert(0.0f <= Mouse->P.Y && 1.0f >= Mouse->P.Y);
 
 				game_mouse* OldMouse = GetMouse(&OldGameInput, 1);

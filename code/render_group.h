@@ -49,141 +49,180 @@ Linear1TosRGB255(v4 Linear)
   return Result;
 }
 
+  internal_function void
+DrawRectangle(game_bitmap *Buffer, rectangle2s Rect, v3 RGB, rectangle2s ClipRect, b32 Odd)
+{
+  rectangle2s FillRect = Intersect(Rect, ClipRect);
+  if(HasNoArea(FillRect)) { return; }
+
+  b32 ShiftY = !(FillRect.Min.Y % 2) == Odd;
+  if(ShiftY)
+  {
+    FillRect.Min.Y += 1;
+  }
+
+  s32 Left   = FillRect.Min.X;
+  s32 Bottom = FillRect.Min.Y;
+  s32 Right  = FillRect.Max.X;
+  s32 Top    = FillRect.Max.Y;
+
+  u32 Color = ((RoundF32ToS32(RGB.R * 255.0f) << 16) |
+               (RoundF32ToS32(RGB.G * 255.0f) << 8) |
+               (RoundF32ToS32(RGB.B * 255.0f) << 0));
+
+  s32 PixelPitch = Buffer->Pitch;
+
+  u32 *UpperLeftPixel = (u32 *)Buffer->Memory + Left + Bottom * PixelPitch;
+
+  for(s32 Y = Bottom;
+      Y < Top;
+      Y += 2)
+  {
+    u32 *Pixel = UpperLeftPixel;
+
+    for(s32 X = Left;
+        X < Right;
+        ++X)
+    {
+      *Pixel++ = Color;
+    }
+
+    UpperLeftPixel += PixelPitch*2;
+  }
+}
+
 	internal_function void
 DrawLine(game_bitmap* Buffer, 
          v2 A, v2 B, v3 RGB,
          rectangle2s ClipRect, b32 Odd)
 {
   //TODO(bjorn): Implement.
-#if 1
-  v2s Min = { Min(RoundF32ToS32(A.X), RoundF32ToS32(B.X)), 
-              Min(RoundF32ToS32(A.Y), RoundF32ToS32(B.Y))};
-  v2s Max = { Max(RoundF32ToS32(A.X), RoundF32ToS32(B.X)), 
-              Max(RoundF32ToS32(A.Y), RoundF32ToS32(B.Y))};
+  v2s Min = { Min(FloorF32ToS32(A.X), FloorF32ToS32(B.X)), 
+              Min(FloorF32ToS32(A.Y), FloorF32ToS32(B.Y))};
+  v2s Max = { Max(RoofF32ToS32(A.X), RoofF32ToS32(B.X)), 
+              Max(RoofF32ToS32(A.Y), RoofF32ToS32(B.Y))};
   rectangle2s FillRect = RectMinMax(Min, Max);
 
+#if 1
+  FillRect = AddMarginToRect(FillRect, -4);
+#endif
+
   FillRect = Intersect(FillRect, ClipRect);
+  //TODO(bjorn): if(HasNoArea(FillRect)) { return; }
 
+#if 1
+  DrawRectangle(Buffer, FillRect, {0.8f,0.8f,0.8f}, ClipRect, Odd);
+#endif
+
+#if 1
   rect_corner_v2_result Corner = GetRectCorners(Rect2sToRect2(FillRect));
-  b32 AOutside = !IsInRectangle(Rect2sToRect2(FillRect), A);
-  b32 BOutside = !IsInRectangle(Rect2sToRect2(FillRect), B);
-  if(AOutside || BOutside)
   {
-    f32 SmallestT = positive_infinity32;
-    f32 BiggestT = negative_infinity32;
-    {
-      f32 Denom = Determinant(A-B, Corner.A-Corner.B);
-      if(Denom != 0.0f)
-      {
-        f32 t = Determinant(A-Corner.A, Corner.A-Corner.B)/Denom;
-        if(0 < t && t < 1.0f)
-        {
-          if(AOutside)
-          {
-            SmallestT = SmallestT < t ? SmallestT : t;
-          }
-          if(BOutside)
-          {
-            BiggestT = BiggestT > t ? BiggestT : t;
-          }
-        }
-      }
-    }
-    {
-      f32 Denom = Determinant(A-B, Corner.B-Corner.C);
-      if(Denom != 0.0f)
-      {
-        f32 t = Determinant(A-Corner.B, Corner.B-Corner.C)/Denom;
-        if(0 < t && t < 1.0f)
-        {
-          if(AOutside)
-          {
-            SmallestT = SmallestT < t ? SmallestT : t;
-          }
-          if(BOutside)
-          {
-            BiggestT = BiggestT > t ? BiggestT : t;
-          }
-        }
-      }
-    }
-    {
-      f32 Denom = Determinant(A-B, Corner.C-Corner.D);
-      if(Denom != 0.0f)
-      {
-        f32 t = Determinant(A-Corner.C, Corner.C-Corner.D)/Denom;
-        if(0 < t && t < 1.0f)
-        {
-          if(AOutside)
-          {
-            SmallestT = SmallestT < t ? SmallestT : t;
-          }
-          if(BOutside)
-          {
-            BiggestT = BiggestT > t ? BiggestT : t;
-          }
-        }
-      }
-    }
-    {
-      f32 Denom = Determinant(A-B, Corner.D-Corner.A);
-      if(Denom != 0.0f)
-      {
-        f32 t = Determinant(A-Corner.D, Corner.D-Corner.A)/Denom;
-        if(0 < t && t < 1.0f)
-        {
-          if(AOutside)
-          {
-            SmallestT = SmallestT < t ? SmallestT : t;
-          }
-          if(BOutside)
-          {
-            BiggestT = BiggestT > t ? BiggestT : t;
-          }
-        }
-      }
-    }
+    b32 AOutside = (A.X < FillRect.Min.X);
+    b32 BOutside = (B.X < FillRect.Min.X);
+    if(AOutside && BOutside) { return; }
 
-    v2 NewA = A + (B-A) * SmallestT;
-    v2 NewB = A + (B-A) * BiggestT;
+    if(AOutside || BOutside)
+    {
+      line_line_intersect Insect = LineLineIntersection(A, B, Corner.A, Corner.B);
+      if(Insect.Hit)
+      {
+        if(AOutside) { A = A + (B-A) * Insect.t; }
+        if(BOutside) { B = A + (B-A) * Insect.t; }
+      }
+    }
+  }
+  {
+    b32 AOutside = (A.Y >= FillRect.Max.Y);
+    b32 BOutside = (B.Y >= FillRect.Max.Y);
+    if(AOutside && BOutside) { return; }
 
-    if(AOutside && SmallestT != positive_infinity32) { A = NewA; }
-    if(BOutside && BiggestT != negative_infinity32) { B = NewB; }
+    if(AOutside || BOutside)
+    {
+      line_line_intersect Insect = LineLineIntersection(A, B, Corner.B, Corner.C);
+      if(Insect.Hit)
+      {
+        if(AOutside) { A = A + (B-A) * Insect.t; }
+        if(BOutside) { B = A + (B-A) * Insect.t; }
+      }
+    }
+  }
+  {
+    b32 AOutside = (A.X >= FillRect.Max.X);
+    b32 BOutside = (B.X >= FillRect.Max.X);
+    if(AOutside && BOutside) { return; }
+
+    if(AOutside || BOutside)
+    {
+      line_line_intersect Insect = LineLineIntersection(A, B, Corner.C, Corner.D);
+      if(Insect.Hit)
+      {
+        if(AOutside) { A = A + (B-A) * Insect.t; }
+        if(BOutside) { B = A + (B-A) * Insect.t; }
+      }
+    }
+  }
+  {
+    b32 AOutside = (A.Y < FillRect.Min.Y);
+    b32 BOutside = (B.Y < FillRect.Min.Y);
+    if(AOutside && BOutside) { return; }
+
+    if(AOutside || BOutside)
+    {
+      line_line_intersect Insect = LineLineIntersection(A, B, Corner.D, Corner.A);
+      if(Insect.Hit)
+      {
+        if(AOutside) { A = A + (B-A) * Insect.t; }
+        if(BOutside) { B = A + (B-A) * Insect.t; }
+      }
+    }
   }
 #endif
 
-	u32 Color = ((RoundF32ToS32(RGB.R * 255.0f) << 16) |
-							 (RoundF32ToS32(RGB.G * 255.0f) << 8) |
-							 (RoundF32ToS32(RGB.B * 255.0f) << 0));
+  //AddMarginToRect(FillRect, 2);
 
-	f32 Length = Distance(A, B);
-	if(Distance(A, B) < 1.0f)
-	{
-		Length = 1.0f;
-	}
+  u32 Color = ((RoundF32ToS32(RGB.R * 255.0f) << 16) |
+               (RoundF32ToS32(RGB.G * 255.0f) << 8) |
+               (RoundF32ToS32(RGB.B * 255.0f) << 0));
 
-	f32 InverseLength = 1.0f / Length;
-	v2 Normal = (B - A) * InverseLength;
+  f32 Length = Distance(A, B);
+  if(Distance(A, B) < 1.0f)
+  {
+    Length = 1.0f;
+  }
 
-	f32 StepLength = 0.0f;
-	while(StepLength < Length)
-	{
-		v2 Point = A + (Normal * StepLength);
-		s32 X = RoundF32ToS32(Point.X);
-		s32 Y = RoundF32ToS32(Point.Y);
+  f32 InverseLength = 1.0f / Length;
+  v2 Normal = (B - A) * InverseLength;
 
-		if(((0 <= X) && (X < Buffer->Width)) &&
-			 ((0 <= Y) && (Y < Buffer->Height)))
-		{
-      if(!(Y % 2) == !Odd)
-      {
-        u32 *Pixel = (u32 *)Buffer->Memory + Buffer->Pitch * Y + X;
-        *Pixel = Color;
-      }
-		}
+  b32 SkipUntilInside = !((FillRect.Min.X <= A.X) && (A.X < FillRect.Max.X) &&
+                          (FillRect.Min.Y <= A.Y) && (A.Y < FillRect.Max.Y));
+
+  f32 StepLength = 0.0f;
+  while(StepLength < Length)
+  {
+    v2 Point = A + (Normal * StepLength);
+    s32 X = RoundF32ToS32(Point.X);
+    s32 Y = RoundF32ToS32(Point.Y);
+
+    b32 PointHitTest = ((FillRect.Min.X <= X) && (X < FillRect.Max.X) &&
+                        (FillRect.Min.Y <= Y) && (Y < FillRect.Max.Y));
+    if(SkipUntilInside)
+    {
+      SkipUntilInside = !PointHitTest;
+    }
     else
     {
-      return;
+      if(PointHitTest)
+      {
+        if(!(Y % 2) == !Odd)
+        {
+          u32 *Pixel = (u32 *)Buffer->Memory + Buffer->Pitch * Y + X;
+          *Pixel = Color;
+        }
+      }
+      else
+      {
+        return;
+      }
     }
 
 		StepLength += 1.0f;
@@ -768,7 +807,8 @@ DrawTriangleSlowly(game_bitmap *Buffer,
     UpperLeftPixel += RowAdvance;
   }
 
-  END_TIMED_BLOCK_COUNTED(ProcessPixel, ((MaxX-MinX) * (MaxY-MinY))/2);
+  u64 PixelCount = ((MaxX-MinX) > 0 && (MaxY-MinY) > 0) ? ((MaxX-MinX) * (MaxY-MinY))/2 : 0;
+  END_TIMED_BLOCK_COUNTED(ProcessPixel, PixelCount);
 
   _MM_SET_ROUNDING_MODE(DefaultSSERoundingMode);
 
@@ -777,54 +817,6 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 #if COMPILER_MSVC
 #pragma warning(default:4701)
 #endif
-
-  internal_function void
-DrawRectangle(game_bitmap *Buffer, rectangle2 Rect, v3 RGB, rectangle2s ClipRect, b32 Odd)
-{
-  rectangle2s FillRect;
-  FillRect.Min.X = RoundF32ToS32(Rect.Min.X);
-  FillRect.Max.X = RoundF32ToS32(Rect.Max.X);
-  FillRect.Min.Y = RoundF32ToS32(Rect.Min.Y);
-  FillRect.Max.Y = RoundF32ToS32(Rect.Max.Y);
-
-  FillRect = Intersect(FillRect, ClipRect);
-  if(HasNoArea(FillRect)) { return; }
-
-  b32 ShiftY = !(FillRect.Min.Y % 2) == Odd;
-  if(ShiftY)
-  {
-    FillRect.Min.Y += 1;
-  }
-
-  s32 Left   = FillRect.Min.X;
-  s32 Bottom = FillRect.Min.Y;
-  s32 Right  = FillRect.Max.X;
-  s32 Top    = FillRect.Max.Y;
-
-  u32 Color = ((RoundF32ToS32(RGB.R * 255.0f) << 16) |
-               (RoundF32ToS32(RGB.G * 255.0f) << 8) |
-               (RoundF32ToS32(RGB.B * 255.0f) << 0));
-
-  s32 PixelPitch = Buffer->Pitch;
-
-  u32 *UpperLeftPixel = (u32 *)Buffer->Memory + Left + Bottom * PixelPitch;
-
-  for(s32 Y = Bottom;
-      Y < Top;
-      Y += 2)
-  {
-    u32 *Pixel = UpperLeftPixel;
-
-    for(s32 X = Left;
-        X < Right;
-        ++X)
-    {
-      *Pixel++ = Color;
-    }
-
-    UpperLeftPixel += PixelPitch*2;
-  }
-}
 
   internal_function void
 DrawCircle(game_bitmap *Buffer, 
@@ -1241,7 +1233,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
 
   if(RenderGroup->ClearScreen)
   {
-    DrawRectangle(OutputTarget, RectMinMax(v2{0.0f, 0.0f}, OutputTarget->Dim), 
+    DrawRectangle(OutputTarget, RectMinMax(v2s{0, 0}, OutputTarget->Dim), 
                   RenderGroup->ClearScreenColor.RGB, ClipRect, Odd);
   }
 
@@ -1451,6 +1443,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
 TiledRenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, 
                          f32 ScreenHeightInMeters)
 {
+#if 0
   s32 TileCountY = 4;
   s32 TileCountX = 4;
 
@@ -1465,15 +1458,11 @@ TiledRenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget,
         TileX < TileCountX;
         TileX++)
     {
-#if 1
       rectangle2s ClipRect;
       ClipRect.Min.X = TileX*TileWidth + 4;
       ClipRect.Min.Y = TileY*TileHeight + 4;
       ClipRect.Max.X = ClipRect.Min.X + TileWidth - 4;
       ClipRect.Max.Y = ClipRect.Min.Y + TileHeight - 4;
-#else
-      rectangle2s ClipRect = RectMinMax(v2s{200,200}, v2s{400,400});
-#endif
 
       Assert(ClipRect.Min.X >= 0);
       Assert(ClipRect.Min.Y >= 0);
@@ -1484,6 +1473,13 @@ TiledRenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget,
       RenderGroupToOutput(RenderGroup, OutputTarget, ScreenHeightInMeters, ClipRect, true);
     }
   }
+#else
+  // rectangle2s ClipRect = RectMinMax(v2s{200,200}, v2s{400,400});
+  rectangle2s ClipRect = RectMinMax(v2s{4,4}, OutputTarget->Dim - v2s{4,4});
+
+  RenderGroupToOutput(RenderGroup, OutputTarget, ScreenHeightInMeters, ClipRect, false);
+  RenderGroupToOutput(RenderGroup, OutputTarget, ScreenHeightInMeters, ClipRect, true);
+#endif
 }
 
 

@@ -2008,6 +2008,12 @@ AddMarginToRect(rectangle3 Rect, f32 Margin)
 	rectangle3 Result = {Rect.Min - v3{1,1,1}*Margin, Rect.Max + v3{1,1,1}*Margin};
 	return Result;
 }
+inline rectangle2s
+AddMarginToRect(rectangle2s Rect, s32 Margin)
+{
+	rectangle2s Result = {Rect.Min - v2s{1,1}*Margin, Rect.Max + v2s{1,1}*Margin};
+	return Result;
+}
 
 inline rectangle2s
 Intersect(rectangle2s A, rectangle2s B)
@@ -2479,6 +2485,45 @@ PointToBarycentricCoordinates(v3 P, v3 V0, v3 V1, v3 V2)
   //TODO(bjorn):
   // f32 Epsilon = 0.0001f;
   // Result.Z = 1.0f - Result.X - Result.Y + Epsilon;
+
+  return Result;
+}
+
+struct line_line_intersect
+{
+  f32 Denom;
+  union
+  {
+    v2 tu;
+    struct
+    {
+      f32 t;
+      f32 u;
+    };
+  };
+  b32 Hit;
+};
+
+//NOTE(bjorn): A + (B-A) * t; 
+//             C + (D-C) * u; 
+inline line_line_intersect
+LineLineIntersection(v2 A, v2 B, v2 C, v2 D)
+{
+  line_line_intersect Result = {};
+
+  v2 AB = A-B;
+  v2 CD = C-D;
+  v2 AC = A-C;
+
+  Result.Denom = Determinant(AB, CD);
+  if(Result.Denom != 0.0f)
+  {
+    Result.t =  Determinant(AC, CD)/Result.Denom;
+    Result.u = -Determinant(AB, AC)/Result.Denom;
+
+    Result.Hit = (0 <= Result.t && Result.t <= 1.0f &&
+                  0 <= Result.u && Result.u <= 1.0f);
+  }
 
   return Result;
 }

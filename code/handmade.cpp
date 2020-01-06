@@ -1590,6 +1590,19 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	CheckMemoryArena(FrameBoundedTransientArena);
 
   END_TIMED_BLOCK(GameUpdateAndRender);
+
+#if 1
+  DrawRectangle(Buffer, RectMinMax(v2s{0, 0}, Buffer->Dim), 
+                v3{1,1,1}*0.5f, RectMinMax(v2s{0, 0}, Buffer->Dim), true);
+  DrawRectangle(Buffer, RectMinMax(v2s{0, 0}, Buffer->Dim), 
+                v3{1,1,1}*0.5f, RectMinMax(v2s{0, 0}, Buffer->Dim), false);
+
+  game_mouse* Mouse = GetMouse(Input, 1);
+  DrawLine(Buffer, Buffer->Dim*0.5f, Hadamard(Buffer->Dim, Mouse->P), 
+                v3{1,1,1}*0.5f, RectMinMax(v2s{0, 0}, Buffer->Dim), true);
+  DrawLine(Buffer, Buffer->Dim*0.5f, Hadamard(Buffer->Dim, Mouse->P), 
+                v3{1,1,1}*0.5f, RectMinMax(v2s{0, 0}, Buffer->Dim), false);
+#endif
 }
 
 	internal_function void

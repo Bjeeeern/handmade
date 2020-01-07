@@ -1282,7 +1282,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						//TODO Smoother rotation.
 						//TODO(bjorn): Remove this hack as soon as I have full 3D rotations
 						//going on for all entites!!!
-						v2 RotSpeed = v2{1, 1} * (tau32 * SecondsToUpdate * 20.0f);
+						v2 RotSpeed = v2{1, -1} * (tau32 * SecondsToUpdate * 20.0f);
 						f32 ZoomSpeed = (SecondsToUpdate * 30.0f);
 
 						f32 dZoom = 0;
@@ -1584,14 +1584,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	// NOTE(bjorn): Rendering
 	//
-  TiledRenderGroupToOutput(RenderGroup, Buffer, 1.4f*9.0f);
-
-	EndTemporaryMemory(TempMem);
-	CheckMemoryArena(FrameBoundedTransientArena);
-
-  END_TIMED_BLOCK(GameUpdateAndRender);
-
 #if 1
+  TiledRenderGroupToOutput(RenderGroup, Buffer, 1.4f*9.0f);
+#else
   DrawRectangle(Buffer, RectMinMax(v2s{0, 0}, Buffer->Dim), 
                 v3{1,1,1}*0.5f, RectMinMax(v2s{0, 0}, Buffer->Dim), true);
   DrawRectangle(Buffer, RectMinMax(v2s{0, 0}, Buffer->Dim), 
@@ -1603,6 +1598,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
   DrawLine(Buffer, Buffer->Dim*0.5f, Hadamard(Buffer->Dim, Mouse->P), 
                 v3{1,1,1}*0.5f, RectMinMax(v2s{0, 0}, Buffer->Dim), false);
 #endif
+
+	EndTemporaryMemory(TempMem);
+	CheckMemoryArena(FrameBoundedTransientArena);
+
+  END_TIMED_BLOCK(GameUpdateAndRender);
+
 }
 
 	internal_function void

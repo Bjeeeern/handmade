@@ -103,18 +103,17 @@ DrawLine(game_bitmap* Buffer,
               Max(RoofF32ToS32(A.Y), RoofF32ToS32(B.Y))};
   rectangle2s FillRect = RectMinMax(Min, Max);
 
-#if 1
+#if 0
   FillRect = AddMarginToRect(FillRect, -4);
 #endif
 
   FillRect = Intersect(FillRect, ClipRect);
   //TODO(bjorn): if(HasNoArea(FillRect)) { return; }
 
-#if 1
+#if 0
   DrawRectangle(Buffer, FillRect, {0.8f,0.8f,0.8f}, ClipRect, Odd);
 #endif
 
-#if 1
   rect_corner_v2_result Corner = GetRectCorners(Rect2sToRect2(FillRect));
   {
     b32 AOutside = (A.X < FillRect.Min.X);
@@ -176,7 +175,6 @@ DrawLine(game_bitmap* Buffer,
       }
     }
   }
-#endif
 
   //AddMarginToRect(FillRect, 2);
 
@@ -193,62 +191,75 @@ DrawLine(game_bitmap* Buffer,
   f32 InverseLength = 1.0f / Length;
   v2 Normal = (B - A) * InverseLength;
 
-  b32 SkipUntilInside = !((FillRect.Min.X <= A.X) && (A.X < FillRect.Max.X) &&
-                          (FillRect.Min.Y <= A.Y) && (A.Y < FillRect.Max.Y));
+  b32 FirstRound = true;
+  b32 SkipUntilInside = false;
+
+  f32 HalfLength = Length * 0.5f;
+  v2 MidPoint = (A+B)*0.5f;
 
   f32 StepLength = 0.0f;
-  while(StepLength < Length)
+  while(StepLength < HalfLength)
   {
-    v2 Point = A + (Normal * StepLength);
+    v2 Point = MidPoint + (Normal * StepLength);
     s32 X = RoundF32ToS32(Point.X);
     s32 Y = RoundF32ToS32(Point.Y);
 
     b32 PointHitTest = ((FillRect.Min.X <= X) && (X < FillRect.Max.X) &&
                         (FillRect.Min.Y <= Y) && (Y < FillRect.Max.Y));
-    if(SkipUntilInside)
+    if(PointHitTest)
     {
-      SkipUntilInside = !PointHitTest;
-    }
-    else
-    {
-      if(PointHitTest)
+      if(!(Y % 2) == !Odd)
       {
-        if(!(Y % 2) == !Odd)
-        {
-          u32 *Pixel = (u32 *)Buffer->Memory + Buffer->Pitch * Y + X;
-          *Pixel = Color;
-        }
-      }
-      else
-      {
-        return;
+        u32 *Pixel = (u32 *)Buffer->Memory + Buffer->Pitch * Y + X;
+        *Pixel = Color;
       }
     }
 
-		StepLength += 1.0f;
-	}
+    StepLength += 1.0f;
+  }
+
+  StepLength = 0.0f;
+  while(StepLength < HalfLength)
+  {
+    v2 Point = MidPoint - (Normal * StepLength);
+    s32 X = RoundF32ToS32(Point.X);
+    s32 Y = RoundF32ToS32(Point.Y);
+
+    b32 PointHitTest = ((FillRect.Min.X <= X) && (X < FillRect.Max.X) &&
+                        (FillRect.Min.Y <= Y) && (Y < FillRect.Max.Y));
+    if(PointHitTest)
+    {
+      if(!(Y % 2) == !Odd)
+      {
+        u32 *Pixel = (u32 *)Buffer->Memory + Buffer->Pitch * Y + X;
+        *Pixel = Color;
+      }
+    }
+
+    StepLength += 1.0f;
+  }
 }
 
 //TODO(bjorn): reintroduce this function.
 #if 0
-	internal_function void
+  internal_function void
 DrawChar_(game_bitmap *Buffer, font *Font, u32 UnicodeCodePoint, 
-				 f32 GlyphPixelWidth, f32 GlyphPixelHeight, 
-				 f32 GlyphOriginLeft, f32 GlyphOriginBottom,
-				 f32 RealR, f32 RealG, f32 RealB)
+          f32 GlyphPixelWidth, f32 GlyphPixelHeight, 
+          f32 GlyphOriginLeft, f32 GlyphOriginBottom,
+          f32 RealR, f32 RealG, f32 RealB)
 {
-	unicode_to_glyph_data *Entries = (unicode_to_glyph_data *)(Font + 1);
+  unicode_to_glyph_data *Entries = (unicode_to_glyph_data *)(Font + 1);
 
-	s32 CharEntryIndex = 0;
-	for(s32 EntryIndex = 0;
-			EntryIndex < Font->UnicodeCodePointCount;
-			EntryIndex++)
-	{
-		if(UnicodeCodePoint == Entries[EntryIndex].UnicodeCodePoint)
-		{
-			CharEntryIndex = EntryIndex;
-			break;
-		}
+  s32 CharEntryIndex = 0;
+  for(s32 EntryIndex = 0;
+      EntryIndex < Font->UnicodeCodePointCount;
+      EntryIndex++)
+  {
+    if(UnicodeCodePoint == Entries[EntryIndex].UnicodeCodePoint)
+    {
+      CharEntryIndex = EntryIndex;
+      break;
+    }
 	}
 
 	s32 Offset = Entries[CharEntryIndex].OffsetToGlyphData;

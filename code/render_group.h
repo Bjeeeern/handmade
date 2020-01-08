@@ -1454,7 +1454,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
 TiledRenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, 
                          f32 ScreenHeightInMeters)
 {
-#if 0
+#if 1
   s32 TileCountY = 4;
   s32 TileCountX = 4;
 

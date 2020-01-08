@@ -1250,12 +1250,90 @@ HandleDebugCycleCounters(game_memory* Memory)
 #endif
 }
 
+//TODO(bjorn): Double-check the write ordering stuff on the CPU.
+#define CompletePastWritesBeforeFutureWrites _WriteBarrier(); _mm_sfence()
+#define CompletePastReadsBeforeFutureReads _ReadBarrier()
+
+struct work_queue_entry
+{
+  char* StringToPrint;
+};
+
+global_variable u32 volatile NextEntryToDo = 0;
+global_variable u32 volatile EntryCount = 0;
+work_queue_entry Entries[256];
+
+internal_function void
+PushWork(char* String)
+{
+  Assert(EntryCount < ArrayCount(Entries));
+
+  work_queue_entry* Entry = Entries + EntryCount;
+  Entry->StringToPrint = String;
+
+  CompletePastWritesBeforeFutureWrites;
+
+  EntryCount++;
+}
+
+struct win32_thread_info
+{
+  s32 LogicalThreadIndex;
+};
+
+DWORD WINAPI
+ThreadProc(LPVOID lpParameter)
+{
+  win32_thread_info* ThreadInfo = (win32_thread_info*)lpParameter;
+
+  for(;;)
+  {
+    if(NextEntryToDo < EntryCount)
+    {
+      s32 EntryIndex = InterlockedIncrement((LONG volatile*)&NextEntryToDo) - 1;
+
+      work_queue_entry* Entry = Entries + EntryIndex;
+
+      char Buffer[256];
+      wsprintfA(Buffer, "Thread %u: %s\n", ThreadInfo->LogicalThreadIndex, Entry->StringToPrint);
+      OutputDebugStringA(Buffer);
+    }
+  }
+}
+
 	s32 CALLBACK 
 WinMain(HINSTANCE Instance,
 				HINSTANCE PrevInstance,
 				LPSTR CommandLine,
 				s32 Show)
 {
+#if 1
+  win32_thread_info ThreadInfos[4] = {};
+  for(s32 ThreadIndex = 0;
+      ThreadIndex < ArrayCount(ThreadInfos);
+      ThreadIndex++)
+  {
+    win32_thread_info* ThreadInfo = ThreadInfos + ThreadIndex;
+
+    ThreadInfo->LogicalThreadIndex = ThreadIndex;
+
+    DWORD ThreadID;
+    HANDLE ThreadHandle = CreateThread(0, 0, ThreadProc, ThreadInfo, 0, &ThreadID);
+    CloseHandle(ThreadHandle);
+  }
+
+  PushWork("String: 0");
+  PushWork("String: 1");
+  PushWork("String: 2");
+  PushWork("String: 3");
+  PushWork("String: 4");
+  PushWork("String: 5");
+  PushWork("String: 6");
+  PushWork("String: 7");
+  PushWork("String: 8");
+  PushWork("String: 9");
+#endif
+
 	//TODO(bjorn): This api call is intended for Vista/Win7 only. Win8.1 and
 	//onwards should use SetProcessDPIAwareness instead.
 	//SetProcessDPIAware();

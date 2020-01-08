@@ -1259,12 +1259,13 @@ struct work_queue_entry
   char* StringToPrint;
 };
 
+global_variable u32 volatile FinishedEntryCount = 0;
 global_variable u32 volatile NextEntryToDo = 0;
 global_variable u32 volatile EntryCount = 0;
 work_queue_entry Entries[256];
 
 internal_function void
-PushWork(char* String)
+PushWork(HANDLE SemaphoreHandle, char* String)
 {
   Assert(EntryCount < ArrayCount(Entries));
 
@@ -1274,10 +1275,13 @@ PushWork(char* String)
   CompletePastWritesBeforeFutureWrites;
 
   EntryCount++;
+
+  ReleaseSemaphore(SemaphoreHandle, 1, 0);
 }
 
 struct win32_thread_info
 {
+  HANDLE SemaphoreHandle;
   s32 LogicalThreadIndex;
 };
 
@@ -1291,12 +1295,19 @@ ThreadProc(LPVOID lpParameter)
     if(NextEntryToDo < EntryCount)
     {
       s32 EntryIndex = InterlockedIncrement((LONG volatile*)&NextEntryToDo) - 1;
+      CompletePastReadsBeforeFutureReads;
 
       work_queue_entry* Entry = Entries + EntryIndex;
 
       char Buffer[256];
       wsprintfA(Buffer, "Thread %u: %s\n", ThreadInfo->LogicalThreadIndex, Entry->StringToPrint);
       OutputDebugStringA(Buffer);
+
+      InterlockedIncrement((LONG volatile*)&FinishedEntryCount);
+    }
+    else
+    {
+      WaitForSingleObjectEx(ThreadInfo->SemaphoreHandle, INFINITE, FALSE);
     }
   }
 }
@@ -1308,13 +1319,21 @@ WinMain(HINSTANCE Instance,
 				s32 Show)
 {
 #if 1
-  win32_thread_info ThreadInfos[4] = {};
+  win32_thread_info ThreadInfos[3] = {};
+
+  u32 InitialCount = 0;
+  u32 ThreadCount = ArrayCount(ThreadInfos);
+  HANDLE SemaphoreHandle = CreateSemaphoreEx(0,
+                                             InitialCount,
+                                             ThreadCount,
+                                             0, 0, SEMAPHORE_ALL_ACCESS);
   for(s32 ThreadIndex = 0;
       ThreadIndex < ArrayCount(ThreadInfos);
       ThreadIndex++)
   {
     win32_thread_info* ThreadInfo = ThreadInfos + ThreadIndex;
 
+    ThreadInfo->SemaphoreHandle = SemaphoreHandle;
     ThreadInfo->LogicalThreadIndex = ThreadIndex;
 
     DWORD ThreadID;
@@ -1322,16 +1341,29 @@ WinMain(HINSTANCE Instance,
     CloseHandle(ThreadHandle);
   }
 
-  PushWork("String: 0");
-  PushWork("String: 1");
-  PushWork("String: 2");
-  PushWork("String: 3");
-  PushWork("String: 4");
-  PushWork("String: 5");
-  PushWork("String: 6");
-  PushWork("String: 7");
-  PushWork("String: 8");
-  PushWork("String: 9");
+  PushWork(SemaphoreHandle, "String: A0");
+  PushWork(SemaphoreHandle, "String: A1");
+  PushWork(SemaphoreHandle, "String: A2");
+  PushWork(SemaphoreHandle, "String: A3");
+  PushWork(SemaphoreHandle, "String: A4");
+  PushWork(SemaphoreHandle, "String: A5");
+  PushWork(SemaphoreHandle, "String: A6");
+  PushWork(SemaphoreHandle, "String: A7");
+  PushWork(SemaphoreHandle, "String: A8");
+  PushWork(SemaphoreHandle, "String: A9");
+
+  Sleep(2000);
+
+  PushWork(SemaphoreHandle, "String: B0");
+  PushWork(SemaphoreHandle, "String: B1");
+  PushWork(SemaphoreHandle, "String: B2");
+  PushWork(SemaphoreHandle, "String: B3");
+  PushWork(SemaphoreHandle, "String: B4");
+  PushWork(SemaphoreHandle, "String: B5");
+  PushWork(SemaphoreHandle, "String: B6");
+  PushWork(SemaphoreHandle, "String: B7");
+  PushWork(SemaphoreHandle, "String: B8");
+  PushWork(SemaphoreHandle, "String: B9");
 #endif
 
 	//TODO(bjorn): This api call is intended for Vista/Win7 only. Win8.1 and

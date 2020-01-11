@@ -76,13 +76,14 @@ DEBUGLoadBMP(debug_platform_free_file_memory* FreeFileMemory,
 
 		Result.Width = Header->Width;
 		Result.Height = Header->Height;
-		Result.Memory = PushArray(Arena, PixelCount, u32);
-    Result.Pitch = Result.Width;
+    Result.Pitch = Align4(Result.Width);
+		Result.Memory = PushArray(Arena, Result.Pitch*Result.Height, u32);
     Result.WidthOverHeight = SafeRatio0((f32)Result.Width, (f32)Result.Height);
 
+    s32 ResultPixelIndex = 0;
 		for(s32 PixelIndex = 0;
 				PixelIndex < PixelCount;
-				++PixelIndex)
+				++PixelIndex, ++ResultPixelIndex)
 		{
 			u32 DA = RotateLeft(Pixels[PixelIndex] & AlphaMask, AlphaShift);
 			u32 DR = RotateLeft(Pixels[PixelIndex] & RedMask,   RedShift);
@@ -100,10 +101,15 @@ DEBUGLoadBMP(debug_platform_free_file_memory* FreeFileMemory,
 
       Texel = Linear1TosRGB255(Texel);
 
-      Result.Memory[PixelIndex] = (((u32)(Texel.A+0.5f) << 24) | 
-                                   ((u32)(Texel.R+0.5f) << 16) | 
-                                   ((u32)(Texel.G+0.5f) <<  8) | 
-                                   ((u32)(Texel.B+0.5f) <<  0));
+      Result.Memory[ResultPixelIndex] = (((u32)(Texel.A+0.5f) << 24) | 
+                                         ((u32)(Texel.R+0.5f) << 16) | 
+                                         ((u32)(Texel.G+0.5f) <<  8) | 
+                                         ((u32)(Texel.B+0.5f) <<  0));
+
+      if((PixelIndex+1)%(Result.Width) == 0)
+      {
+        ResultPixelIndex += (Result.Pitch - Result.Width);
+      }
     }
 
 		FreeFileMemory(ReadResult.Content);
@@ -119,9 +125,9 @@ EmptyBitmap(memory_arena* Arena, u32 Width, u32 Height)
 
   Result.Width = Width;
   Result.Height = Height;
+  Result.Pitch = Result.Width;
   Result.Memory = PushArray(Arena, Width*Height, u32);
   ZeroMemory_((u8*)Result.Memory, Width*Height*GAME_BITMAP_BYTES_PER_PIXEL);
-  Result.Pitch = Result.Width;
   Result.WidthOverHeight = SafeRatio0((f32)Result.Width, (f32)Result.Height);
 
   return Result;

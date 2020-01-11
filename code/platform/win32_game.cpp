@@ -462,10 +462,10 @@ Win32ResizeDIBSection(win32_offscreen_buffer *Buffer, s32 Width, s32 Height)
 	Buffer->Info.bmiHeader.biBitCount = 32;
 	Buffer->Info.bmiHeader.biCompression = BI_RGB;
 
-	s32 BitmapMemorySize = Buffer->BytesPerPixel * Buffer->Width * Buffer->Height;
+	Buffer->Pitch = Align16(Buffer->BytesPerPixel * Buffer->Width);
+	s32 BitmapMemorySize = Buffer->Pitch * Buffer->Height;
 	Buffer->Memory = VirtualAlloc(0, BitmapMemorySize, MEM_RESERVE|MEM_COMMIT, 
 																PAGE_READWRITE);
-	Buffer->Pitch = Buffer->BytesPerPixel * Buffer->Width;
 }
 
 //TODO(bjorn): Make this function return where the actual gamewindow start and end.
@@ -1255,10 +1255,6 @@ HandleDebugCycleCounters(game_memory* Memory)
 #endif
 }
 
-//TODO(bjorn): Double-check the write ordering stuff on the CPU.
-#define CompletePastWritesBeforeFutureWrites _WriteBarrier(); _mm_sfence()
-#define CompletePastReadsBeforeFutureReads _ReadBarrier(); _mm_lfence()
-
 //TODO(bjorn): Multiple producer multiple consumer.
   internal_function void
 Win32PushWork(work_queue* Queue, work_queue_callback* Callback, void* Data)
@@ -1272,7 +1268,7 @@ Win32PushWork(work_queue* Queue, work_queue_callback* Callback, void* Data)
 
   Queue->WorkCount++;
 
-  CompletePastWritesBeforeFutureWrites;
+  _WriteBarrier();
   Queue->NextEntryToWrite = NewNextEntryToWrite;
 
   ReleaseSemaphore(Queue->SemaphoreHandle, 1, 0);

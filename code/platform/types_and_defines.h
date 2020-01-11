@@ -116,6 +116,9 @@ global_variable int IEEE_INF_BITS = 0x7F800000;
 #define Gigabytes(number) (Megabytes(number) * 1024LL)
 #define Terabytes(number) (Gigabytes(number) * 1024LL)
 
+#define Align16(value) (((value) + 15) & ~15)
+#define Align4(value) (((value) + 3) & ~3)
+
 #define ArrayCount(array) (sizeof(array) / sizeof((array)[0]))
 #define Min(a, b) ((a) < (b)?(a):(b))
 #define Max(a, b) ((a) < (b)?(b):(a))

@@ -1475,8 +1475,12 @@ TiledRenderGroupToOutput(work_queue* RenderQueue, render_group* RenderGroup,
   s32 const TileCountY = 4;
   s32 const TileCountX = 4;
 
-  s32 TileHeight = OutputTarget->Height / TileCountY;
+  Assert(((memi)OutputTarget->Memory & 15) == 0);
+
   s32 TileWidth = OutputTarget->Width / TileCountX;
+  s32 TileHeight = OutputTarget->Height / TileCountY;
+
+  TileWidth  = ((TileWidth +3)/4)*4;
 
   render_work RenderWork[TileCountX*TileCountY];
   s32 Index = 0;
@@ -1489,10 +1493,12 @@ TiledRenderGroupToOutput(work_queue* RenderQueue, render_group* RenderGroup,
         TileX++)
     {
       rectangle2s ClipRect;
-      ClipRect.Min.X = TileX*TileWidth + 4;
-      ClipRect.Min.Y = TileY*TileHeight + 4;
-      ClipRect.Max.X = ClipRect.Min.X + TileWidth - 4;
-      ClipRect.Max.Y = ClipRect.Min.Y + TileHeight - 4;
+      ClipRect.Min.X = TileX*TileWidth;
+      ClipRect.Min.Y = TileY*TileHeight;
+      ClipRect.Max.X = ClipRect.Min.X + TileWidth;
+      ClipRect.Max.Y = ClipRect.Min.Y + TileHeight;
+
+      ClipRect.Max.X = Min(ClipRect.Max.X, OutputTarget->Width);
 
       Assert(ClipRect.Min.X >= 0);
       Assert(ClipRect.Min.Y >= 0);

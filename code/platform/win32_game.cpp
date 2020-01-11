@@ -1537,8 +1537,102 @@ WinMain(HINSTANCE Instance,
 																									MEM_RESERVE|MEM_COMMIT,
 																									PAGE_READWRITE);
     {
-      u32 InitialCount = 0;
       u32 ThreadCount = 4-1;
+
+      u32 NUMANodeCount = 0;
+      u32 ProcessorCoreCount = 0;
+      u32 LogicalProcessorCount = 0;
+      u32 ProcessorL1CacheCount = 0;
+      u32 ProcessorL2CacheCount = 0;
+      u32 ProcessorL3CacheCount = 0;
+      u32 ProcessorPackageCount = 0;
+
+      DWORD ReturnedLength = 0;
+      if(SUCCEEDED(GetLogicalProcessorInformation(0, &ReturnedLength)))
+      {
+        SYSTEM_LOGICAL_PROCESSOR_INFORMATION* Buffer = 
+          (SYSTEM_LOGICAL_PROCESSOR_INFORMATION*)VirtualAlloc(0, ReturnedLength, 
+                                                              MEM_RESERVE|MEM_COMMIT, 
+                                                              PAGE_READWRITE);
+        if(SUCCEEDED(GetLogicalProcessorInformation(Buffer, &ReturnedLength)))
+        {
+          DWORD ByteOffset = 0;
+          while ((ByteOffset + sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION)) <= ReturnedLength) 
+          {
+            switch (Buffer->Relationship) 
+            {
+              case RelationNumaNode
+                : {
+                  NUMANodeCount++;
+                } break;
+
+              case RelationProcessorCore
+                : {
+                  ProcessorCoreCount++;
+
+                  //TODO(bjorn): On a system with more than 64 processors, the processor mask 
+                  //identifies processors in a single processor group.
+                  s32 SetBitCount = 0;
+                  ULONG_PTR BitMask = 0x1;
+                  for(s32 BitIndex = 0; 
+                      BitIndex < sizeof(ULONG_PTR)*8;
+                      BitIndex++, BitMask<<=1)
+                  {
+                    SetBitCount += (Buffer->ProcessorMask & BitMask) ? 1 : 0;
+                  }
+                  LogicalProcessorCount += SetBitCount;
+                } break;
+
+              case RelationCache
+                : {
+                  PCACHE_DESCRIPTOR Cache = &Buffer->Cache;
+                  if (Cache->Level == 1)
+                  {
+                    ProcessorL1CacheCount++;
+                  }
+                  else if (Cache->Level == 2)
+                  {
+                    ProcessorL2CacheCount++;
+                  }
+                  else if (Cache->Level == 3)
+                  {
+                    ProcessorL3CacheCount++;
+                  }
+                } break;
+
+              case RelationProcessorPackage
+                : {
+                  ProcessorPackageCount++;
+                } break;
+
+              InvalidDefaultCase;
+            }
+
+            ByteOffset += sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION);
+            Buffer++;
+          }
+
+#if 1
+          char TextBuffer[256];
+          sprintf_s(TextBuffer, 
+                    "NUMANodeCount:%d\nProcessorCoreCount:%d\nLogicalProcessorCount:%d\nProcessorL1CacheCount:%d\nProcessorL2CacheCount:%d\nProcessorL3CacheCount:%d\nProcessorPackageCount:%d\n",
+                    NUMANodeCount,
+                    ProcessorCoreCount,
+                    LogicalProcessorCount,
+                    ProcessorL1CacheCount,
+                    ProcessorL2CacheCount,
+                    ProcessorL3CacheCount,
+                    ProcessorPackageCount
+                   );
+          OutputDebugStringA(TextBuffer);
+#endif
+          ThreadCount = LogicalProcessorCount-1;
+        }
+
+        VirtualFree(Buffer, 0, MEM_RELEASE);
+      }
+
+      u32 InitialCount = 0;
       HANDLE SemaphoreHandle = CreateSemaphoreEx(0,
                                                  InitialCount,
                                                  ThreadCount,

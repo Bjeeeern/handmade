@@ -10,8 +10,13 @@
 #include <stdio.h>
 
 //NOTE(bjorn): 1080p display mode is 1920x1080 -> Half of that is 960x540.
+#if 0
+#define GAME_RGB_BUFFER_WIDTH 1920
+#define GAME_RGB_BUFFER_HEIGHT 1080
+#else
 #define GAME_RGB_BUFFER_WIDTH 960
 #define GAME_RGB_BUFFER_HEIGHT 540
+#endif
 
 struct win32_game_code
 {
@@ -1252,65 +1257,93 @@ HandleDebugCycleCounters(game_memory* Memory)
 
 //TODO(bjorn): Double-check the write ordering stuff on the CPU.
 #define CompletePastWritesBeforeFutureWrites _WriteBarrier(); _mm_sfence()
-#define CompletePastReadsBeforeFutureReads _ReadBarrier()
+#define CompletePastReadsBeforeFutureReads _ReadBarrier(); _mm_lfence()
 
-struct work_queue_entry
+//TODO(bjorn): Multiple producer multiple consumer.
+  internal_function void
+Win32PushWork(work_queue* Queue, work_queue_callback* Callback, void* Data)
 {
-  char* StringToPrint;
-};
+  u32 NewNextEntryToWrite = (Queue->NextEntryToWrite + 1)% Queue->MaxEntryCount;
+  Assert(Queue->NextEntryToRead != NewNextEntryToWrite);
 
-global_variable u32 volatile FinishedEntryCount = 0;
-global_variable u32 volatile NextEntryToDo = 0;
-global_variable u32 volatile EntryCount = 0;
-work_queue_entry Entries[256];
+  work_queue_entry* Entry = Queue->Entries + Queue->NextEntryToWrite;
+  Entry->Callback = Callback;
+  Entry->Data     = Data;
 
-internal_function void
-PushWork(HANDLE SemaphoreHandle, char* String)
-{
-  Assert(EntryCount < ArrayCount(Entries));
-
-  work_queue_entry* Entry = Entries + EntryCount;
-  Entry->StringToPrint = String;
+  Queue->WorkCount++;
 
   CompletePastWritesBeforeFutureWrites;
+  Queue->NextEntryToWrite = NewNextEntryToWrite;
 
-  EntryCount++;
-
-  ReleaseSemaphore(SemaphoreHandle, 1, 0);
+  ReleaseSemaphore(Queue->SemaphoreHandle, 1, 0);
 }
 
-struct win32_thread_info
+  inline b32 
+Win32DoMultithreadedWork(work_queue* Queue)
 {
-  HANDLE SemaphoreHandle;
-  s32 LogicalThreadIndex;
-};
+  b32 ShouldSleep = false;
+
+  u32 OriginalNextEntryToRead = Queue->NextEntryToRead;
+  u32 NewNextEntryToRead = (OriginalNextEntryToRead + 1)% Queue->MaxEntryCount;
+
+  if(OriginalNextEntryToRead == Queue->NextEntryToWrite)
+  {
+    ShouldSleep = true;
+  }
+  else
+  {
+    u32 Test = InterlockedCompareExchange((LONG volatile*)&Queue->NextEntryToRead,
+                                                         NewNextEntryToRead,
+                                                         OriginalNextEntryToRead);
+    if(Test == OriginalNextEntryToRead)
+    {
+      work_queue_entry* Entry = Queue->Entries + OriginalNextEntryToRead;
+      Entry->Callback(Entry->Data);
+
+      InterlockedIncrement((LONG volatile*)&Queue->CompletedWorkCount);
+    }
+  }
+
+  return ShouldSleep;
+}
+
+internal_function void
+Win32CompleteWork(work_queue* Queue)
+{
+  while(Queue->CompletedWorkCount < Queue->WorkCount) 
+  { 
+    Win32DoMultithreadedWork(Queue); 
+  }
+
+  Queue->WorkCount = 0;
+  Queue->CompletedWorkCount = 0;
+}
 
 DWORD WINAPI
 ThreadProc(LPVOID lpParameter)
 {
-  win32_thread_info* ThreadInfo = (win32_thread_info*)lpParameter;
+  work_queue* Queue = (work_queue*)lpParameter;
 
   for(;;)
   {
-    if(NextEntryToDo < EntryCount)
+    if(Win32DoMultithreadedWork(Queue))
     {
-      s32 EntryIndex = InterlockedIncrement((LONG volatile*)&NextEntryToDo) - 1;
-      CompletePastReadsBeforeFutureReads;
-
-      work_queue_entry* Entry = Entries + EntryIndex;
-
-      char Buffer[256];
-      wsprintfA(Buffer, "Thread %u: %s\n", ThreadInfo->LogicalThreadIndex, Entry->StringToPrint);
-      OutputDebugStringA(Buffer);
-
-      InterlockedIncrement((LONG volatile*)&FinishedEntryCount);
-    }
-    else
-    {
-      WaitForSingleObjectEx(ThreadInfo->SemaphoreHandle, INFINITE, FALSE);
+      WaitForSingleObjectEx(Queue->SemaphoreHandle, INFINITE, FALSE);
     }
   }
 }
+
+#if 0
+internal_function
+WORK_QUEUE_CALLBACK(PrintStringJob)
+{
+  char Buffer[256];
+  wsprintfA(Buffer, "Thread %u: %s\n", GetCurrentThreadId(), Data);
+  OutputDebugStringA(Buffer);
+}
+
+work_queue_entry TestQueueEntries[20];
+#endif
 
 	s32 CALLBACK 
 WinMain(HINSTANCE Instance,
@@ -1318,52 +1351,53 @@ WinMain(HINSTANCE Instance,
 				LPSTR CommandLine,
 				s32 Show)
 {
-#if 1
-  win32_thread_info ThreadInfos[3] = {};
+#if 0
+  work_queue Queue = {};
 
   u32 InitialCount = 0;
-  u32 ThreadCount = ArrayCount(ThreadInfos);
+  u32 ThreadCount = 4-1;
   HANDLE SemaphoreHandle = CreateSemaphoreEx(0,
                                              InitialCount,
                                              ThreadCount,
                                              0, 0, SEMAPHORE_ALL_ACCESS);
-  for(s32 ThreadIndex = 0;
-      ThreadIndex < ArrayCount(ThreadInfos);
+  Queue.SemaphoreHandle = SemaphoreHandle;
+  Queue.Entries = TestQueueEntries;
+  Queue.MaxEntryCount = ArrayCount(TestQueueEntries);
+
+  for(u32 ThreadIndex = 0;
+      ThreadIndex < ThreadCount;
       ThreadIndex++)
   {
-    win32_thread_info* ThreadInfo = ThreadInfos + ThreadIndex;
-
-    ThreadInfo->SemaphoreHandle = SemaphoreHandle;
-    ThreadInfo->LogicalThreadIndex = ThreadIndex;
-
     DWORD ThreadID;
-    HANDLE ThreadHandle = CreateThread(0, 0, ThreadProc, ThreadInfo, 0, &ThreadID);
+    HANDLE ThreadHandle = CreateThread(0, 0, ThreadProc, &Queue, 0, &ThreadID);
     CloseHandle(ThreadHandle);
   }
 
-  PushWork(SemaphoreHandle, "String: A0");
-  PushWork(SemaphoreHandle, "String: A1");
-  PushWork(SemaphoreHandle, "String: A2");
-  PushWork(SemaphoreHandle, "String: A3");
-  PushWork(SemaphoreHandle, "String: A4");
-  PushWork(SemaphoreHandle, "String: A5");
-  PushWork(SemaphoreHandle, "String: A6");
-  PushWork(SemaphoreHandle, "String: A7");
-  PushWork(SemaphoreHandle, "String: A8");
-  PushWork(SemaphoreHandle, "String: A9");
+  Win32PushWork(&Queue, PrintStringJob, "String: A0");
+  Win32PushWork(&Queue, PrintStringJob, "String: A1");
+  Win32PushWork(&Queue, PrintStringJob, "String: A2");
+  Win32PushWork(&Queue, PrintStringJob, "String: A3");
+  Win32PushWork(&Queue, PrintStringJob, "String: A4");
+  Win32PushWork(&Queue, PrintStringJob, "String: A5");
+  Win32PushWork(&Queue, PrintStringJob, "String: A6");
+  Win32PushWork(&Queue, PrintStringJob, "String: A7");
+  Win32PushWork(&Queue, PrintStringJob, "String: A8");
+  Win32PushWork(&Queue, PrintStringJob, "String: A9");
 
-  Sleep(2000);
+  Sleep(1000);
 
-  PushWork(SemaphoreHandle, "String: B0");
-  PushWork(SemaphoreHandle, "String: B1");
-  PushWork(SemaphoreHandle, "String: B2");
-  PushWork(SemaphoreHandle, "String: B3");
-  PushWork(SemaphoreHandle, "String: B4");
-  PushWork(SemaphoreHandle, "String: B5");
-  PushWork(SemaphoreHandle, "String: B6");
-  PushWork(SemaphoreHandle, "String: B7");
-  PushWork(SemaphoreHandle, "String: B8");
-  PushWork(SemaphoreHandle, "String: B9");
+  Win32PushWork(&Queue, PrintStringJob, "String: B0");
+  Win32PushWork(&Queue, PrintStringJob, "String: B1");
+  Win32PushWork(&Queue, PrintStringJob, "String: B2");
+  Win32PushWork(&Queue, PrintStringJob, "String: B3");
+  Win32PushWork(&Queue, PrintStringJob, "String: B4");
+  Win32PushWork(&Queue, PrintStringJob, "String: B5");
+  Win32PushWork(&Queue, PrintStringJob, "String: B6");
+  Win32PushWork(&Queue, PrintStringJob, "String: B7");
+  Win32PushWork(&Queue, PrintStringJob, "String: B8");
+  Win32PushWork(&Queue, PrintStringJob, "String: B9");
+
+  Win32CompleteWork(&Queue);
 #endif
 
 	//TODO(bjorn): This api call is intended for Vista/Win7 only. Win8.1 and
@@ -1502,28 +1536,54 @@ WinMain(HINSTANCE Instance,
 		s16 *SoundSamplesBuffer = (s16 *)VirtualAlloc(0, SoundOutput.SecondaryBufferSize, 
 																									MEM_RESERVE|MEM_COMMIT,
 																									PAGE_READWRITE);
+    {
+      u32 InitialCount = 0;
+      u32 ThreadCount = 4-1;
+      HANDLE SemaphoreHandle = CreateSemaphoreEx(0,
+                                                 InitialCount,
+                                                 ThreadCount,
+                                                 0, 0, SEMAPHORE_ALL_ACCESS);
+      Handmade.Memory.HighPriorityQueue.SemaphoreHandle = SemaphoreHandle;
+      Handmade.Memory.HighPriorityQueue.Entries = Handmade.Memory.HighPriorityQueueEntries;
+      Handmade.Memory.HighPriorityQueue.MaxEntryCount = 
+        ArrayCount(Handmade.Memory.HighPriorityQueueEntries);
 
-		// TODO(bjorn): As for this fix for in-game game switching, since the memrecords are
-		//              shared, the size implicitly has to be shared between the games. I
-		//              might want to fix this in the future.
-		u64 CommonPermanentStorageSize = Megabytes(256);
-		// TODO(bjorn): TransientStorage needs to be broken up into game transient
-		// and cache transient. Only game transient needs to be stored for state
-		// playback.
-		u64 CommonTransientStorageSize = Gigabytes(1);
-		u64 CommonStorageTotalSize = CommonPermanentStorageSize + CommonTransientStorageSize;
-		Handmade.Memory.PermanentStorageSize = CommonPermanentStorageSize; 
-		Handmade.Memory.TransientStorageSize = CommonTransientStorageSize;
-		Handmade.Memory.DEBUGPlatformFreeFileMemory = DEBUGPlatformFreeFileMemory;
-		Handmade.Memory.DEBUGPlatformReadEntireFile = DEBUGPlatformReadEntireFile;
-		Handmade.Memory.DEBUGPlatformWriteEntireFile = DEBUGPlatformWriteEntireFile;
-		Handmade.Memory.DEBUGPlatformGetFileEditTimestamp = DEBUGPlatformGetFileEditTimestamp;
+      for(u32 ThreadIndex = 0;
+          ThreadIndex < ThreadCount;
+          ThreadIndex++)
+      {
+        DWORD ThreadID;
+        HANDLE ThreadHandle = CreateThread(0, 0, 
+                                           ThreadProc, 
+                                           &Handmade.Memory.HighPriorityQueue, 
+                                           0, &ThreadID);
+        CloseHandle(ThreadHandle);
+      }
+    }
+    Handmade.Memory.PushWork = Win32PushWork;
+    Handmade.Memory.CompleteWork = Win32CompleteWork;
 
+    // TODO(bjorn): As for this fix for in-game game switching, since the memrecords are
+    //              shared, the size implicitly has to be shared between the games. I
+    //              might want to fix this in the future.
+    u64 CommonPermanentStorageSize = Megabytes(256);
+    // TODO(bjorn): TransientStorage needs to be broken up into game transient
+    // and cache transient. Only game transient needs to be stored for state
+    // playback.
+    u64 CommonTransientStorageSize = Gigabytes(1);
+    u64 CommonStorageTotalSize = CommonPermanentStorageSize + CommonTransientStorageSize;
+    Handmade.Memory.PermanentStorageSize = CommonPermanentStorageSize; 
+    Handmade.Memory.TransientStorageSize = CommonTransientStorageSize;
 #if HANDMADE_INTERNAL
-		for(s32 RecordIndex = 0;
-				RecordIndex < 10;
-				++RecordIndex)
-		{
+    Handmade.Memory.DEBUGPlatformFreeFileMemory = DEBUGPlatformFreeFileMemory;
+    Handmade.Memory.DEBUGPlatformReadEntireFile = DEBUGPlatformReadEntireFile;
+    Handmade.Memory.DEBUGPlatformWriteEntireFile = DEBUGPlatformWriteEntireFile;
+    Handmade.Memory.DEBUGPlatformGetFileEditTimestamp = DEBUGPlatformGetFileEditTimestamp;
+
+    for(s32 RecordIndex = 0;
+        RecordIndex < 10;
+        ++RecordIndex)
+    {
 			Win32State.MemoryRecords[RecordIndex] = VirtualAlloc(0, 
 																													 CommonStorageTotalSize, 
 																													 MEM_RESERVE|MEM_COMMIT,

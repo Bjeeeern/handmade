@@ -1450,17 +1450,36 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
   END_TIMED_BLOCK(RenderGroupToOutput);
 }
 
+struct render_work
+{
+  render_group* RenderGroup; 
+  game_bitmap* OutputTarget; 
+  f32 ScreenHeightInMeters;
+  rectangle2s ClipRect; 
+};
+WORK_QUEUE_CALLBACK(DoRenderWork)
+{
+  render_work* RenderWork = (render_work*)Data;
+
+  RenderGroupToOutput(RenderWork->RenderGroup, RenderWork->OutputTarget, 
+                      RenderWork->ScreenHeightInMeters, RenderWork->ClipRect, false);
+  RenderGroupToOutput(RenderWork->RenderGroup, RenderWork->OutputTarget, 
+                      RenderWork->ScreenHeightInMeters, RenderWork->ClipRect, true);
+}
+
   internal_function void
-TiledRenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, 
-                         f32 ScreenHeightInMeters)
+TiledRenderGroupToOutput(work_queue* RenderQueue, render_group* RenderGroup,
+                         game_bitmap* OutputTarget, f32 ScreenHeightInMeters)
 {
 #if 1
-  s32 TileCountY = 4;
-  s32 TileCountX = 4;
+  s32 const TileCountY = 4;
+  s32 const TileCountX = 4;
 
   s32 TileHeight = OutputTarget->Height / TileCountY;
   s32 TileWidth = OutputTarget->Width / TileCountX;
 
+  render_work RenderWork[TileCountX*TileCountY];
+  s32 Index = 0;
   for(s32 TileY = 0;
       TileY < TileCountY;
       TileY++)
@@ -1480,10 +1499,16 @@ TiledRenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget,
       Assert(ClipRect.Max.X <= OutputTarget->Dim.X);
       Assert(ClipRect.Max.Y <= OutputTarget->Dim.Y);
 
-      RenderGroupToOutput(RenderGroup, OutputTarget, ScreenHeightInMeters, ClipRect, false);
-      RenderGroupToOutput(RenderGroup, OutputTarget, ScreenHeightInMeters, ClipRect, true);
+      RenderWork[Index].RenderGroup = RenderGroup;
+      RenderWork[Index].OutputTarget = OutputTarget;
+      RenderWork[Index].ScreenHeightInMeters = ScreenHeightInMeters;
+      RenderWork[Index].ClipRect = ClipRect;
+      PushWork(RenderQueue, DoRenderWork, &RenderWork[Index]);
+
+      Index++;
     }
   }
+CompleteWork(RenderQueue);
 #else
   // rectangle2s ClipRect = RectMinMax(v2s{200,200}, v2s{400,400});
   rectangle2s ClipRect = RectMinMax(v2s{4,4}, OutputTarget->Dim - v2s{4,4});

@@ -318,16 +318,51 @@ GetMouseIndex(game_input* Input, game_mouse* Mouse)
 	return Result;
 }
 
+#define WORK_QUEUE_CALLBACK(name) void name(void* Data)
+typedef WORK_QUEUE_CALLBACK(work_queue_callback);
+
+struct work_queue_entry
+{
+  work_queue_callback* Callback;
+  void* Data;
+};
+
+struct work_queue
+{
+  u32 volatile WorkCount;
+  u32 volatile CompletedWorkCount;
+
+  u32 volatile NextEntryToRead;
+  u32 volatile NextEntryToWrite;
+
+  u32 MaxEntryCount;
+  work_queue_entry* Entries;
+
+  //TODO(bjorn): Is this useful across platforms?
+  void* SemaphoreHandle;
+};
+
+typedef void multi_thread_push_work(work_queue* Queue, work_queue_callback* Callback, void* Data);
+typedef void multi_thread_complete_work(work_queue* Queue);
+
 // NOTE(bjorn): Memory REQUIRED to be initialized to 0 on startup.
 struct game_memory
 {
 	b32 IsInitialized;
 
 	memi PermanentStorageSize;
-	void *PermanentStorage; 
+	void* PermanentStorage; 
 
 	memi TransientStorageSize;
-	void *TransientStorage; 
+	void* TransientStorage; 
+
+  multi_thread_push_work* PushWork;
+  multi_thread_complete_work* CompleteWork;
+
+  //TODO(bjorn): Put this in transient or permanent.
+  work_queue_entry HighPriorityQueueEntries[256];
+  work_queue HighPriorityQueue;
+  //TODO(bjorn): work_queue* LowPriorityQueue;
 
 #if HANDMADE_INTERNAL
 	debug_platform_read_entire_file *DEBUGPlatformReadEntireFile;

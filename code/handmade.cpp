@@ -1,4 +1,6 @@
 #include "platform.h"
+multi_thread_push_work* PushWork;
+multi_thread_complete_work* CompleteWork;
 #include "memory.h"
 #include "world_map.h"
 #include "random.h"
@@ -50,6 +52,11 @@ struct hero_bitmaps
 
 struct game_state
 {
+  //TODO STUDY(bjorn): transient_state
+  work_queue* RenderQueue;
+  game_bitmap GeneratedTile;
+  //END STUDY
+
 	memory_arena WorldArena;
 	world_map* WorldMap;
 
@@ -61,8 +68,6 @@ struct game_state
 	rectangle3 CameraUpdateBounds;
 
 	stored_entities Entities;
-
-  game_bitmap GeneratedTile;
 
 	game_bitmap Backdrop;
 	game_bitmap RockWall;
@@ -147,7 +152,7 @@ GenerateTile(game_state* GameState, game_bitmap* Buffer)
   }
 
   SetCamera(RenderGroup, M44Identity(), 1.0f, 1.0f);
-  TiledRenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
+  TiledRenderGroupToOutput(GameState->RenderQueue, RenderGroup, Buffer, (f32)Buffer->Height);
 
 	EndTemporaryMemory(TempMem);
 	CheckMemoryArena(&GameState->TransientArena);
@@ -162,6 +167,8 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 									(u8*)Memory->TransientStorage);
 	InitializeArena(&GameState->TransientArena, Memory->TransientStorageSize>>1, 
 									(u8*)Memory->TransientStorage + (Memory->TransientStorageSize>>1));
+
+  GameState->RenderQueue = &Memory->HighPriorityQueue;
 
 	GameState->SimulationSpeedModifier = 1;
 
@@ -678,7 +685,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #endif
 	if(!Memory->IsInitialized)
 	{
+    PushWork = Memory->PushWork;
+    CompleteWork = Memory->CompleteWork;
+
 		InitializeGame(Memory, GameState, Input);
+
 		Memory->IsInitialized = true;
 #if HANDMADE_INTERNAL
 		DEBUG_SwitchToLocation = 5;
@@ -1585,7 +1596,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// NOTE(bjorn): Rendering
 	//
 #if 1
-  TiledRenderGroupToOutput(RenderGroup, Buffer, 1.4f*9.0f);
+  TiledRenderGroupToOutput(GameState->RenderQueue, RenderGroup, Buffer, 1.4f*9.0f);
 #else
   DrawRectangle(Buffer, RectMinMax(v2s{0, 0}, Buffer->Dim), 
                 v3{1,1,1}*0.5f, RectMinMax(v2s{0, 0}, Buffer->Dim), true);

@@ -50,7 +50,7 @@ enum
 {
   DebugCycleCounter_GameUpdateAndRender,
   DebugCycleCounter_RenderGroupToOutput,
-  DebugCycleCounter_DrawTriangleSlowly,
+  DebugCycleCounter_DrawTriangle,
   DebugCycleCounter_ProcessPixel,
   DebugCycleCounter_Count,
 };

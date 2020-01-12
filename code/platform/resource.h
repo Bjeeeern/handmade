@@ -77,7 +77,8 @@ DEBUGLoadBMP(debug_platform_free_file_memory* FreeFileMemory,
 		Result.Width = Header->Width;
 		Result.Height = Header->Height;
     Result.Pitch = Align4(Result.Width);
-		Result.Memory = PushArray(Arena, Result.Pitch*Result.Height, u32);
+    u32* BitmapMemory = PushArray(Arena, Result.Pitch*Result.Height + 4, u32);
+		Result.Memory = (u32*)Align16((memi)BitmapMemory);
     Result.WidthOverHeight = SafeRatio0((f32)Result.Width, (f32)Result.Height);
 
     s32 ResultPixelIndex = 0;
@@ -125,9 +126,10 @@ EmptyBitmap(memory_arena* Arena, u32 Width, u32 Height)
 
   Result.Width = Width;
   Result.Height = Height;
-  Result.Pitch = Result.Width;
-  Result.Memory = PushArray(Arena, Width*Height, u32);
-  ZeroMemory_((u8*)Result.Memory, Width*Height*GAME_BITMAP_BYTES_PER_PIXEL);
+  Result.Pitch = Align4(Result.Width);
+  u32* BitmapMemory = PushArray(Arena, Result.Pitch*Result.Height + 4, u32);
+  Result.Memory = (u32*)Align16((memi)BitmapMemory);
+  ZeroMemory_((u8*)Result.Memory, Result.Pitch*Result.Height*GAME_BITMAP_BYTES_PER_PIXEL);
   Result.WidthOverHeight = SafeRatio0((f32)Result.Width, (f32)Result.Height);
 
   return Result;

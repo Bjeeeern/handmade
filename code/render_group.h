@@ -50,16 +50,10 @@ Linear1TosRGB255(v4 Linear)
 }
 
   internal_function void
-DrawRectangle(game_bitmap *Buffer, rectangle2s Rect, v3 RGB, rectangle2s ClipRect, b32 Odd)
+DrawRectangle(game_bitmap *Buffer, rectangle2s Rect, v3 RGB, rectangle2s ClipRect)
 {
   rectangle2s FillRect = Intersect(Rect, ClipRect);
   if(HasNoArea(FillRect)) { return; }
-
-  b32 ShiftY = !(FillRect.Min.Y % 2) == Odd;
-  if(ShiftY)
-  {
-    FillRect.Min.Y += 1;
-  }
 
   s32 Left   = FillRect.Min.X;
   s32 Bottom = FillRect.Min.Y;
@@ -76,7 +70,7 @@ DrawRectangle(game_bitmap *Buffer, rectangle2s Rect, v3 RGB, rectangle2s ClipRec
 
   for(s32 Y = Bottom;
       Y < Top;
-      Y += 2)
+      Y++)
   {
     u32 *Pixel = UpperLeftPixel;
 
@@ -87,14 +81,14 @@ DrawRectangle(game_bitmap *Buffer, rectangle2s Rect, v3 RGB, rectangle2s ClipRec
       *Pixel++ = Color;
     }
 
-    UpperLeftPixel += PixelPitch*2;
+    UpperLeftPixel += PixelPitch;
   }
 }
 
 	internal_function void
 DrawLine(game_bitmap* Buffer, 
          v2 A, v2 B, v3 RGB,
-         rectangle2s ClipRect, b32 Odd)
+         rectangle2s ClipRect)
 {
   //TODO(bjorn): Implement.
   v2s Min = { Min(FloorF32ToS32(A.X), FloorF32ToS32(B.X)), 
@@ -103,16 +97,8 @@ DrawLine(game_bitmap* Buffer,
               Max(RoofF32ToS32(A.Y), RoofF32ToS32(B.Y))};
   rectangle2s FillRect = RectMinMax(Min, Max);
 
-#if 0
-  FillRect = AddMarginToRect(FillRect, -4);
-#endif
-
   FillRect = Intersect(FillRect, ClipRect);
   //TODO(bjorn): if(HasNoArea(FillRect)) { return; }
-
-#if 0
-  DrawRectangle(Buffer, FillRect, {0.8f,0.8f,0.8f}, ClipRect, Odd);
-#endif
 
   rect_corner_v2_result Corner = GetRectCorners(Rect2sToRect2(FillRect));
   {
@@ -208,11 +194,8 @@ DrawLine(game_bitmap* Buffer,
                         (FillRect.Min.Y <= Y) && (Y < FillRect.Max.Y));
     if(PointHitTest)
     {
-      if(!(Y % 2) == !Odd)
-      {
-        u32 *Pixel = (u32 *)Buffer->Memory + Buffer->Pitch * Y + X;
-        *Pixel = Color;
-      }
+      u32 *Pixel = (u32 *)Buffer->Memory + Buffer->Pitch * Y + X;
+      *Pixel = Color;
     }
 
     StepLength += 1.0f;
@@ -229,11 +212,8 @@ DrawLine(game_bitmap* Buffer,
                         (FillRect.Min.Y <= Y) && (Y < FillRect.Max.Y));
     if(PointHitTest)
     {
-      if(!(Y % 2) == !Odd)
-      {
-        u32 *Pixel = (u32 *)Buffer->Memory + Buffer->Pitch * Y + X;
-        *Pixel = Color;
-      }
+      u32 *Pixel = (u32 *)Buffer->Memory + Buffer->Pitch * Y + X;
+      *Pixel = Color;
     }
 
     StepLength += 1.0f;
@@ -308,14 +288,14 @@ DrawChar_(game_bitmap *Buffer, font *Font, u32 UnicodeCodePoint,
 #pragma warning(disable:4701)
 #endif
 	internal_function void
-DrawTriangleSlowly(game_bitmap *Buffer, 
+DrawTriangle(game_bitmap *Buffer, 
                    camera_parameters* CamParam, output_target_screen_variables* ScreenVars,
                    v3 CameraSpacePoint0, v3 CameraSpacePoint1, v3 CameraSpacePoint2, 
                    v2 UV0, v2 UV1, v2 UV2, 
                    game_bitmap* Bitmap, v4 RGBA,
-                   rectangle2s ClipRect, b32 Odd)
+                   rectangle2s ClipRect)
 {
-  BEGIN_TIMED_BLOCK(DrawTriangleSlowly);
+  BEGIN_TIMED_BLOCK(DrawTriangle);
 
   b32 AllPointsBehindClipPoint = false;
   {
@@ -377,26 +357,27 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   FillRect = Intersect(FillRect, ClipRect);
   if(HasNoArea(FillRect)) { return; }
 
-  __m128i StartupClipMask = _mm_set1_epi32(0xFFFFFFFF);
-  s32 FillWidth = FillRect.Max.X - FillRect.Min.X;
-  s32 FillWidthAlign = FillWidth % 4;
-  if(FillWidthAlign > 0)
-  {
-    s32 Adjustment = 4 - FillWidthAlign;
-    switch(Adjustment)
-    {
-      case 1: { StartupClipMask = _mm_slli_si128(StartupClipMask, 4*1); } break;
-      case 2: { StartupClipMask = _mm_slli_si128(StartupClipMask, 4*2); } break;
-      case 3: { StartupClipMask = _mm_slli_si128(StartupClipMask, 4*3); } break;
-    }
-    FillWidth += Adjustment;
-    FillRect.Min.X = FillRect.Max.X - FillWidth;
-  }
+  __m128i StartClipMask = _mm_set1_epi32(0xFFFFFFFF);
+  __m128i EndClipMask   = _mm_set1_epi32(0xFFFFFFFF);
 
-  b32 ShiftY = !(FillRect.Min.Y % 2) == Odd;
-  if(ShiftY)
+  __m128i StartClipMasks[] = { _mm_slli_si128(StartClipMask, 4*0),
+                               _mm_slli_si128(StartClipMask, 4*1),
+                               _mm_slli_si128(StartClipMask, 4*2),
+                               _mm_slli_si128(StartClipMask, 4*3)};
+  __m128i EndClipMasks[]   = { _mm_srli_si128(EndClipMask,   4*0),
+                               _mm_srli_si128(EndClipMask,   4*3),
+                               _mm_srli_si128(EndClipMask,   4*2),
+                               _mm_srli_si128(EndClipMask,   4*1)};
+
+  if(FillRect.Min.X & 3)
   {
-    FillRect.Min.Y += 1;
+    StartClipMask = StartClipMasks[FillRect.Min.X & 3];
+    FillRect.Min.X = FillRect.Min.X & ~3;
+  }
+  if(FillRect.Max.X & 3)
+  {
+    EndClipMask = EndClipMasks[FillRect.Max.X & 3];
+    FillRect.Max.X = (FillRect.Max.X & ~3) + 4;
   }
 
   //TODO(bjorn): Rect is in lower left corner and goes out of bounds. Crashes on mem read.
@@ -527,20 +508,20 @@ DrawTriangleSlowly(game_bitmap *Buffer,
   s32 MaxY = FillRect.Max.Y;
   __m128 LeftmostX = _mm_cvtepi32_ps(_mm_setr_epi32(MinX+0, MinX+1, MinX+2, MinX+3));
 
-  s32 RowAdvance = Buffer->Pitch*2;
+  s32 RowAdvance = Buffer->Pitch;
 
   u32 *UpperLeftPixel = Buffer->Memory + MinY * Buffer->Pitch + MinX;
   BEGIN_TIMED_BLOCK(ProcessPixel);
   for(s32 Y = MinY;
       Y < MaxY;
-      Y += 2)
+      Y++)
   {
     u32 *Pixel = UpperLeftPixel;
 
     __m128 PixelPointX = LeftmostX;
     __m128 PixelPointY = _mm_cvtepi32_ps(_mm_set1_epi32(Y));
 
-    __m128i ClipMask = StartupClipMask;
+    __m128i ClipMask = StartClipMask;
 
     for(s32 IX = MinX;
         IX < MaxX;
@@ -812,18 +793,26 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 
       Pixel += 4;
       PixelPointX = _mm_add_ps(PixelPointX, Const4444);
-      ClipMask = _mm_set1_epi32(0xFFFFFFFF);
+
+      if(IX + 8 < MaxX)
+      {
+        ClipMask = _mm_set1_epi32(0xFFFFFFFF);
+      }
+      else
+      {
+        ClipMask = EndClipMask;
+      }
     }
 
     UpperLeftPixel += RowAdvance;
   }
 
-  u64 PixelCount = ((MaxX-MinX) > 0 && (MaxY-MinY) > 0) ? ((MaxX-MinX) * (MaxY-MinY))/2 : 0;
+  u64 PixelCount = ((MaxX-MinX) > 0 && (MaxY-MinY) > 0) ? ((MaxX-MinX) * (MaxY-MinY)) : 0;
   END_TIMED_BLOCK_COUNTED(ProcessPixel, PixelCount);
 
   _MM_SET_ROUNDING_MODE(DefaultSSERoundingMode);
 
-  END_TIMED_BLOCK(DrawTriangleSlowly);
+  END_TIMED_BLOCK(DrawTriangle);
 }
 #if COMPILER_MSVC
 #pragma warning(default:4701)
@@ -833,7 +822,7 @@ DrawTriangleSlowly(game_bitmap *Buffer,
 DrawCircle(game_bitmap *Buffer, 
            f32 RealX, f32 RealY, f32 RealRadius,
            f32 R, f32 G, f32 B, f32 A,
-           rectangle2s ClipRect, b32 Odd)
+           rectangle2s ClipRect)
 {
   rectangle2s FillRect;
   FillRect.Min.X = RoundF32ToS32(RealX - RealRadius);
@@ -843,12 +832,6 @@ DrawCircle(game_bitmap *Buffer,
 
   FillRect = Intersect(FillRect, ClipRect);
   if(HasNoArea(FillRect)) { return; }
-
-  b32 ShiftY = !(FillRect.Min.Y % 2) == Odd;
-  if(ShiftY)
-  {
-    FillRect.Min.Y += 1;
-  }
 
   s32 Left   = FillRect.Min.X;
   s32 Bottom = FillRect.Min.Y;
@@ -864,7 +847,7 @@ DrawCircle(game_bitmap *Buffer,
 
   for(s32 Y = Bottom;
       Y < Top;
-      Y += 2)
+      Y++)
   {
     u32 *Pixel = UpperLeftPixel;
 
@@ -889,14 +872,14 @@ DrawCircle(game_bitmap *Buffer,
 			Pixel++;
 		}
 
-		UpperLeftPixel += Buffer->Pitch*2;
+		UpperLeftPixel += Buffer->Pitch;
 	}
 }
 
 	internal_function void
-DrawCircle(game_bitmap *Buffer, v2 P, f32 R, v4 C, rectangle2s ClipRect, b32 Odd)
+DrawCircle(game_bitmap *Buffer, v2 P, f32 R, v4 C, rectangle2s ClipRect)
 {
-	DrawCircle(Buffer, P.X, P.Y, R, C.R, C.G, C.B, C.A, ClipRect, Odd);
+	DrawCircle(Buffer, P.X, P.Y, R, C.R, C.G, C.B, C.A, ClipRect);
 }
 
 enum render_group_entry_type
@@ -1152,14 +1135,14 @@ ProjectSegmentToScreen(m44 WorldToCamera, camera_parameters* CamParam,
 internal_function void
 DrawVector(render_group* RenderGroup, output_target_screen_variables* ScreenVars, 
            game_bitmap* OutputTarget, v3 V0, v3 V1, v3 Color,
-           rectangle2s ClipRect, b32 Odd)
+           rectangle2s ClipRect)
 {
   pixel_line_segment_result LineSegment = 
     ProjectSegmentToScreen(RenderGroup->WorldToCamera, &RenderGroup->CamParam, 
                            ScreenVars, V0, V1);
   if(LineSegment.PartOfSegmentInView)
   {
-    DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Color, ClipRect, Odd);
+    DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Color, ClipRect);
   }
 
   v3 n = Normalize(V1-V0);
@@ -1200,7 +1183,7 @@ DrawVector(render_group* RenderGroup, output_target_screen_variables* ScreenVars
                              ScreenVars, V0, V1);
     if(LineSegment.PartOfSegmentInView)
     {
-      DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Color, ClipRect, Odd);
+      DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Color, ClipRect);
     }
   }
   for(int VertIndex = 0; 
@@ -1214,7 +1197,7 @@ DrawVector(render_group* RenderGroup, output_target_screen_variables* ScreenVars
                              ScreenVars, V0, V1);
     if(LineSegment.PartOfSegmentInView)
     {
-      DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Color, ClipRect, Odd);
+      DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Color, ClipRect);
     }
   }
 }
@@ -1225,7 +1208,7 @@ DrawVector(render_group* RenderGroup, output_target_screen_variables* ScreenVars
 
   internal_function void
 RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 ScreenHeightInMeters,
-                    rectangle2s ClipRect, b32 Odd)
+                    rectangle2s ClipRect)
 {
   BEGIN_TIMED_BLOCK(RenderGroupToOutput);
 
@@ -1245,7 +1228,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
   if(RenderGroup->ClearScreen)
   {
     DrawRectangle(OutputTarget, RectMinMax(v2s{0, 0}, OutputTarget->Dim), 
-                  RenderGroup->ClearScreenColor.RGB, ClipRect, Odd);
+                  RenderGroup->ClearScreenColor.RGB, ClipRect);
   }
 
   for(u32 PushBufferByteOffset = 0;
@@ -1264,18 +1247,18 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_vector);
 
           DrawVector(RenderGroup, &ScreenVars, OutputTarget,
-                     Entry->A, Entry->B, Entry->Color.RGB, ClipRect, Odd);
+                     Entry->A, Entry->B, Entry->Color.RGB, ClipRect);
         } break;
       case RenderGroupEntryType_render_entry_coordinate_system
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_coordinate_system);
 
           DrawVector(RenderGroup, &ScreenVars, OutputTarget,
-                     Entry->Tran*v3{0,0,0}, Entry->Tran*v3{1,0,0}, v3{1,0,0}, ClipRect, Odd);
+                     Entry->Tran*v3{0,0,0}, Entry->Tran*v3{1,0,0}, v3{1,0,0}, ClipRect);
           DrawVector(RenderGroup, &ScreenVars, OutputTarget,
-                     Entry->Tran*v3{0,0,0}, Entry->Tran*v3{0,1,0}, v3{0,1,0}, ClipRect, Odd);
+                     Entry->Tran*v3{0,0,0}, Entry->Tran*v3{0,1,0}, v3{0,1,0}, ClipRect);
           DrawVector(RenderGroup, &ScreenVars, OutputTarget,
-                     Entry->Tran*v3{0,0,0}, Entry->Tran*v3{0,0,1}, v3{0,0,1}, ClipRect, Odd);
+                     Entry->Tran*v3{0,0,0}, Entry->Tran*v3{0,0,1}, v3{0,0,1}, ClipRect);
         } break;
       case RenderGroupEntryType_render_entry_wire_cube
         : {
@@ -1294,7 +1277,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                                      &ScreenVars, V0, V1);
             if(LineSegment.PartOfSegmentInView)
             {
-              DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Entry->Color.RGB, ClipRect, Odd);
+              DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Entry->Color.RGB, ClipRect);
             }
           }
           for(u32 VertIndex = 0; 
@@ -1308,7 +1291,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                                      &ScreenVars, V0, V1);
             if(LineSegment.PartOfSegmentInView)
             {
-              DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Entry->Color.RGB, ClipRect, Odd);
+              DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Entry->Color.RGB, ClipRect);
             }
           }
           for(u32 VertIndex = 0; 
@@ -1322,10 +1305,11 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                                      &ScreenVars, V0, V1);
             if(LineSegment.PartOfSegmentInView)
             {
-              DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Entry->Color.RGB, ClipRect, Odd);
+              DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Entry->Color.RGB, ClipRect);
             }
           }
         } break;
+      //TODO(bjorn): Quad seam problems are still there.
       case RenderGroupEntryType_render_entry_blank_quad
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_blank_quad);
@@ -1333,7 +1317,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
           //TODO(bjorn): Think about how and when in the pipeline to render the hit-points.
           quad_verts_result Quad = GetQuadVertices(&Entry->Tran);
 
-          DrawTriangleSlowly(OutputTarget, 
+          DrawTriangle(OutputTarget, 
                              &RenderGroup->CamParam, &ScreenVars, 
                              RenderGroup->WorldToCamera * Quad.Verts[0], 
                              RenderGroup->WorldToCamera * Quad.Verts[1], 
@@ -1343,9 +1327,9 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                              {1,1},
                              0,
                              Entry->Color,
-                             ClipRect, Odd);
+                             ClipRect);
 
-          DrawTriangleSlowly(OutputTarget, 
+          DrawTriangle(OutputTarget, 
                              &RenderGroup->CamParam, &ScreenVars,
                              RenderGroup->WorldToCamera * Quad.Verts[0], 
                              RenderGroup->WorldToCamera * Quad.Verts[2], 
@@ -1355,7 +1339,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                              {1,0},
                              0,
                              Entry->Color,
-                             ClipRect, Odd);
+                             ClipRect);
         } break;
       case RenderGroupEntryType_render_entry_quad
         : {
@@ -1363,7 +1347,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
 
           quad_verts_result Quad = GetQuadVertices(&Entry->Tran);
 
-          DrawTriangleSlowly(OutputTarget, 
+          DrawTriangle(OutputTarget, 
                              &RenderGroup->CamParam, &ScreenVars, 
                              RenderGroup->WorldToCamera * Quad.Verts[0], 
                              RenderGroup->WorldToCamera * Quad.Verts[1], 
@@ -1373,9 +1357,9 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                              {1,1},
                              Entry->Bitmap,
                              Entry->Color,
-                             ClipRect, Odd);
+                             ClipRect);
 
-          DrawTriangleSlowly(OutputTarget, 
+          DrawTriangle(OutputTarget, 
                              &RenderGroup->CamParam, &ScreenVars,
                              RenderGroup->WorldToCamera * Quad.Verts[0], 
                              RenderGroup->WorldToCamera * Quad.Verts[2], 
@@ -1385,7 +1369,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                              {1,0},
                              Entry->Bitmap,
                              Entry->Color,
-                             ClipRect, Odd);
+                             ClipRect);
 
 #if 0
           v2 PixVerts[4] = {};
@@ -1440,7 +1424,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                         Magnitude(P1 - P0) * 
                         PixPos.PerspectiveCorrection);
 
-            DrawCircle(OutputTarget, PixPos.P, PixR, Entry->Color, ClipRect, Odd);
+            DrawCircle(OutputTarget, PixPos.P, PixR, Entry->Color, ClipRect);
           }
         } break;
       InvalidDefaultCase;
@@ -1462,9 +1446,7 @@ WORK_QUEUE_CALLBACK(DoRenderWork)
   render_work* RenderWork = (render_work*)Data;
 
   RenderGroupToOutput(RenderWork->RenderGroup, RenderWork->OutputTarget, 
-                      RenderWork->ScreenHeightInMeters, RenderWork->ClipRect, false);
-  RenderGroupToOutput(RenderWork->RenderGroup, RenderWork->OutputTarget, 
-                      RenderWork->ScreenHeightInMeters, RenderWork->ClipRect, true);
+                      RenderWork->ScreenHeightInMeters, RenderWork->ClipRect);
 }
 
   internal_function void
@@ -1472,15 +1454,15 @@ TiledRenderGroupToOutput(work_queue* RenderQueue, render_group* RenderGroup,
                          game_bitmap* OutputTarget, f32 ScreenHeightInMeters)
 {
 #if 1
-  s32 const TileCountY = 4;
-  s32 const TileCountX = 4;
+  s32 const TileCountY = 2;
+  s32 const TileCountX = 2;
 
   Assert(((memi)OutputTarget->Memory & 15) == 0);
 
   s32 TileWidth = OutputTarget->Width / TileCountX;
   s32 TileHeight = OutputTarget->Height / TileCountY;
 
-  TileWidth  = ((TileWidth +3)/4)*4;
+  TileWidth  = Align4(TileWidth);
 
   render_work RenderWork[TileCountX*TileCountY];
   s32 Index = 0;
@@ -1499,6 +1481,7 @@ TiledRenderGroupToOutput(work_queue* RenderQueue, render_group* RenderGroup,
       ClipRect.Max.Y = ClipRect.Min.Y + TileHeight;
 
       ClipRect.Max.X = Min(ClipRect.Max.X, OutputTarget->Width);
+      ClipRect.Max.Y = Min(ClipRect.Max.Y, OutputTarget->Height);
 
       Assert(ClipRect.Min.X >= 0);
       Assert(ClipRect.Min.Y >= 0);
@@ -1509,18 +1492,22 @@ TiledRenderGroupToOutput(work_queue* RenderQueue, render_group* RenderGroup,
       RenderWork[Index].OutputTarget = OutputTarget;
       RenderWork[Index].ScreenHeightInMeters = ScreenHeightInMeters;
       RenderWork[Index].ClipRect = ClipRect;
+
+#if 1
       PushWork(RenderQueue, DoRenderWork, &RenderWork[Index]);
+#else
+      DoRenderWork(&RenderWork[Index]);
+#endif
 
       Index++;
     }
   }
-CompleteWork(RenderQueue);
+  CompleteWork(RenderQueue);
 #else
   // rectangle2s ClipRect = RectMinMax(v2s{200,200}, v2s{400,400});
   rectangle2s ClipRect = RectMinMax(v2s{4,4}, OutputTarget->Dim - v2s{4,4});
 
-  RenderGroupToOutput(RenderGroup, OutputTarget, ScreenHeightInMeters, ClipRect, false);
-  RenderGroupToOutput(RenderGroup, OutputTarget, ScreenHeightInMeters, ClipRect, true);
+  RenderGroupToOutput(RenderGroup, OutputTarget, ScreenHeightInMeters, ClipRect);
 #endif
 }
 

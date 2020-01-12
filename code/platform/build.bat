@@ -4,7 +4,7 @@ REM TODO(bjorn): Comment out what the flags represent.
 
 SET defines=-DHANDMADE_SLOW=1 -DHANDMADE_INTERNAL=1 
 SET errors=-WX -W4 -wd4201 -wd4100 -wd4189 -wd4505 -wd4127 -wd4101
-SET flags=-MTd -nologo -GR -EHa -O2 -Oi -Z7 -FC 
+SET flags=-MTd -nologo -GR -EHa -Od -Oi -Z7 -FC 
 SET asmflags=/c /Zi 
 SET links=user32.lib gdi32.lib winmm.lib
 SET linkflags=-incremental:no -opt:ref

@@ -698,6 +698,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
   if(Input->ExecutableReloaded)
   {
+    PushWork = Memory->PushWork;
+    CompleteWork = Memory->CompleteWork;
+
     ZeroMemory(GameState->GeneratedTile.Memory, (GameState->GeneratedTile.Width*
                                                  GameState->GeneratedTile.Height*
                                                  GAME_BITMAP_BYTES_PER_PIXEL));

@@ -151,7 +151,7 @@ GenerateTile(game_state* GameState, game_bitmap* Buffer)
     PushQuad(RenderGroup, ConstructTransform(Offset, Bitmap->Dim), Bitmap, Color);
   }
 
-  SetCamera(RenderGroup, M44Identity(), 1.0f, 1.0f);
+  SetCamera(RenderGroup, M44Identity(), 1.0f, 0.5f);
   TiledRenderGroupToOutput(GameState->RenderQueue, RenderGroup, Buffer, (f32)Buffer->Height);
 
 	EndTemporaryMemory(TempMem);
@@ -1406,9 +1406,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
           m44 CamTrans = ConstructTransform(Offset, RotMat);
 
 #if 1
-          SetCamera(RenderGroup, CamTrans, 20.0f, 20.f);
+          SetCamera(RenderGroup, CamTrans, MainCamera->CamObserverToScreenDistance);
 #else
-          SetCamera(RenderGroup, CamTrans, positive_infinity32, 20.f);
+          SetCamera(RenderGroup, CamTrans, positive_infinity32);
 #endif
         }
 
@@ -1599,7 +1599,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// NOTE(bjorn): Rendering
 	//
 #if 1
-  TiledRenderGroupToOutput(GameState->RenderQueue, RenderGroup, Buffer, 1.4f*9.0f);
+  TiledRenderGroupToOutput(GameState->RenderQueue, RenderGroup, Buffer, 
+                           MainCamera->CamScreenHeight);
 #else
   DrawRectangle(Buffer, RectMinMax(v2s{0, 0}, Buffer->Dim), 
                 v3{1,1,1}*0.5f, RectMinMax(v2s{0, 0}, Buffer->Dim), true);
@@ -1617,7 +1618,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	CheckMemoryArena(FrameBoundedTransientArena);
 
   END_TIMED_BLOCK(GameUpdateAndRender);
-
 }
 
 	internal_function void

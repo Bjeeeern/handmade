@@ -161,6 +161,8 @@ struct entity
 
 	v2 CamRot;
 	f32 CamZoom;
+  f32 CamScreenHeight;
+  f32 CamObserverToScreenDistance;
 
 	physical_body Body;
 #define COLLISION_TAG_X 8
@@ -658,7 +660,13 @@ AddCamera(sim_region* SimRegion, v3 InitP)
 	Entity->MinimumHuntRangeSquared = Square(0.2f);
 
 	Entity->IsCamera = true;
-	Entity->CamZoom = 1.0f;
+	Entity->CamZoom = -20.0f;
+
+  f32 RealGameScreen = 0.08f;
+  f32 RealObserverDistance = 0.14f;
+  f32 RealToGameUpscale = 4.0f;
+  Entity->CamScreenHeight = RealGameScreen * RealToGameUpscale;
+  Entity->CamObserverToScreenDistance = RealObserverDistance * RealToGameUpscale;
 
 	return Entity;
 }

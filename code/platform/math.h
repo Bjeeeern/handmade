@@ -2518,11 +2518,35 @@ LineLineIntersection(v2 A, v2 B, v2 C, v2 D)
   Result.Denom = Determinant(AB, CD);
   if(Result.Denom != 0.0f)
   {
-    Result.t =  Determinant(AC, CD)/Result.Denom;
-    Result.u = -Determinant(AB, AC)/Result.Denom;
+    f32 InvDenom = 1.0f/Result.Denom;
+    Result.t =  Determinant(AC, CD)*InvDenom;
+    Result.u = -Determinant(AB, AC)*InvDenom;
 
     Result.Hit = (0 <= Result.t && Result.t <= 1.0f &&
                   0 <= Result.u && Result.u <= 1.0f);
+  }
+
+  return Result;
+}
+
+struct line_plane_intersect
+{
+  f32 Denom;
+  f32 t;
+  b32 Hit;
+};
+inline line_plane_intersect
+LinePlaneIntersection(v3 A, v3 B, v3 N, v3 P)
+{
+  line_plane_intersect Result = {};
+
+  Result.Denom = Dot(B-A, N);
+  if(Result.Denom != 0.0f)
+  {
+    f32 InvDenom = 1.0f/Result.Denom;
+
+    Result.t = Dot(P-A, N) * InvDenom;
+    Result.Hit = 0 <= Result.t && Result.t <= 1.0f;
   }
 
   return Result;

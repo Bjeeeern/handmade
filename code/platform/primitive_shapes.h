@@ -43,7 +43,7 @@ struct quad_verts_result
 };
 
 	internal_function quad_verts_result
-GetQuadVertices(m44* Tran)
+GetQuadVertices(m44 Tran)
 {
 	quad_verts_result Result = {};
 	Result.Count = 8;
@@ -53,7 +53,7 @@ GetQuadVertices(m44* Tran)
 			CornerIndex++)
 	{
 		v3 Corner = UnscaledQuad[CornerIndex];
-		Result.Verts[CornerIndex] = *Tran * Corner;
+		Result.Verts[CornerIndex] = Tran * Corner;
 	}
 
 	return Result;

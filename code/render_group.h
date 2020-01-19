@@ -289,34 +289,13 @@ DrawChar_(game_bitmap *Buffer, font *Font, u32 UnicodeCodePoint,
 #endif
 	internal_function void
 DrawTriangle(game_bitmap *Buffer, 
-                   camera_parameters* CamParam, output_target_screen_variables* ScreenVars,
-                   v3 CameraSpacePoint0, v3 CameraSpacePoint1, v3 CameraSpacePoint2, 
-                   v2 UV0, v2 UV1, v2 UV2, 
-                   game_bitmap* Bitmap, v4 RGBA,
-                   rectangle2s ClipRect)
+             camera_parameters* CamParam, output_target_screen_variables* ScreenVars,
+             v3 CameraSpacePoint0, v3 CameraSpacePoint1, v3 CameraSpacePoint2, 
+             v2 UV0, v2 UV1, v2 UV2, 
+             game_bitmap* Bitmap, v4 RGBA,
+             rectangle2s ClipRect)
 {
   BEGIN_TIMED_BLOCK(DrawTriangle);
-
-  b32 AllPointsBehindClipPoint = false;
-  {
-    if(CameraSpacePoint0.Z > CamParam->NearClipPoint &&
-       CameraSpacePoint1.Z > CamParam->NearClipPoint &&
-       CameraSpacePoint2.Z > CamParam->NearClipPoint)
-    {
-      AllPointsBehindClipPoint = true;
-    }
-    else
-    {
-      //TODO(bjorn): Come up with a good clipping scheme.
-      if(CameraSpacePoint0.Z > CamParam->NearClipPoint ||
-         CameraSpacePoint1.Z > CamParam->NearClipPoint ||
-         CameraSpacePoint2.Z > CamParam->NearClipPoint)
-      {
-        AllPointsBehindClipPoint = true;
-      }
-    }
-  }
-  if(AllPointsBehindClipPoint) { return; }
 
   v2 PixelSpacePoint0, PixelSpacePoint1, PixelSpacePoint2;
   {
@@ -734,10 +713,17 @@ DrawTriangle(game_bitmap *Buffer,
             _mm_add_ps(_mm_add_ps(_mm_mul_ps(ifYmifX, TexSmp0A), _mm_mul_ps(ifYmfX, TexSmp1A)), 
                        _mm_add_ps(_mm_mul_ps(ifXmfY,  TexSmp2A), _mm_mul_ps(fXmfY,  TexSmp3A)));
 
+#if 1
+          TexelR = _mm_mul_ps(_mm_mul_ps(Const255, Const255), Const0);
+          TexelG = _mm_mul_ps(_mm_mul_ps(Const255, Const255), V);
+          TexelB = _mm_mul_ps(_mm_mul_ps(Const255, Const255), U);
+          TexelA = _mm_mul_ps(Const255, Const1);
+#else
           TexelR = _mm_mul_ps(TexelR, ColorModifierR);
           TexelG = _mm_mul_ps(TexelG, ColorModifierG);
           TexelB = _mm_mul_ps(TexelB, ColorModifierB);
           TexelA = _mm_mul_ps(TexelA, ColorModifierA);
+#endif
         }
         else
         {
@@ -1315,61 +1301,276 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_blank_quad);
 
           //TODO(bjorn): Think about how and when in the pipeline to render the hit-points.
-          quad_verts_result Quad = GetQuadVertices(&Entry->Tran);
+          quad_verts_result Quad = GetQuadVertices(RenderGroup->WorldToCamera * Entry->Tran);
 
-          DrawTriangle(OutputTarget, 
-                             &RenderGroup->CamParam, &ScreenVars, 
-                             RenderGroup->WorldToCamera * Quad.Verts[0], 
-                             RenderGroup->WorldToCamera * Quad.Verts[1], 
-                             RenderGroup->WorldToCamera * Quad.Verts[2], 
-                             {0,0},
-                             {0,1},
-                             {1,1},
-                             0,
-                             Entry->Color,
-                             ClipRect);
+          f32 ClipZ = RenderGroup->CamParam.LensChamberSize;
+          v3 ClipPlaneNormal = {0,0,-1};
+          v3 ClipPlanePoint = {0,0,ClipZ};
 
-          DrawTriangle(OutputTarget, 
-                             &RenderGroup->CamParam, &ScreenVars,
-                             RenderGroup->WorldToCamera * Quad.Verts[0], 
-                             RenderGroup->WorldToCamera * Quad.Verts[2], 
-                             RenderGroup->WorldToCamera * Quad.Verts[3], 
-                             {0,0},
-                             {1,1},
-                             {1,0},
-                             0,
-                             Entry->Color,
-                             ClipRect);
+          v3 NewVerts[4];
+          v2 NewUV[4];
+          {
+            u32 TriCount = 0;
+            v3 Verts[3] = {Quad.Verts[0], Quad.Verts[1], Quad.Verts[2]};
+            v2 UV[3] = {{0,0}, {0,1}, {1,1}};
+
+            {
+              b32 Beyond[3] = {(Verts[0].Z >= ClipZ)?(b32)1:(b32)0,
+                               (Verts[1].Z >= ClipZ)?(b32)1:(b32)0,
+                               (Verts[2].Z >= ClipZ)?(b32)1:(b32)0};
+
+              s32 BeyondSum = Beyond[0] + Beyond[1] + Beyond[2];
+              if(BeyondSum != 0 && BeyondSum != 3)
+              {
+                u32 StartVertexIndex;
+                if(BeyondSum == 1)
+                {
+                  TriCount = 2;
+                  if     (Beyond[0] == 1) { StartVertexIndex = 2; }
+                  else if(Beyond[1] == 1) { StartVertexIndex = 0; }
+                  else                    { StartVertexIndex = 1; }
+                }
+                else
+                {
+                  TriCount = 1;
+                  if     (Beyond[0] == 0) { StartVertexIndex = 2; }
+                  else if(Beyond[1] == 0) { StartVertexIndex = 0; }
+                  else                    { StartVertexIndex = 1; }
+                }
+
+                v3 A = Verts[(StartVertexIndex+0)%3];
+                v3 B = Verts[(StartVertexIndex+1)%3];
+                v3 C = Verts[(StartVertexIndex+2)%3];
+                v2 A_UV = UV[(StartVertexIndex+0)%3];
+                v2 B_UV = UV[(StartVertexIndex+1)%3];
+                v2 C_UV = UV[(StartVertexIndex+2)%3];
+
+                line_plane_intersect IntersectAB = 
+                  LinePlaneIntersection(B, A, ClipPlaneNormal, ClipPlanePoint);
+                line_plane_intersect IntersectCB = 
+                  LinePlaneIntersection(B, C, ClipPlaneNormal, ClipPlanePoint);
+
+                Assert(IntersectAB.Hit && IntersectCB.Hit);
+
+                if(BeyondSum == 1)
+                {
+                  NewVerts[0] = A;
+                  NewVerts[1] = B + (A-B)*IntersectAB.t;
+                  NewVerts[2] = B + (C-B)*IntersectCB.t;
+                  NewVerts[3] = C;
+
+                  NewUV[0] = A_UV;
+                  NewUV[1] = B_UV + (A_UV-B_UV)*IntersectAB.t;
+                  NewUV[2] = B_UV + (C_UV-B_UV)*IntersectCB.t;
+                  NewUV[3] = C_UV;
+                }
+                else
+                {
+                  NewVerts[0] = B + (A-B)*IntersectAB.t;
+                  NewVerts[1] = B;
+                  NewVerts[2] = B + (C-B)*IntersectCB.t;
+
+                  NewUV[0] = B_UV + (A_UV-B_UV)*IntersectAB.t;
+                  NewUV[1] = B_UV;
+                  NewUV[2] = B_UV + (C_UV-B_UV)*IntersectCB.t;
+                }
+              }
+              else if(BeyondSum == 0)
+              {
+                TriCount = 1;
+                NewVerts[0] = Verts[0];
+                NewVerts[1] = Verts[1];
+                NewVerts[2] = Verts[2];
+                NewUV[0] = UV[0];
+                NewUV[1] = UV[1];
+                NewUV[2] = UV[2];
+              }
+            }
+
+            if(TriCount > 0)
+            {
+              DrawTriangle(OutputTarget, 
+                           &RenderGroup->CamParam, &ScreenVars, 
+                           NewVerts[0], 
+                           NewVerts[1], 
+                           NewVerts[2], 
+                           NewUV[0],
+                           NewUV[1],
+                           NewUV[2],
+                           0,
+                           Entry->Color,
+                           ClipRect);
+            }
+            if(TriCount > 1)
+            {
+              DrawTriangle(OutputTarget, 
+                           &RenderGroup->CamParam, &ScreenVars, 
+                           NewVerts[0], 
+                           NewVerts[2], 
+                           NewVerts[3], 
+                           NewUV[0],
+                           NewUV[2],
+                           NewUV[3],
+                           0,
+                           Entry->Color,
+                           ClipRect);
+            }
+          }
+
+#if 0
+          {
+            u32 TriCount = 1;
+            v3 Verts[4] = {Quad.Verts[0], Quad.Verts[2], Quad.Verts[3], {}};
+            v3 UV[4] = {{0,0}, {1,1}, {1,0}, {}};
+
+            DrawTriangle(OutputTarget, 
+                         &RenderGroup->CamParam, &ScreenVars, 
+                         Verts[0], 
+                         Verts[1], 
+                         Verts[2], 
+                         UV[0],
+                         UV[1],
+                         UV[2],
+                         0,
+                         Entry->Color,
+                         ClipRect);
+            if(TriCount == 2)
+            {
+              DrawTriangle(OutputTarget, 
+                           &RenderGroup->CamParam, &ScreenVars, 
+                           Verts[0], 
+                           Verts[2], 
+                           Verts[3], 
+                           UV[0],
+                           UV[2],
+                           UV[3],
+                           0,
+                           Entry->Color,
+                           ClipRect);
+            }
+          }
+#endif
         } break;
       case RenderGroupEntryType_render_entry_quad
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_quad);
 
-          quad_verts_result Quad = GetQuadVertices(&Entry->Tran);
+          quad_verts_result Quad = GetQuadVertices(RenderGroup->WorldToCamera * Entry->Tran);
 
-          DrawTriangle(OutputTarget, 
-                             &RenderGroup->CamParam, &ScreenVars, 
-                             RenderGroup->WorldToCamera * Quad.Verts[0], 
-                             RenderGroup->WorldToCamera * Quad.Verts[1], 
-                             RenderGroup->WorldToCamera * Quad.Verts[2], 
-                             {0,0},
-                             {0,1},
-                             {1,1},
-                             Entry->Bitmap,
-                             Entry->Color,
-                             ClipRect);
+          //TODO(bjorn): Why cant this be the exact lens chamber size?
+          f32 ClipZ = RenderGroup->CamParam.LensChamberSize * 0.999f;
+          v3 ClipPlaneNormal = {0,0,-1};
+          v3 ClipPlanePoint = {0,0,ClipZ};
 
-          DrawTriangle(OutputTarget, 
-                             &RenderGroup->CamParam, &ScreenVars,
-                             RenderGroup->WorldToCamera * Quad.Verts[0], 
-                             RenderGroup->WorldToCamera * Quad.Verts[2], 
-                             RenderGroup->WorldToCamera * Quad.Verts[3], 
-                             {0,0},
-                             {1,1},
-                             {1,0},
-                             Entry->Bitmap,
-                             Entry->Color,
-                             ClipRect);
+          v3 NewVerts[4];
+          v2 NewUV[4];
+          {
+            u32 TriCount = 0;
+            v3 Verts[3] = {Quad.Verts[0], Quad.Verts[1], Quad.Verts[2]};
+            v2 UV[3] = {{0,0}, {0,1}, {1,1}};
+
+            {
+              b32 Beyond[3] = {(Verts[0].Z >= ClipZ)?(b32)1:(b32)0,
+                               (Verts[1].Z >= ClipZ)?(b32)1:(b32)0,
+                               (Verts[2].Z >= ClipZ)?(b32)1:(b32)0};
+
+              s32 BeyondSum = Beyond[0] + Beyond[1] + Beyond[2];
+              if(BeyondSum != 0 && BeyondSum != 3)
+              {
+                u32 StartVertexIndex;
+                if(BeyondSum == 1)
+                {
+                  TriCount = 2;
+                  if     (Beyond[0] == 1) { StartVertexIndex = 2; }
+                  else if(Beyond[1] == 1) { StartVertexIndex = 0; }
+                  else                    { StartVertexIndex = 1; }
+                }
+                else
+                {
+                  TriCount = 1;
+                  if     (Beyond[0] == 0) { StartVertexIndex = 2; }
+                  else if(Beyond[1] == 0) { StartVertexIndex = 0; }
+                  else                    { StartVertexIndex = 1; }
+                }
+
+                v3 A = Verts[(StartVertexIndex+0)%3];
+                v3 B = Verts[(StartVertexIndex+1)%3];
+                v3 C = Verts[(StartVertexIndex+2)%3];
+                v2 A_UV = UV[(StartVertexIndex+0)%3];
+                v2 B_UV = UV[(StartVertexIndex+1)%3];
+                v2 C_UV = UV[(StartVertexIndex+2)%3];
+
+                line_plane_intersect IntersectAB = 
+                  LinePlaneIntersection(B, A, ClipPlaneNormal, ClipPlanePoint);
+                line_plane_intersect IntersectCB = 
+                  LinePlaneIntersection(B, C, ClipPlaneNormal, ClipPlanePoint);
+
+                Assert(IntersectAB.Hit && IntersectCB.Hit);
+
+                if(BeyondSum == 1)
+                {
+                  NewVerts[0] = A;
+                  NewVerts[1] = B + (A-B)*IntersectAB.t;
+                  NewVerts[2] = B + (C-B)*IntersectCB.t;
+                  NewVerts[3] = C;
+
+                  NewUV[0] = A_UV;
+                  NewUV[1] = B_UV + (A_UV-B_UV)*IntersectAB.t;
+                  NewUV[2] = B_UV + (C_UV-B_UV)*IntersectCB.t;
+                  NewUV[3] = C_UV;
+                }
+                else
+                {
+                  NewVerts[0] = B + (A-B)*IntersectAB.t;
+                  NewVerts[1] = B;
+                  NewVerts[2] = B + (C-B)*IntersectCB.t;
+
+                  NewUV[0] = B_UV + (A_UV-B_UV)*IntersectAB.t;
+                  NewUV[1] = B_UV;
+                  NewUV[2] = B_UV + (C_UV-B_UV)*IntersectCB.t;
+                }
+              }
+              else if(BeyondSum == 0)
+              {
+                TriCount = 1;
+                NewVerts[0] = Verts[0];
+                NewVerts[1] = Verts[1];
+                NewVerts[2] = Verts[2];
+                NewUV[0] = UV[0];
+                NewUV[1] = UV[1];
+                NewUV[2] = UV[2];
+              }
+            }
+
+            if(TriCount > 0)
+            {
+              DrawTriangle(OutputTarget, 
+                           &RenderGroup->CamParam, &ScreenVars, 
+                           NewVerts[0], 
+                           NewVerts[1], 
+                           NewVerts[2], 
+                           NewUV[0],
+                           NewUV[1],
+                           NewUV[2],
+                           Entry->Bitmap,
+                           Entry->Color,
+                           ClipRect);
+            }
+            if(TriCount > 1)
+            {
+              DrawTriangle(OutputTarget, 
+                           &RenderGroup->CamParam, &ScreenVars, 
+                           NewVerts[0], 
+                           NewVerts[2], 
+                           NewVerts[3], 
+                           NewUV[0],
+                           NewUV[2],
+                           NewUV[3],
+                           Entry->Bitmap,
+                           Entry->Color,
+                           ClipRect);
+            }
+          }
 
 #if 0
           v2 PixVerts[4] = {};

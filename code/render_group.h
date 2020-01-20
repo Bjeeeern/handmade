@@ -359,13 +359,6 @@ DrawTriangle(game_bitmap *Buffer,
     FillRect.Max.X = (FillRect.Max.X & ~3) + 4;
   }
 
-  //TODO(bjorn): Rect is in lower left corner and goes out of bounds. Crashes on mem read.
-  if(FillRect.Min.Y == 0 && FillRect.Min.X < 0)
-  {
-    FillRect.Min.X = 0;
-  }
-
-
   v3 FocalPoint = {0,0,CamParam->LensChamberSize};
   v3 TriangleNormal = 
     Cross(CameraSpacePoint1-CameraSpacePoint0, CameraSpacePoint2-CameraSpacePoint0);
@@ -456,6 +449,7 @@ DrawTriangle(game_bitmap *Buffer,
   __m128 UV2U = _mm_set1_ps(UV2.U);
   __m128 UV2V = _mm_set1_ps(UV2.V);
 
+  __m128 Const0p5 = _mm_set_ps1(0.5f);
   __m128 UVBitmapWidth = {};
   __m128 UVBitmapHeight = {};
   u32* BitmapMemory = 0;
@@ -463,8 +457,8 @@ DrawTriangle(game_bitmap *Buffer,
   __m128i BitmapPitchWide = {};
   if(Bitmap)
   {
-    UVBitmapWidth  = _mm_set1_ps((f32)(Bitmap->Width -2));
-    UVBitmapHeight = _mm_set1_ps((f32)(Bitmap->Height-2));
+    UVBitmapWidth  = _mm_set1_ps((f32)(Bitmap->Width -1));
+    UVBitmapHeight = _mm_set1_ps((f32)(Bitmap->Height-1));
 
     BitmapMemory = Bitmap->Memory;
     BitmapPitch = Bitmap->Pitch;

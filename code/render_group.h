@@ -284,16 +284,58 @@ DrawChar_(game_bitmap *Buffer, font *Font, u32 UnicodeCodePoint,
 // target: 50 or so.
 //
 
+struct shader_texel
+{
+  __m128 R;
+  __m128 G;
+  __m128 B;
+  __m128 A;
+};
+struct shader_uv
+{
+  __m128 U;
+  __m128 V;
+};
+
+#define SOFTWARE_SHADER(name) inline void name(shader_texel& TextureSample, shader_texel& Color, \
+                                               shader_texel& Out)
+typedef SOFTWARE_SHADER(software_shader);
+
+SOFTWARE_SHADER(BitmapShader)
+{
+#if 0
+  Out.R = _mm_mul_ps(_mm_mul_ps(Const255, Const255), Const0);
+  Out.G = _mm_mul_ps(_mm_mul_ps(Const255, Const255), V);
+  Out.B = _mm_mul_ps(_mm_mul_ps(Const255, Const255), U);
+  Out.A = _mm_mul_ps(Const255, Const1);
+#else
+  Out.R = _mm_mul_ps(TextureSample.R, Color.R);
+  Out.G = _mm_mul_ps(TextureSample.G, Color.G);
+  Out.B = _mm_mul_ps(TextureSample.B, Color.B);
+  Out.A = _mm_mul_ps(TextureSample.A, Color.A);
+#endif
+};
+
+SOFTWARE_SHADER(PlainFillShader)
+{
+  __m128 Const255 = _mm_set1_ps(255.0f);
+
+  Out.R = _mm_mul_ps(_mm_mul_ps(Const255, Const255), Color.R);
+  Out.G = _mm_mul_ps(_mm_mul_ps(Const255, Const255), Color.G);
+  Out.B = _mm_mul_ps(_mm_mul_ps(Const255, Const255), Color.B);
+  Out.A = _mm_mul_ps(Const255, Color.A);
+}
+
 #if COMPILER_MSVC
 #pragma warning(disable:4701)
 #endif
-	internal_function void
+  internal_function void
 DrawTriangle(game_bitmap *Buffer, 
              camera_parameters* CamParam, output_target_screen_variables* ScreenVars,
              v3 CameraSpacePoint0, v3 CameraSpacePoint1, v3 CameraSpacePoint2, 
              v2 UV0, v2 UV1, v2 UV2, 
              game_bitmap* Bitmap, v4 RGBA,
-             rectangle2s ClipRect)
+             rectangle2s ClipRect, software_shader Shader)
 {
   BEGIN_TIMED_BLOCK(DrawTriangle);
 
@@ -371,14 +413,11 @@ DrawTriangle(game_bitmap *Buffer,
 
   RGBA.RGB *= RGBA.A;
 
-  __m128 ColorModifierR = _mm_set1_ps(RGBA.R);
-  __m128 ColorModifierG = _mm_set1_ps(RGBA.G);
-  __m128 ColorModifierB = _mm_set1_ps(RGBA.B);
-  __m128 ColorModifierA = _mm_set1_ps(RGBA.A);
-  __m128 ColorModifierR255x255 = _mm_set1_ps(RGBA.R*RGBA.R*255.0f*255.0f);
-  __m128 ColorModifierG255x255 = _mm_set1_ps(RGBA.G*RGBA.G*255.0f*255.0f);
-  __m128 ColorModifierB255x255 = _mm_set1_ps(RGBA.B*RGBA.B*255.0f*255.0f);
-  __m128 ColorModifierA255 = _mm_set1_ps(RGBA.A*255.0f);
+  shader_texel ColorModifier;
+  ColorModifier.R = _mm_set1_ps(RGBA.R);
+  ColorModifier.G = _mm_set1_ps(RGBA.G);
+  ColorModifier.B = _mm_set1_ps(RGBA.B);
+  ColorModifier.A = _mm_set1_ps(RGBA.A);
 
   b32 IsOrthogonal = CamParam->LensChamberSize == positive_infinity32;
 
@@ -597,10 +636,8 @@ DrawTriangle(game_bitmap *Buffer,
         __m128 DestB = _mm_cvtepi32_ps(_mm_and_si128(               Dest,      Mask0xFF));
         __m128 DestA = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(Dest, 24), Mask0xFF));
 
-        __m128 TexelR;
-        __m128 TexelG;
-        __m128 TexelB;
-        __m128 TexelA;
+        shader_texel Texel;
+        shader_texel TexSmp;
         if(Bitmap)
         {
           __m128 U = _mm_add_ps(_mm_add_ps(_mm_mul_ps(BarycentricWeight0, UV0U), 
@@ -694,48 +731,35 @@ DrawTriangle(game_bitmap *Buffer,
           __m128 ifXmfY  = _mm_mul_ps(ifX,  fY);
           __m128 fXmfY   = _mm_mul_ps( fX,  fY);
 
-          TexelR = 
+          TexSmp.R = 
             _mm_add_ps(_mm_add_ps(_mm_mul_ps(ifYmifX, TexSmp0R), _mm_mul_ps(ifYmfX, TexSmp1R)), 
                        _mm_add_ps(_mm_mul_ps(ifXmfY,  TexSmp2R), _mm_mul_ps(fXmfY,  TexSmp3R)));
-          TexelG = 
+          TexSmp.G = 
             _mm_add_ps(_mm_add_ps(_mm_mul_ps(ifYmifX, TexSmp0G), _mm_mul_ps(ifYmfX, TexSmp1G)), 
                        _mm_add_ps(_mm_mul_ps(ifXmfY,  TexSmp2G), _mm_mul_ps(fXmfY,  TexSmp3G)));
-          TexelB = 
+          TexSmp.B = 
             _mm_add_ps(_mm_add_ps(_mm_mul_ps(ifYmifX, TexSmp0B), _mm_mul_ps(ifYmfX, TexSmp1B)), 
                        _mm_add_ps(_mm_mul_ps(ifXmfY,  TexSmp2B), _mm_mul_ps(fXmfY,  TexSmp3B)));
-          TexelA = 
+          TexSmp.A = 
             _mm_add_ps(_mm_add_ps(_mm_mul_ps(ifYmifX, TexSmp0A), _mm_mul_ps(ifYmfX, TexSmp1A)), 
                        _mm_add_ps(_mm_mul_ps(ifXmfY,  TexSmp2A), _mm_mul_ps(fXmfY,  TexSmp3A)));
 
-#if 0
-          TexelR = _mm_mul_ps(_mm_mul_ps(Const255, Const255), Const0);
-          TexelG = _mm_mul_ps(_mm_mul_ps(Const255, Const255), V);
-          TexelB = _mm_mul_ps(_mm_mul_ps(Const255, Const255), U);
-          TexelA = _mm_mul_ps(Const255, Const1);
-#else
-          TexelR = _mm_mul_ps(TexelR, ColorModifierR);
-          TexelG = _mm_mul_ps(TexelG, ColorModifierG);
-          TexelB = _mm_mul_ps(TexelB, ColorModifierB);
-          TexelA = _mm_mul_ps(TexelA, ColorModifierA);
-#endif
+          Shader(TexSmp, ColorModifier, Texel);
         }
         else
         {
-          TexelR = ColorModifierR255x255;
-          TexelG = ColorModifierG255x255;
-          TexelB = ColorModifierB255x255;
-          TexelA = ColorModifierA255;
+          Shader(TexSmp, ColorModifier, Texel);
         }
 
         DestR = _mm_mul_ps(DestR, DestR);
         DestG = _mm_mul_ps(DestG, DestG);
         DestB = _mm_mul_ps(DestB, DestB);
 
-        __m128 InvTexelA = _mm_sub_ps(Const1, _mm_mul_ps(TexelA, Inv255));
-        __m128 BlendedR = _mm_add_ps(_mm_mul_ps(DestR, InvTexelA), TexelR);
-        __m128 BlendedG = _mm_add_ps(_mm_mul_ps(DestG, InvTexelA), TexelG);
-        __m128 BlendedB = _mm_add_ps(_mm_mul_ps(DestB, InvTexelA), TexelB);
-        __m128 BlendedA = _mm_add_ps(_mm_mul_ps(DestA, InvTexelA), TexelA);
+        __m128 InvTexelA = _mm_sub_ps(Const1, _mm_mul_ps(Texel.A, Inv255));
+        __m128 BlendedR = _mm_add_ps(_mm_mul_ps(DestR, InvTexelA), Texel.R);
+        __m128 BlendedG = _mm_add_ps(_mm_mul_ps(DestG, InvTexelA), Texel.G);
+        __m128 BlendedB = _mm_add_ps(_mm_mul_ps(DestB, InvTexelA), Texel.B);
+        __m128 BlendedA = _mm_add_ps(_mm_mul_ps(DestA, InvTexelA), Texel.A);
 
 #if 0
         //TODO(bjorn): Why is this producing artifacts when A == 0.
@@ -1405,7 +1429,8 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                            ClipResult.UV[2],
                            0,
                            Entry->Color,
-                           ClipRect);
+                           ClipRect,
+                           PlainFillShader);
             }
             if(ClipResult.TriCount > 1)
             {
@@ -1419,7 +1444,8 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                            ClipResult.UV[3],
                            0,
                            Entry->Color,
-                           ClipRect);
+                           ClipRect,
+                           PlainFillShader);
             }
           }
 
@@ -1440,7 +1466,8 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                            ClipResult.UV[2],
                            0,
                            Entry->Color,
-                           ClipRect);
+                           ClipRect,
+                           PlainFillShader);
             }
             if(ClipResult.TriCount > 1)
             {
@@ -1454,7 +1481,8 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                            ClipResult.UV[3],
                            0,
                            Entry->Color,
-                           ClipRect);
+                           ClipRect,
+                           PlainFillShader);
             }
           }
 
@@ -1517,7 +1545,8 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                            ClipResult.UV[2],
                            Entry->Bitmap,
                            Entry->Color,
-                           ClipRect);
+                           ClipRect,
+                           BitmapShader);
             }
             if(ClipResult.TriCount > 1)
             {
@@ -1531,7 +1560,8 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                            ClipResult.UV[3],
                            Entry->Bitmap,
                            Entry->Color,
-                           ClipRect);
+                           ClipRect,
+                           BitmapShader);
             }
           }
 
@@ -1552,7 +1582,8 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                            ClipResult.UV[2],
                            Entry->Bitmap,
                            Entry->Color,
-                           ClipRect);
+                           ClipRect,
+                           BitmapShader);
             }
             if(ClipResult.TriCount > 1)
             {
@@ -1566,7 +1597,8 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                            ClipResult.UV[3],
                            Entry->Bitmap,
                            Entry->Color,
-                           ClipRect);
+                           ClipRect,
+                           BitmapShader);
             }
           }
 

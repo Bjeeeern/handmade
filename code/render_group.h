@@ -1711,13 +1711,13 @@ TiledRenderGroupToOutput(work_queue* RenderQueue, render_group* RenderGroup,
       ClipRect.Max.X = ClipRect.Min.X + TileWidth;
       ClipRect.Max.Y = ClipRect.Min.Y + TileHeight;
 
-      ClipRect.Max.X = Min(ClipRect.Max.X, OutputTarget->Width);
-      ClipRect.Max.Y = Min(ClipRect.Max.Y, OutputTarget->Height);
+      ClipRect.Max.X = Min(ClipRect.Max.X, (s32)OutputTarget->Width);
+      ClipRect.Max.Y = Min(ClipRect.Max.Y, (s32)OutputTarget->Height);
 
       Assert(ClipRect.Min.X >= 0);
       Assert(ClipRect.Min.Y >= 0);
-      Assert(ClipRect.Max.X <= OutputTarget->Dim.X);
-      Assert(ClipRect.Max.Y <= OutputTarget->Dim.Y);
+      Assert(ClipRect.Max.X <= (s32)OutputTarget->Dim.X);
+      Assert(ClipRect.Max.Y <= (s32)OutputTarget->Dim.Y);
 
       RenderWork[Index].RenderGroup = RenderGroup;
       RenderWork[Index].OutputTarget = OutputTarget;

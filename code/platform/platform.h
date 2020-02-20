@@ -88,11 +88,11 @@ struct game_bitmap
   u32 *Memory;
 	union
 	{
-		v2s Dim;
+		v2u Dim;
 		struct
 		{
-			s32 Width;
-			s32 Height;
+			u32 Width;
+			u32 Height;
 		};
 	};
   s32 Pitch;

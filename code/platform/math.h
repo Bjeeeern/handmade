@@ -445,6 +445,11 @@ operator/(v2u lhs, f32 rhs)
   return {lhs.X / rhs, lhs.Y / rhs};
 }
 inline v2
+operator*(v2u lhs, f32 rhs)
+{
+  return {lhs.X * rhs, lhs.Y * rhs};
+}
+inline v2
 operator*(v2 lhs, f32 rhs)
 {
   lhs *= rhs;

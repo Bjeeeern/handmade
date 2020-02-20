@@ -154,30 +154,6 @@ GenerateTile(game_state* GameState, game_bitmap* Buffer)
   SetCamera(RenderGroup, M44Identity(), positive_infinity32, 0.5f);
   TiledRenderGroupToOutput(GameState->RenderQueue, RenderGroup, Buffer, (f32)Buffer->Height);
 
-#if 1
-  u32 AlphaNullMask = 0x00FFFFFF;
-  for(s32 X = 0;
-      X < Buffer->Width;
-      X++)
-  {
-    u32* PixelHigh = Buffer->Memory + (Buffer->Height-1) * Buffer->Pitch + X;
-    u32* PixelLow = Buffer->Memory + X;
-
-    *PixelHigh &= AlphaNullMask;
-    *PixelLow &= AlphaNullMask;
-  }
-  for(s32 Y = 0;
-      Y < Buffer->Height;
-      Y++)
-  {
-    u32* PixelHigh = Buffer->Memory + Y * Buffer->Pitch + (Buffer->Width-1);
-    u32* PixelLow = Buffer->Memory + Y * Buffer->Pitch;
-
-    *PixelHigh &= AlphaNullMask;
-    *PixelLow &= AlphaNullMask;
-  }
-#endif
-
 	EndTemporaryMemory(TempMem);
 	CheckMemoryArena(&GameState->TransientArena);
 }
@@ -663,7 +639,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 
 	EndTemporaryMemory(TempMem);
 
-#if 1
+#if 0
   GameState->GeneratedTile = EmptyBitmap(TransientArena, 3, 3);
   GameState->GeneratedTile.Alignment = {1, 1};
 #else
@@ -671,6 +647,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
   GameState->GeneratedTile.Alignment = {256, 256};
 #endif
   GenerateTile(GameState, &GameState->GeneratedTile);
+  ClearEdgeXPix(&GameState->GeneratedTile, 1);
 }
 
 #if HANDMADE_INTERNAL

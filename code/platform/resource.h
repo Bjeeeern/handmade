@@ -135,6 +135,35 @@ EmptyBitmap(memory_arena* Arena, u32 Width, u32 Height)
   return Result;
 }
 
+internal_function void 
+ClearEdgeXPix(game_bitmap* Bitmap, u32 PixelsToClear)
+{
+  //TODO(bjorn): Support wider frames when sampling is more than 2x2.
+  Assert(PixelsToClear == 1);
+
+  u32* Row1 = Bitmap->Memory + (Bitmap->Pitch * 0) + 0;
+  u32* Row2 = Bitmap->Memory + (Bitmap->Pitch * (Bitmap->Height-1)) + 0;
+  for(u32 X = 0; 
+      X < Bitmap->Width; 
+      X++) 
+  { 
+    *Row1++ = 0;
+    *Row2++ = 0;
+  }
+  u32* Col1 = Bitmap->Memory + (Bitmap->Pitch * 0) + 0;
+  u32* Col2 = Bitmap->Memory + (Bitmap->Pitch * 0) + (Bitmap->Width-1);
+  for(u32 Y = 0; 
+      Y < Bitmap->Height; 
+      Y++) 
+  { 
+    *Col1 = 0;
+    *Col2 = 0;
+
+    Col1 += Bitmap->Pitch; 
+    Col2 += Bitmap->Pitch;
+  } 
+}
+
 #if 0
 struct file_resource
 {

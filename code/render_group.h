@@ -297,8 +297,8 @@ struct shader_uv
   __m128 V;
 };
 
-#define SOFTWARE_SHADER(name) inline void name(shader_texel& TextureSample, shader_texel& Color, \
-                                               shader_texel& Out)
+#define SOFTWARE_SHADER(name) inline void name(shader_texel& In, shader_texel& TextureSample, \
+                                               shader_texel& Color, shader_texel& Out)
 typedef SOFTWARE_SHADER(software_shader);
 
 SOFTWARE_SHADER(BitmapShader)
@@ -319,11 +319,22 @@ SOFTWARE_SHADER(BitmapShader)
 SOFTWARE_SHADER(PlainFillShader)
 {
   __m128 Const255 = _mm_set1_ps(255.0f);
+  __m128 Const255x255 = _mm_set1_ps(255.0f*255.0f);
 
-  Out.R = _mm_mul_ps(_mm_mul_ps(Const255, Const255), Color.R);
-  Out.G = _mm_mul_ps(_mm_mul_ps(Const255, Const255), Color.G);
-  Out.B = _mm_mul_ps(_mm_mul_ps(Const255, Const255), Color.B);
+  Out.R = _mm_mul_ps(Const255x255, Color.R);
+  Out.G = _mm_mul_ps(Const255x255, Color.G);
+  Out.B = _mm_mul_ps(Const255x255, Color.B);
   Out.A = _mm_mul_ps(Const255, Color.A);
+}
+
+SOFTWARE_SHADER(AlternatePlainFillShader)
+{
+  __m128 Const0xffffffff = _mm_andnot_ps(_mm_setzero_ps(), _mm_setzero_ps());
+
+  Out.R = _mm_xor_ps(In.R, Const0xffffffff);
+  Out.G = _mm_xor_ps(In.G, Const0xffffffff);
+  Out.B = _mm_xor_ps(In.B, Const0xffffffff);
+  Out.A = _mm_xor_ps(In.A, Const0xffffffff);
 }
 
 #if COMPILER_MSVC
@@ -629,12 +640,17 @@ DrawTriangle(game_bitmap *Buffer,
       DrawMask = _mm_and_si128(DrawMask, ClipMask);
       if(_mm_movemask_epi8(DrawMask))
       {
-        __m128i Dest = _mm_loadu_si128((__m128i*)Pixel);
+        __m128i DestRaw = _mm_loadu_si128((__m128i*)Pixel);
 
-        __m128 DestR = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(Dest, 16), Mask0xFF));
-        __m128 DestG = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(Dest,  8), Mask0xFF));
-        __m128 DestB = _mm_cvtepi32_ps(_mm_and_si128(               Dest,      Mask0xFF));
-        __m128 DestA = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(Dest, 24), Mask0xFF));
+        shader_texel Dest;
+        Dest.R = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(DestRaw, 16), Mask0xFF));
+        Dest.G = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(DestRaw,  8), Mask0xFF));
+        Dest.B = _mm_cvtepi32_ps(_mm_and_si128(               DestRaw,      Mask0xFF));
+        Dest.A = _mm_cvtepi32_ps(_mm_and_si128(_mm_srli_epi32(DestRaw, 24), Mask0xFF));
+
+        Dest.R = _mm_mul_ps(Dest.R, Dest.R);
+        Dest.G = _mm_mul_ps(Dest.G, Dest.G);
+        Dest.B = _mm_mul_ps(Dest.B, Dest.B);
 
         shader_texel Texel;
         shader_texel TexSmp;
@@ -744,22 +760,19 @@ DrawTriangle(game_bitmap *Buffer,
             _mm_add_ps(_mm_add_ps(_mm_mul_ps(ifYmifX, TexSmp0A), _mm_mul_ps(ifYmfX, TexSmp1A)), 
                        _mm_add_ps(_mm_mul_ps(ifXmfY,  TexSmp2A), _mm_mul_ps(fXmfY,  TexSmp3A)));
 
-          Shader(TexSmp, ColorModifier, Texel);
+          Shader(Dest, TexSmp, ColorModifier, Texel);
         }
         else
         {
-          Shader(TexSmp, ColorModifier, Texel);
+          Shader(Dest, TexSmp, ColorModifier, Texel);
         }
 
-        DestR = _mm_mul_ps(DestR, DestR);
-        DestG = _mm_mul_ps(DestG, DestG);
-        DestB = _mm_mul_ps(DestB, DestB);
-
+        //TODO(bjorn): Should this be promoted to the shader?
         __m128 InvTexelA = _mm_sub_ps(Const1, _mm_mul_ps(Texel.A, Inv255));
-        __m128 BlendedR = _mm_add_ps(_mm_mul_ps(DestR, InvTexelA), Texel.R);
-        __m128 BlendedG = _mm_add_ps(_mm_mul_ps(DestG, InvTexelA), Texel.G);
-        __m128 BlendedB = _mm_add_ps(_mm_mul_ps(DestB, InvTexelA), Texel.B);
-        __m128 BlendedA = _mm_add_ps(_mm_mul_ps(DestA, InvTexelA), Texel.A);
+        __m128 BlendedR = _mm_add_ps(_mm_mul_ps(Dest.R, InvTexelA), Texel.R);
+        __m128 BlendedG = _mm_add_ps(_mm_mul_ps(Dest.G, InvTexelA), Texel.G);
+        __m128 BlendedB = _mm_add_ps(_mm_mul_ps(Dest.B, InvTexelA), Texel.B);
+        __m128 BlendedA = _mm_add_ps(_mm_mul_ps(Dest.A, InvTexelA), Texel.A);
 
 #if 0
         //TODO(bjorn): Why is this producing artifacts when A == 0.
@@ -791,7 +804,7 @@ DrawTriangle(game_bitmap *Buffer,
                                    _mm_or_si128(IntB,
                                                 IntA));
         __m128i MaskedOut = _mm_or_si128(_mm_and_si128(DrawMask, Out),
-                                         _mm_andnot_si128(DrawMask, Dest));
+                                         _mm_andnot_si128(DrawMask, DestRaw));
         _mm_storeu_si128((__m128i*)Pixel, MaskedOut);
       }
 

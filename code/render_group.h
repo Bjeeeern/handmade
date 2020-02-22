@@ -291,14 +291,10 @@ struct shader_texel
   __m128 B;
   __m128 A;
 };
-struct shader_uv
-{
-  __m128 U;
-  __m128 V;
-};
 
 #define SOFTWARE_SHADER(name) inline void name(shader_texel& In, shader_texel& TextureSample, \
-                                               shader_texel& Color, shader_texel& Out)
+                                               shader_texel& Color, shader_texel& Out, \
+                                               __m128 U, __m128 V)
 typedef SOFTWARE_SHADER(software_shader);
 
 SOFTWARE_SHADER(BitmapShader)
@@ -327,7 +323,7 @@ SOFTWARE_SHADER(PlainFillShader)
   Out.A = _mm_mul_ps(Const255, Color.A);
 }
 
-SOFTWARE_SHADER(AlternatePlainFillShader)
+SOFTWARE_SHADER(PlainFillFlipShader)
 {
   __m128 Const0xffffffff = _mm_andnot_ps(_mm_setzero_ps(), _mm_setzero_ps());
 
@@ -335,6 +331,17 @@ SOFTWARE_SHADER(AlternatePlainFillShader)
   Out.G = _mm_xor_ps(In.G, Const0xffffffff);
   Out.B = _mm_xor_ps(In.B, Const0xffffffff);
   Out.A = _mm_xor_ps(In.A, Const0xffffffff);
+}
+
+SOFTWARE_SHADER(QuadBezierFlipShader)
+{
+  __m128 Const1 = _mm_set1_ps(1.0f);
+  __m128 Mask = _mm_cmple_ps(_mm_add_ps(_mm_mul_ps(U, U), _mm_mul_ps(V, V)), Const1);
+
+  Out.R = _mm_xor_ps(In.R, Mask);
+  Out.G = _mm_xor_ps(In.G, Mask);
+  Out.B = _mm_xor_ps(In.B, Mask);
+  Out.A = _mm_xor_ps(In.A, Mask);
 }
 
 #if COMPILER_MSVC
@@ -640,6 +647,16 @@ DrawTriangle(game_bitmap *Buffer,
       DrawMask = _mm_and_si128(DrawMask, ClipMask);
       if(_mm_movemask_epi8(DrawMask))
       {
+        __m128  U = _mm_add_ps(_mm_add_ps(_mm_mul_ps(BarycentricWeight0, UV0U), 
+                                          _mm_mul_ps(BarycentricWeight1, UV1U)), 
+                               _mm_mul_ps(BarycentricWeight2, UV2U));
+        __m128  V = _mm_add_ps(_mm_add_ps(_mm_mul_ps(BarycentricWeight0, UV0V), 
+                                          _mm_mul_ps(BarycentricWeight1, UV1V)), 
+                               _mm_mul_ps(BarycentricWeight2, UV2V));
+
+        U = _mm_max_ps(Const0, _mm_min_ps(U, Const1));
+        V = _mm_max_ps(Const0, _mm_min_ps(V, Const1));
+
         __m128i DestRaw = _mm_loadu_si128((__m128i*)Pixel);
 
         shader_texel Dest;
@@ -656,16 +673,6 @@ DrawTriangle(game_bitmap *Buffer,
         shader_texel TexSmp;
         if(Bitmap)
         {
-          __m128 U = _mm_add_ps(_mm_add_ps(_mm_mul_ps(BarycentricWeight0, UV0U), 
-                                           _mm_mul_ps(BarycentricWeight1, UV1U)), 
-                                _mm_mul_ps(BarycentricWeight2, UV2U));
-          __m128 V = _mm_add_ps(_mm_add_ps(_mm_mul_ps(BarycentricWeight0, UV0V), 
-                                           _mm_mul_ps(BarycentricWeight1, UV1V)), 
-                                _mm_mul_ps(BarycentricWeight2, UV2V));
-
-          U = _mm_max_ps(Const0, _mm_min_ps(U, Const1));
-          V = _mm_max_ps(Const0, _mm_min_ps(V, Const1));
-
           __m128 tX = _mm_mul_ps(U, UVBitmapWidth); 
           __m128 tY = _mm_mul_ps(V, UVBitmapHeight);
 
@@ -760,11 +767,11 @@ DrawTriangle(game_bitmap *Buffer,
             _mm_add_ps(_mm_add_ps(_mm_mul_ps(ifYmifX, TexSmp0A), _mm_mul_ps(ifYmfX, TexSmp1A)), 
                        _mm_add_ps(_mm_mul_ps(ifXmfY,  TexSmp2A), _mm_mul_ps(fXmfY,  TexSmp3A)));
 
-          Shader(Dest, TexSmp, ColorModifier, Texel);
+          Shader(Dest, TexSmp, ColorModifier, Texel, U, V);
         }
         else
         {
-          Shader(Dest, TexSmp, ColorModifier, Texel);
+          Shader(Dest, TexSmp, ColorModifier, Texel, U, V);
         }
 
         //TODO(bjorn): Should this be promoted to the shader?

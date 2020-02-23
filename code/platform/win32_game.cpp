@@ -1628,6 +1628,10 @@ WinMain(HINSTANCE Instance,
         VirtualFree(Buffer, 0, MEM_RELEASE);
       }
 
+#if 1
+      ThreadCount = 0;
+#endif
+
       u32 InitialCount = 0;
       HANDLE SemaphoreHandle = CreateSemaphoreEx(0,
                                                  InitialCount,

@@ -314,23 +314,33 @@ SOFTWARE_SHADER(BitmapShader)
 
 SOFTWARE_SHADER(PlainFillShader)
 {
+  __m128 Const0 = _mm_set1_ps(0.0f);
   __m128 Const255 = _mm_set1_ps(255.0f);
   __m128 Const255x255 = _mm_set1_ps(255.0f*255.0f);
 
-  Out.R = _mm_mul_ps(Const255x255, Color.R);
-  Out.G = _mm_mul_ps(Const255x255, Color.G);
-  Out.B = _mm_mul_ps(Const255x255, Color.B);
-  Out.A = _mm_mul_ps(Const255, Color.A);
+  //TODO(bjorn): The way In and Out blends in the end forces me to edit the In
+  //directly in order to actually flip the pixels.
+  In.R = _mm_mul_ps(Const255x255, Color.R);
+  In.G = _mm_mul_ps(Const255x255, Color.G);
+  In.B = _mm_mul_ps(Const255x255, Color.B);
+  In.A = _mm_mul_ps(Const255, Color.A);
+
+  Out.A = Const0;
 }
 
 SOFTWARE_SHADER(PlainFillFlipShader)
 {
+  __m128 Const0 = _mm_set1_ps(0.0f);
   __m128 Const0xffffffff = _mm_andnot_ps(_mm_setzero_ps(), _mm_setzero_ps());
 
+  //TODO(bjorn): The way In and Out blends in the end forces me to edit the In
+  //directly in order to actually flip the pixels.
   Out.R = _mm_xor_ps(In.R, Const0xffffffff);
   Out.G = _mm_xor_ps(In.G, Const0xffffffff);
   Out.B = _mm_xor_ps(In.B, Const0xffffffff);
   Out.A = _mm_xor_ps(In.A, Const0xffffffff);
+
+  //Out.A = Const0;
 }
 
 SOFTWARE_SHADER(QuadBezierFlipShader)
@@ -913,6 +923,7 @@ enum render_group_entry_type
 	RenderGroupEntryType_render_entry_wire_cube,
 	RenderGroupEntryType_render_entry_blank_quad,
 	RenderGroupEntryType_render_entry_quad,
+	RenderGroupEntryType_render_entry_triangle_fill_flip,
 	RenderGroupEntryType_render_entry_sphere,
 };
 
@@ -941,6 +952,12 @@ struct render_entry_quad
 	game_bitmap* Bitmap;
 	v4 Color;
 	m44 Tran;
+};
+struct render_entry_triangle_fill_flip
+{
+	v3 Sta;
+	v3 Mid;
+	v3 End;
 };
 struct render_entry_blank_quad
 {
@@ -993,7 +1010,9 @@ PushRenderElement_(render_group* RenderGroup, u32 Size, render_group_entry_type 
       (render_entry_header*)(RenderGroup->PushBufferBase + RenderGroup->PushBufferSize);
     Header->Type = Type;
 
-    Result = RenderGroup->PushBufferBase + RenderGroup->PushBufferSize + sizeof(render_entry_header);
+    Result = (RenderGroup->PushBufferBase + 
+              RenderGroup->PushBufferSize + 
+              sizeof(render_entry_header));
 
     RenderGroup->PushBufferSize += Size;
   }
@@ -1020,6 +1039,16 @@ PushQuad(render_group* RenderGroup, m44 T, game_bitmap* Bitmap, v4 Color = {1,1,
 	Entry->Tran = T;
 	Entry->Bitmap = Bitmap;
 	Entry->Color = Color;
+}
+
+internal_function void
+PushTriangleFillFlip(render_group* RenderGroup, v2 Sta, v2 Mid, v2 End)
+{
+	render_entry_triangle_fill_flip* Entry = 
+    PushRenderElement(RenderGroup, render_entry_triangle_fill_flip);
+	Entry->Sta = ToV3(Sta, 0.0f);
+	Entry->Mid = ToV3(Mid, 0.0f);
+	Entry->End = ToV3(End, 0.0f);
 }
 
 internal_function void
@@ -1658,6 +1687,23 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                      {1.0f, VertIndex*0.25f, 1.0f});
           }
 #endif
+        } break;
+      case RenderGroupEntryType_render_entry_triangle_fill_flip
+        : {
+          RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_triangle_fill_flip);
+
+          DrawTriangle(OutputTarget, 
+                       &RenderGroup->CamParam, &ScreenVars, 
+                       Entry->Sta, 
+                       Entry->Mid, 
+                       Entry->End, 
+                       {1,0},
+                       {1,1},
+                       {0,1},
+                       0,
+                       {},
+                       ClipRect,
+                       PlainFillFlipShader);
         } break;
       case RenderGroupEntryType_render_entry_sphere
         : {

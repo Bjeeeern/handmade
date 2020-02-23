@@ -54,7 +54,10 @@ struct game_state
 {
   //TODO STUDY(bjorn): transient_state
   work_queue* RenderQueue;
-  game_bitmap GeneratedTile;
+  game_bitmap GenTile;
+  game_bitmap GenGlyph;
+
+  font* Font;
   //END STUDY
 
 	memory_arena WorldArena;
@@ -100,6 +103,53 @@ struct game_state
 	f32 NoteDuration;
 	f32 NoteSecondsPassed;
 };
+
+internal_function void
+GenerateGlyph(work_queue* RenderQueue, memory_arena* TransientArena, font* Font, 
+              game_bitmap* Buffer)
+{
+  temporary_memory TempMem = BeginTemporaryMemory(TransientArena);
+  render_group* RenderGroup = AllocateRenderGroup(TransientArena, Megabytes(4));
+
+  unicode_to_glyph_data *Entries = (unicode_to_glyph_data *)(Font + 1);
+
+  s32 CharEntryIndex = 0;
+  for(s32 EntryIndex = 0;
+      EntryIndex < Font->UnicodeCodePointCount;
+      EntryIndex++)
+  {
+    if('a' == Entries[EntryIndex].UnicodeCodePoint)
+    {
+      CharEntryIndex = EntryIndex;
+      break;
+    }
+	}
+
+	s32 Offset = Entries[CharEntryIndex].OffsetToGlyphData;
+	s32 CurveCount = Entries[CharEntryIndex].QuadraticCurveCount;
+	v2 GlyphDim = {Buffer->Width*0.5f, Buffer->Height*0.5f};
+	v2 GlyphOrigin = {-(Buffer->Width*0.25f), 0.0f};
+
+	quadratic_curve *Curves = (quadratic_curve *)((u8 *)Font + Offset);
+	for(s32 CurveIndex = 0;
+			CurveIndex < CurveCount;
+			CurveIndex++)
+	{
+		quadratic_curve Curve = Curves[CurveIndex];
+
+		v2 Sta = Hadamard(Curve.Srt, GlyphDim) + GlyphOrigin;
+		v2 Mid = Hadamard(Curve.Con, GlyphDim) + GlyphOrigin;
+		v2 End = Hadamard(Curve.End, GlyphDim) + GlyphOrigin;
+
+    PushTriangleFillFlip(RenderGroup, Sta, {0,0}, End);
+  }
+
+  SetCamera(RenderGroup, M44Identity(), positive_infinity32, 0.5f);
+  TiledRenderGroupToOutput(RenderQueue, RenderGroup, Buffer, (f32)Buffer->Height);
+
+	EndTemporaryMemory(TempMem);
+	CheckMemoryArena(TransientArena);
+}
 
 internal_function void
 GenerateTile(game_state* GameState, game_bitmap* Buffer)
@@ -317,54 +367,50 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	Hero.Torso.Alignment = {72, 182};
 	GameState->HeroBitmaps[1] = Hero;
 
-	Hero.Head = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
-                                     Memory->DEBUGPlatformReadEntireFile, 
-                                     TransientArena,
-                                     
-													 "data/test/test_hero_back_head.bmp");
-	Hero.Cape = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
-                                     Memory->DEBUGPlatformReadEntireFile, 
-                                     TransientArena,
-                                     
-													 "data/test/test_hero_back_cape.bmp");
-	Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
-                                     Memory->DEBUGPlatformReadEntireFile, 
-                                     TransientArena,
-                                     
-														"data/test/test_hero_back_torso.bmp");
-	Hero.Head.Alignment = {72, 182};
-	Hero.Cape.Alignment = {72, 182};
-	Hero.Torso.Alignment = {72, 182};
-	GameState->HeroBitmaps[2] = Hero;
+  Hero.Head = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                           Memory->DEBUGPlatformReadEntireFile, 
+                           TransientArena,
+                           "data/test/test_hero_back_head.bmp");
+  Hero.Cape = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                           Memory->DEBUGPlatformReadEntireFile, 
+                           TransientArena, 
+                           "data/test/test_hero_back_cape.bmp");
+  Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                            Memory->DEBUGPlatformReadEntireFile, 
+                            TransientArena, 
+                            "data/test/test_hero_back_torso.bmp");
+  Hero.Head.Alignment = {72, 182};
+  Hero.Cape.Alignment = {72, 182};
+  Hero.Torso.Alignment = {72, 182};
+  GameState->HeroBitmaps[2] = Hero;
 
-	Hero.Head = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
-                                     Memory->DEBUGPlatformReadEntireFile, 
-                                     TransientArena,
-                                     
-													 "data/test/test_hero_right_head.bmp");
-	Hero.Cape = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
-                                     Memory->DEBUGPlatformReadEntireFile, 
-                                     TransientArena,
-                                     
-													 "data/test/test_hero_right_cape.bmp");
-	Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
-                                     Memory->DEBUGPlatformReadEntireFile, 
-                                     TransientArena,
-                                     
-														"data/test/test_hero_right_torso.bmp");
-	Hero.Head.Alignment = {72, 182};
-	Hero.Cape.Alignment = {72, 182};
-	Hero.Torso.Alignment = {72, 182};
-	GameState->HeroBitmaps[3] = Hero;
+  Hero.Head = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                           Memory->DEBUGPlatformReadEntireFile, 
+                           TransientArena,
+                           "data/test/test_hero_right_head.bmp");
+  Hero.Cape = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                           Memory->DEBUGPlatformReadEntireFile, 
+                           TransientArena,
+                           "data/test/test_hero_right_cape.bmp");
+  Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+                            Memory->DEBUGPlatformReadEntireFile, 
+                            TransientArena, 
+                            "data/test/test_hero_right_torso.bmp");
+  Hero.Head.Alignment = {72, 182};
+  Hero.Cape.Alignment = {72, 182};
+  Hero.Torso.Alignment = {72, 182};
+  GameState->HeroBitmaps[3] = Hero;
 
-	GameState->WorldMap = PushStruct(&GameState->WorldArena, world_map);
+  debug_read_file_result FontFile = Memory->DEBUGPlatformReadEntireFile("data/MSMINCHO.font");
+  GameState->Font = (font *)FontFile.Content;
 
-	world_map *WorldMap = GameState->WorldMap;
-	WorldMap->ChunkSafetyMargin = 256;
-	WorldMap->TileSideInMeters = 1.4f;
-	WorldMap->ChunkSideInMeters = WorldMap->TileSideInMeters * TILES_PER_CHUNK;
+  GameState->WorldMap = PushStruct(&GameState->WorldArena, world_map);
+  world_map *WorldMap = GameState->WorldMap;
+  WorldMap->ChunkSafetyMargin = 256;
+  WorldMap->TileSideInMeters = 1.4f;
+  WorldMap->ChunkSideInMeters = WorldMap->TileSideInMeters * TILES_PER_CHUNK;
 
-	temporary_memory TempMem = BeginTemporaryMemory(&GameState->FrameBoundedTransientArena);
+  temporary_memory TempMem = BeginTemporaryMemory(&GameState->FrameBoundedTransientArena);
 
 	u32 RoomWidthInTiles = 17;
 	u32 RoomHeightInTiles = 9;
@@ -640,14 +686,19 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	EndTemporaryMemory(TempMem);
 
 #if 0
-  GameState->GeneratedTile = EmptyBitmap(TransientArena, 3, 3);
-  GameState->GeneratedTile.Alignment = {1, 1};
+  GameState->GenTile = EmptyBitmap(TransientArena, 3, 3);
+  GameState->GenTile.Alignment = {1, 1};
 #else
-  GameState->GeneratedTile = EmptyBitmap(TransientArena, 512, 512);
-  GameState->GeneratedTile.Alignment = {256, 256};
+  GameState->GenTile = EmptyBitmap(TransientArena, 512, 512);
+  GameState->GenTile.Alignment = {256, 256};
 #endif
-  GenerateTile(GameState, &GameState->GeneratedTile);
-  ClearEdgeXPix(&GameState->GeneratedTile, 1);
+  GenerateTile(GameState, &GameState->GenTile);
+  ClearEdgeXPix(&GameState->GenTile, 1);
+
+  GameState->GenGlyph = EmptyBitmap(TransientArena, 512, 512);
+  GameState->GenGlyph.Alignment = {256, 256};
+  GenerateGlyph(GameState->RenderQueue, &GameState->TransientArena, GameState->Font, 
+                &GameState->GenGlyph);
 }
 
 #if HANDMADE_INTERNAL
@@ -707,10 +758,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     PushWork = Memory->PushWork;
     CompleteWork = Memory->CompleteWork;
 
-    ZeroMemory(GameState->GeneratedTile.Memory, (GameState->GeneratedTile.Width*
-                                                 GameState->GeneratedTile.Height*
-                                                 GAME_BITMAP_BYTES_PER_PIXEL));
-    GenerateTile(GameState, &GameState->GeneratedTile);
+    ZeroMemory(GameState->GenTile.Memory, (GameState->GenTile.Width*
+                                           GameState->GenTile.Pitch*
+                                           GAME_BITMAP_BYTES_PER_PIXEL));
+    GenerateTile(GameState, &GameState->GenTile);
+
+    ZeroMemory(GameState->GenGlyph.Memory, (GameState->GenGlyph.Width*
+                                            GameState->GenGlyph.Pitch*
+                                            GAME_BITMAP_BYTES_PER_PIXEL));
+    GenerateGlyph(GameState->RenderQueue, &GameState->TransientArena, GameState->Font, 
+                  &GameState->GenGlyph);
   }
 
   memory_arena* WorldArena = &GameState->WorldArena;
@@ -925,7 +982,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #endif
 
 #if 0
-    PushQuad(RenderGroup, Transform, &GameState->GeneratedTile, Color);
+    PushQuad(RenderGroup, Transform, &GameState->GenTile, Color);
 #endif
   }
 
@@ -1604,7 +1661,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
   m44 Transform = ConstructTransform({}, QuaternionIdentity(), {6,6,1});
   v4 Color = {1,1,1,1};
-  PushQuad(RenderGroup, Transform, &GameState->GeneratedTile, Color);
+#if 0
+  PushQuad(RenderGroup, Transform, &GameState->GenTile, Color);
+#else
+  PushQuad(RenderGroup, Transform, &GameState->GenGlyph, Color);
+#endif
 #if 1
   TiledRenderGroupToOutput(GameState->RenderQueue, RenderGroup, Buffer, 
                            MainCamera->CamScreenHeight);

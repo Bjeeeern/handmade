@@ -118,7 +118,7 @@ GenerateGlyph(work_queue* RenderQueue, memory_arena* TransientArena, font* Font,
       EntryIndex < Font->UnicodeCodePointCount;
       EntryIndex++)
   {
-    if('a' == Entries[EntryIndex].UnicodeCodePoint)
+    if('B' == Entries[EntryIndex].UnicodeCodePoint)
     {
       CharEntryIndex = EntryIndex;
       break;
@@ -127,8 +127,8 @@ GenerateGlyph(work_queue* RenderQueue, memory_arena* TransientArena, font* Font,
 
 	s32 Offset = Entries[CharEntryIndex].OffsetToGlyphData;
 	s32 CurveCount = Entries[CharEntryIndex].QuadraticCurveCount;
-	v2 GlyphDim = {Buffer->Width*0.5f, Buffer->Height*0.5f};
-	v2 GlyphOrigin = {-(Buffer->Width*0.25f), 0.0f};
+	v2 GlyphDim = {Buffer->Width*0.25f, Buffer->Height*0.5f};
+	v2 GlyphOrigin = {-(Buffer->Width*0.125f), -(Buffer->Height*0.125f)};
 
 	quadratic_curve *Curves = (quadratic_curve *)((u8 *)Font + Offset);
 	for(s32 CurveIndex = 0;
@@ -141,8 +141,41 @@ GenerateGlyph(work_queue* RenderQueue, memory_arena* TransientArena, font* Font,
 		v2 Mid = Hadamard(Curve.Con, GlyphDim) + GlyphOrigin;
 		v2 End = Hadamard(Curve.End, GlyphDim) + GlyphOrigin;
 
-    PushTriangleFillFlip(RenderGroup, Sta, {0,0}, End);
+    PushTriangleFillFlip(RenderGroup, Sta, {1.0f,0.5f}, End);
   }
+
+	for(s32 CurveIndex = 0;
+			CurveIndex < CurveCount;
+			CurveIndex++)
+	{
+		quadratic_curve Curve = Curves[CurveIndex];
+
+		v2 Sta = Hadamard(Curve.Srt, GlyphDim) + GlyphOrigin;
+		v2 Mid = Hadamard(Curve.Con, GlyphDim) + GlyphOrigin;
+		v2 End = Hadamard(Curve.End, GlyphDim) + GlyphOrigin;
+
+    PushQuadBezierFlip(RenderGroup, Sta, Mid, End);
+  }
+
+#if 0
+	for(s32 CurveIndex = 0;
+			CurveIndex < CurveCount;
+			CurveIndex++)
+	{
+		quadratic_curve Curve = Curves[CurveIndex];
+
+		v2 Sta = Hadamard(Curve.Srt, GlyphDim) + GlyphOrigin;
+		v2 Mid = Hadamard(Curve.Con, GlyphDim) + GlyphOrigin;
+		v2 End = Hadamard(Curve.End, GlyphDim) + GlyphOrigin;
+
+    PushVector(RenderGroup, M44Identity(), Sta, End, {0,0,1});
+    PushVector(RenderGroup, M44Identity(), Sta, Mid, {0,1,0});
+    PushVector(RenderGroup, M44Identity(), End, Mid, {0,1,0});
+  }
+
+  PushQuadBezierFlip(RenderGroup, Hadamard({-0.5f,0.5f}, GlyphDim), {0,0}, Hadamard({0.5f,0.5f}, GlyphDim));
+  PushQuadBezierFlip(RenderGroup, Hadamard({-0.3f,0.4f}, GlyphDim), {0,0}, Hadamard({0.3f,0.4f}, GlyphDim));
+#endif
 
   SetCamera(RenderGroup, M44Identity(), positive_infinity32, 0.5f);
   TiledRenderGroupToOutput(RenderQueue, RenderGroup, Buffer, (f32)Buffer->Height);
@@ -695,8 +728,8 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
   GenerateTile(GameState, &GameState->GenTile);
   ClearEdgeXPix(&GameState->GenTile, 1);
 
-  GameState->GenGlyph = EmptyBitmap(TransientArena, 512, 512);
-  GameState->GenGlyph.Alignment = {256, 256};
+  GameState->GenGlyph = EmptyBitmap(TransientArena, 1024, 1024);
+  GameState->GenGlyph.Alignment = {512, 512};
   GenerateGlyph(GameState->RenderQueue, &GameState->TransientArena, GameState->Font, 
                 &GameState->GenGlyph);
 }

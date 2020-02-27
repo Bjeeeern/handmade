@@ -314,44 +314,66 @@ SOFTWARE_SHADER(BitmapShader)
 
 SOFTWARE_SHADER(PlainFillShader)
 {
-  __m128 Const0 = _mm_set1_ps(0.0f);
   __m128 Const255 = _mm_set1_ps(255.0f);
   __m128 Const255x255 = _mm_set1_ps(255.0f*255.0f);
 
-  //TODO(bjorn): The way In and Out blends in the end forces me to edit the In
-  //directly in order to actually flip the pixels.
-  In.R = _mm_mul_ps(Const255x255, Color.R);
-  In.G = _mm_mul_ps(Const255x255, Color.G);
-  In.B = _mm_mul_ps(Const255x255, Color.B);
-  In.A = _mm_mul_ps(Const255, Color.A);
-
-  Out.A = Const0;
+  Out.R = _mm_mul_ps(Const255x255, Color.R);
+  Out.G = _mm_mul_ps(Const255x255, Color.G);
+  Out.B = _mm_mul_ps(Const255x255, Color.B);
+  Out.A = _mm_mul_ps(Const255, Color.A);
 }
 
 SOFTWARE_SHADER(PlainFillFlipShader)
 {
   __m128 Const0 = _mm_set1_ps(0.0f);
-  __m128 Const0xffffffff = _mm_andnot_ps(_mm_setzero_ps(), _mm_setzero_ps());
+  __m128 Const255 = _mm_set1_ps(255.0f);
+  __m128 Const255x255 = _mm_set1_ps(255.0f*255.0f);
 
+  __m128 FlipMask = _mm_cmpeq_ps(In.A, Const0);
   //TODO(bjorn): The way In and Out blends in the end forces me to edit the In
   //directly in order to actually flip the pixels.
-  Out.R = _mm_xor_ps(In.R, Const0xffffffff);
-  Out.G = _mm_xor_ps(In.G, Const0xffffffff);
-  Out.B = _mm_xor_ps(In.B, Const0xffffffff);
-  Out.A = _mm_xor_ps(In.A, Const0xffffffff);
+  In.R = _mm_and_ps(Const255x255, FlipMask);
+  In.G = _mm_and_ps(Const255x255, FlipMask);
+  In.B = _mm_and_ps(Const255x255, FlipMask);
+  In.A = _mm_and_ps(Const255,     FlipMask);
 
-  //Out.A = Const0;
+  Out.R = Const0;
+  Out.G = Const0;
+  Out.B = Const0;
+  Out.A = Const0;
 }
 
 SOFTWARE_SHADER(QuadBezierFlipShader)
 {
+  __m128 Const0 = _mm_set1_ps(0.0f);
   __m128 Const1 = _mm_set1_ps(1.0f);
-  __m128 Mask = _mm_cmple_ps(_mm_add_ps(_mm_mul_ps(U, U), _mm_mul_ps(V, V)), Const1);
+  __m128 Const255 = _mm_set1_ps(255.0f);
+  __m128 Const255x255 = _mm_set1_ps(255.0f*255.0f);
 
-  Out.R = _mm_xor_ps(In.R, Mask);
-  Out.G = _mm_xor_ps(In.G, Mask);
-  Out.B = _mm_xor_ps(In.B, Mask);
-  Out.A = _mm_xor_ps(In.A, Mask);
+  __m128 BezierMask = _mm_cmple_ps(_mm_add_ps(_mm_mul_ps(U, U), _mm_mul_ps(V, V)), Const1);
+  __m128 FlipMask = _mm_cmpeq_ps(In.A, Const0);
+  __m128 CombinedMask = _mm_and_ps(BezierMask, FlipMask);
+  //TODO(bjorn): The way In and Out blends in the end forces me to edit the In
+  //directly in order to actually flip the pixels.
+  shader_texel Tmp;
+  Tmp.R = _mm_and_ps(Const255x255, FlipMask);
+  Tmp.G = _mm_and_ps(Const255x255, FlipMask);
+  Tmp.B = _mm_and_ps(Const255x255, FlipMask);
+  Tmp.A = _mm_and_ps(Const255,     FlipMask);
+
+  In.R = _mm_or_ps(_mm_and_ps(BezierMask, Tmp.R),
+                   _mm_andnot_ps(BezierMask, In.R));
+  In.G = _mm_or_ps(_mm_and_ps(BezierMask, Tmp.G),
+                   _mm_andnot_ps(BezierMask, In.G));
+  In.B = _mm_or_ps(_mm_and_ps(BezierMask, Tmp.B),
+                   _mm_andnot_ps(BezierMask, In.B));
+  In.A = _mm_or_ps(_mm_and_ps(BezierMask, Tmp.A),
+                   _mm_andnot_ps(BezierMask, In.A));
+
+  Out.R = Const0;
+  Out.G = Const0;
+  Out.B = Const0;
+  Out.A = Const0;
 }
 
 #if COMPILER_MSVC
@@ -924,6 +946,7 @@ enum render_group_entry_type
 	RenderGroupEntryType_render_entry_blank_quad,
 	RenderGroupEntryType_render_entry_quad,
 	RenderGroupEntryType_render_entry_triangle_fill_flip,
+	RenderGroupEntryType_render_entry_quad_bezier_fill_flip,
 	RenderGroupEntryType_render_entry_sphere,
 };
 
@@ -954,6 +977,12 @@ struct render_entry_quad
 	m44 Tran;
 };
 struct render_entry_triangle_fill_flip
+{
+	v3 Sta;
+	v3 Mid;
+	v3 End;
+};
+struct render_entry_quad_bezier_fill_flip
 {
 	v3 Sta;
 	v3 Mid;
@@ -1046,6 +1075,16 @@ PushTriangleFillFlip(render_group* RenderGroup, v2 Sta, v2 Mid, v2 End)
 {
 	render_entry_triangle_fill_flip* Entry = 
     PushRenderElement(RenderGroup, render_entry_triangle_fill_flip);
+	Entry->Sta = ToV3(Sta, 0.0f);
+	Entry->Mid = ToV3(Mid, 0.0f);
+	Entry->End = ToV3(End, 0.0f);
+}
+
+internal_function void
+PushQuadBezierFlip(render_group* RenderGroup, v2 Sta, v2 Mid, v2 End)
+{
+	render_entry_quad_bezier_fill_flip* Entry = 
+    PushRenderElement(RenderGroup, render_entry_quad_bezier_fill_flip);
 	Entry->Sta = ToV3(Sta, 0.0f);
 	Entry->Mid = ToV3(Mid, 0.0f);
 	Entry->End = ToV3(End, 0.0f);
@@ -1705,6 +1744,23 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
                        ClipRect,
                        PlainFillFlipShader);
         } break;
+      case RenderGroupEntryType_render_entry_quad_bezier_fill_flip
+        : {
+          RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_quad_bezier_fill_flip);
+
+          DrawTriangle(OutputTarget, 
+                       &RenderGroup->CamParam, &ScreenVars, 
+                       Entry->Sta, 
+                       Entry->Mid, 
+                       Entry->End, 
+                       {1,0},
+                       {1,1},
+                       {0,1},
+                       0,
+                       {},
+                       ClipRect,
+                       QuadBezierFlipShader);
+        } break;
       case RenderGroupEntryType_render_entry_sphere
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_sphere);
@@ -1790,7 +1846,7 @@ TiledRenderGroupToOutput(work_queue* RenderQueue, render_group* RenderGroup,
       RenderWork[Index].ScreenHeightInMeters = ScreenHeightInMeters;
       RenderWork[Index].ClipRect = ClipRect;
 
-#if 1
+#if 0
       PushWork(RenderQueue, DoRenderWork, &RenderWork[Index]);
 #else
       DoRenderWork(&RenderWork[Index]);

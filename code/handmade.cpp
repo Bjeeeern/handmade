@@ -180,11 +180,34 @@ GenerateGlyph(work_queue* RenderQueue, memory_arena* TransientArena, font* Font,
   SetCamera(RenderGroup, M44Identity(), positive_infinity32, 0.5f);
   TiledRenderGroupToOutput(RenderQueue, RenderGroup, Buffer, (f32)Buffer->Height);
 
-	EndTemporaryMemory(TempMem);
-	CheckMemoryArena(TransientArena);
+  for(u32 Y = 1;
+      Y < (Buffer->Height-1);
+      Y++)
+  {
+    for(u32 X = 1;
+        X < (Buffer->Width);
+        X++)
+    {
+      u32* Mid = Buffer->Memory + Y * Buffer->Pitch + X;
+      u32 Lef = Buffer->Memory[Y * Buffer->Pitch + (X-1)];
+      u32 Rig = Buffer->Memory[Y * Buffer->Pitch + (X+1)];
+      u32 Bot = Buffer->Memory[(Y-1) * Buffer->Pitch + X];
+      u32 Top = Buffer->Memory[(Y+1) * Buffer->Pitch + X];
+
+      b32 DoFlip = (Lef == Rig && Top == Bot && Lef == Top && Top != *Mid);
+      if(DoFlip)
+      {
+        *Mid = (*Mid == 0) ? 0xFFFFFFFF : 0;
+      }
+    }
+  }
+
+
+  EndTemporaryMemory(TempMem);
+  CheckMemoryArena(TransientArena);
 }
 
-internal_function void
+  internal_function void
 GenerateTile(game_state* GameState, game_bitmap* Buffer)
 {
   temporary_memory TempMem = BeginTemporaryMemory(&GameState->TransientArena);

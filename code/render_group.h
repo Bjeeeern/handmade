@@ -503,9 +503,6 @@ DrawTriangle(game_bitmap *Buffer,
   __m128 FocalPointZ = _mm_set1_ps(FocalPoint.Z);
   __m128 Bary3D_Numerator = _mm_set1_ps(LinePlaneIntersection_Numerator);
 
-  //TODO(bjorn): Deal with artefacts due to indirect calculation of the last weight.
-  __m128 Bary3D_Epsilon = _mm_set1_ps(0.0001f);
-
   v3 Bary3D_TotalAreaVector = Cross(CameraSpacePoint2-CameraSpacePoint0, 
                                     CameraSpacePoint1-CameraSpacePoint0);
   __m128 Bary3D_TotalAreaVectorX = _mm_set1_ps(Bary3D_TotalAreaVector.X);
@@ -667,9 +664,14 @@ DrawTriangle(game_bitmap *Buffer,
         BarycentricWeight1 = _mm_mul_ps(DotBB, InvDotTB);
         BarycentricWeight2 = _mm_sub_ps(Const1, _mm_add_ps(BarycentricWeight0, BarycentricWeight1));
 
+#if 0
+        //TODO(bjorn): Deal with artefacts due to indirect calculation of the last weight.
+        __m128 Bary3D_Epsilon = _mm_set1_ps(0.0001f);
+
         BarycentricWeight0 = _mm_add_ps(BarycentricWeight0, Bary3D_Epsilon);
         BarycentricWeight1 = _mm_add_ps(BarycentricWeight1, Bary3D_Epsilon);
         BarycentricWeight2 = _mm_add_ps(BarycentricWeight2, Bary3D_Epsilon);
+#endif
       }
 
       __m128i DrawMask = 

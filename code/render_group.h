@@ -1848,7 +1848,7 @@ TiledRenderGroupToOutput(work_queue* RenderQueue, render_group* RenderGroup,
       RenderWork[Index].ScreenHeightInMeters = ScreenHeightInMeters;
       RenderWork[Index].ClipRect = ClipRect;
 
-#if 0
+#if 1
       PushWork(RenderQueue, DoRenderWork, &RenderWork[Index]);
 #else
       DoRenderWork(&RenderWork[Index]);

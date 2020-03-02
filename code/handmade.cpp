@@ -55,7 +55,7 @@ struct game_state
   //TODO STUDY(bjorn): transient_state
   work_queue* RenderQueue;
   game_bitmap GenTile;
-  game_bitmap GenGlyph;
+  game_bitmap GenFontMap;
 
   font* Font;
   //END STUDY
@@ -106,7 +106,7 @@ struct game_state
 
 internal_function void
 GenerateGlyph(work_queue* RenderQueue, memory_arena* TransientArena, font* Font, 
-              game_bitmap* Buffer)
+              game_bitmap* Buffer, u8 Character)
 {
   temporary_memory TempMem = BeginTemporaryMemory(TransientArena);
   render_group* RenderGroup = AllocateRenderGroup(TransientArena, Megabytes(4));
@@ -118,7 +118,7 @@ GenerateGlyph(work_queue* RenderQueue, memory_arena* TransientArena, font* Font,
       EntryIndex < Font->UnicodeCodePointCount;
       EntryIndex++)
   {
-    if('B' == Entries[EntryIndex].UnicodeCodePoint)
+    if(Character == Entries[EntryIndex].UnicodeCodePoint)
     {
       CharEntryIndex = EntryIndex;
       break;
@@ -127,8 +127,8 @@ GenerateGlyph(work_queue* RenderQueue, memory_arena* TransientArena, font* Font,
 
 	s32 Offset = Entries[CharEntryIndex].OffsetToGlyphData;
 	s32 CurveCount = Entries[CharEntryIndex].QuadraticCurveCount;
-	v2 GlyphDim = {Buffer->Width*0.25f, Buffer->Height*0.5f};
-	v2 GlyphOrigin = {-(Buffer->Width*0.125f), -(Buffer->Height*0.125f)};
+	v2 GlyphDim = {(f32)Buffer->Width, Buffer->Height*(3.0f/4.0f)};
+	v2 GlyphOrigin = {-(Buffer->Width*(2.0f/4.0f)), -(Buffer->Height*(1.0f/4.0f))};
 
 	quadratic_curve *Curves = (quadratic_curve *)((u8 *)Font + Offset);
 	for(s32 CurveIndex = 0;
@@ -202,9 +202,50 @@ GenerateGlyph(work_queue* RenderQueue, memory_arena* TransientArena, font* Font,
     }
   }
 
+  for(u32 Y = 1;
+      Y < (Buffer->Height-1);
+      Y++)
+  {
+    for(u32 X = 1;
+        X < (Buffer->Width);
+        X++)
+    {
+      u32* Mid = Buffer->Memory + Y * Buffer->Pitch + X;
+      *Mid = (*Mid == 0) ? ((Character%2)==0 ? 0x0200FF00 : 0x020000FF) : *Mid;
+    }
+  }
 
   EndTemporaryMemory(TempMem);
-  CheckMemoryArena(TransientArena);
+}
+
+internal_function void
+GenerateFontMap(work_queue* RenderQueue, memory_arena* TransientArena, font* Font, 
+              game_bitmap* Buffer)
+{
+  game_bitmap Glyph = EmptyBitmap(TransientArena, 512, 1024);
+  Glyph.Alignment = {256, 512};
+
+  for(s8 Character = 'a';
+      Character <= 'a' + 29;
+      Character++)
+  {
+    temporary_memory TempMem = BeginTemporaryMemory(TransientArena);
+    render_group* RenderGroup = AllocateRenderGroup(TransientArena, Megabytes(4));
+
+    ZeroMemory(Glyph.Memory, (Glyph.Width * Glyph.Pitch * GAME_BITMAP_BYTES_PER_PIXEL));
+    GenerateGlyph(RenderQueue, TransientArena, Font, &Glyph, Character);
+
+    PushQuad(RenderGroup, 
+             ConstructTransform(v2{Buffer->Width/20.0f + (Buffer->Width/10.0f) * ((Character-'a')%10), 
+                                Buffer->Width/10.0f + (Buffer->Width/5.0f) * ((Character-'a')/10)}, 
+                                v2{Buffer->Width/10.0f, Buffer->Width/5.0f}), 
+             &Glyph, {1,1,1,1});
+
+    SetCamera(RenderGroup, ConstructTransform(v2{-(Buffer->Width*0.5f), -(Buffer->Height*0.5f)}), positive_infinity32, 0.5f);
+    TiledRenderGroupToOutput(RenderQueue, RenderGroup, Buffer, (f32)Buffer->Height);
+
+    EndTemporaryMemory(TempMem);
+  }
 }
 
   internal_function void
@@ -751,10 +792,11 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
   GenerateTile(GameState, &GameState->GenTile);
   ClearEdgeXPix(&GameState->GenTile, 1);
 
-  GameState->GenGlyph = EmptyBitmap(TransientArena, 1024, 1024);
-  GameState->GenGlyph.Alignment = {512, 512};
-  GenerateGlyph(GameState->RenderQueue, &GameState->TransientArena, GameState->Font, 
-                &GameState->GenGlyph);
+  GameState->GenFontMap = EmptyBitmap(TransientArena, 1024, 1024);
+  GameState->GenFontMap.Alignment = {512, 512};
+  GenerateFontMap(GameState->RenderQueue, &GameState->TransientArena, GameState->Font, 
+                  &GameState->GenFontMap);
+  CheckMemoryArena(TransientArena);
 }
 
 #if HANDMADE_INTERNAL
@@ -819,11 +861,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                                            GAME_BITMAP_BYTES_PER_PIXEL));
     GenerateTile(GameState, &GameState->GenTile);
 
-    ZeroMemory(GameState->GenGlyph.Memory, (GameState->GenGlyph.Width*
-                                            GameState->GenGlyph.Pitch*
+    ZeroMemory(GameState->GenFontMap.Memory, (GameState->GenFontMap.Width*
+                                            GameState->GenFontMap.Pitch*
                                             GAME_BITMAP_BYTES_PER_PIXEL));
-    GenerateGlyph(GameState->RenderQueue, &GameState->TransientArena, GameState->Font, 
-                  &GameState->GenGlyph);
+    GenerateFontMap(GameState->RenderQueue, &GameState->TransientArena, GameState->Font, 
+                    &GameState->GenFontMap);
   }
 
   memory_arena* WorldArena = &GameState->WorldArena;
@@ -1720,7 +1762,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #if 0
   PushQuad(RenderGroup, Transform, &GameState->GenTile, Color);
 #else
-  PushQuad(RenderGroup, Transform, &GameState->GenGlyph, Color);
+  PushQuad(RenderGroup, Transform, &GameState->GenFontMap, Color);
 #endif
 #if 1
   TiledRenderGroupToOutput(GameState->RenderQueue, RenderGroup, Buffer, 

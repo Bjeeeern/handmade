@@ -202,6 +202,7 @@ GenerateGlyph(work_queue* RenderQueue, memory_arena* TransientArena, font* Font,
     }
   }
 
+#if 0
   for(u32 Y = 1;
       Y < (Buffer->Height-1);
       Y++)
@@ -214,6 +215,7 @@ GenerateGlyph(work_queue* RenderQueue, memory_arena* TransientArena, font* Font,
       *Mid = (*Mid == 0) ? ((Character%2)==0 ? 0x0200FF00 : 0x020000FF) : *Mid;
     }
   }
+#endif
 
   EndTemporaryMemory(TempMem);
 }
@@ -226,19 +228,20 @@ GenerateFontMap(work_queue* RenderQueue, memory_arena* TransientArena, font* Fon
   Glyph.Alignment = {256, 512};
 
   for(s8 Character = 'a';
-      Character <= 'a' + 29;
+      Character < 'a' + 30;
       Character++)
   {
     temporary_memory TempMem = BeginTemporaryMemory(TransientArena);
     render_group* RenderGroup = AllocateRenderGroup(TransientArena, Megabytes(4));
 
-    ZeroMemory(Glyph.Memory, (Glyph.Width * Glyph.Pitch * GAME_BITMAP_BYTES_PER_PIXEL));
+    ZeroMemory(Glyph.Memory, (Glyph.Height * Glyph.Pitch * GAME_BITMAP_BYTES_PER_PIXEL));
     GenerateGlyph(RenderQueue, TransientArena, Font, &Glyph, Character);
 
+    u32 CharPerRow = 16;
     PushQuad(RenderGroup, 
-             ConstructTransform(v2{Buffer->Width/20.0f + (Buffer->Width/10.0f) * ((Character-'a')%10), 
-                                Buffer->Width/10.0f + (Buffer->Width/5.0f) * ((Character-'a')/10)}, 
-                                v2{Buffer->Width/10.0f, Buffer->Width/5.0f}), 
+             ConstructTransform(v2{Buffer->Width/(f32)(2*CharPerRow) + (Buffer->Width/(f32)CharPerRow) * ((Character-'a')%CharPerRow), 
+                                Buffer->Width/(f32)CharPerRow + (Buffer->Width/(f32)(CharPerRow/2)) * ((Character-'a')/CharPerRow)}, 
+                                v2{Buffer->Width/(f32)CharPerRow, Buffer->Width/(f32)(CharPerRow/2)}), 
              &Glyph, {1,1,1,1});
 
     SetCamera(RenderGroup, ConstructTransform(v2{-(Buffer->Width*0.5f), -(Buffer->Height*0.5f)}), positive_infinity32, 0.5f);
@@ -856,12 +859,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     PushWork = Memory->PushWork;
     CompleteWork = Memory->CompleteWork;
 
-    ZeroMemory(GameState->GenTile.Memory, (GameState->GenTile.Width*
+    ZeroMemory(GameState->GenTile.Memory, (GameState->GenTile.Height*
                                            GameState->GenTile.Pitch*
                                            GAME_BITMAP_BYTES_PER_PIXEL));
     GenerateTile(GameState, &GameState->GenTile);
 
-    ZeroMemory(GameState->GenFontMap.Memory, (GameState->GenFontMap.Width*
+    ZeroMemory(GameState->GenFontMap.Memory, (GameState->GenFontMap.Height*
                                             GameState->GenFontMap.Pitch*
                                             GAME_BITMAP_BYTES_PER_PIXEL));
     GenerateFontMap(GameState->RenderQueue, &GameState->TransientArena, GameState->Font, 

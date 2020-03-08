@@ -1275,7 +1275,7 @@ Win32PushWork(work_queue* Queue, work_queue_callback* Callback, void* Data)
 }
 
   inline b32 
-Win32DoMultithreadedWork(work_queue* Queue)
+Win32DoMultithreadedWork(work_queue* Queue, s32 QueueThreadIndex)
 {
   b32 ShouldSleep = false;
 
@@ -1294,7 +1294,7 @@ Win32DoMultithreadedWork(work_queue* Queue)
     if(Test == OriginalNextEntryToRead)
     {
       work_queue_entry* Entry = Queue->Entries + OriginalNextEntryToRead;
-      Entry->Callback(Entry->Data);
+      Entry->Callback(Entry->Data, QueueThreadIndex);
 
       InterlockedIncrement((LONG volatile*)&Queue->CompletedWorkCount);
     }
@@ -1308,21 +1308,29 @@ Win32CompleteWork(work_queue* Queue)
 {
   while(Queue->CompletedWorkCount < Queue->WorkCount) 
   { 
-    Win32DoMultithreadedWork(Queue); 
+    Win32DoMultithreadedWork(Queue, QUEUE_EXTERNAL_THREAD_INDEX); 
   }
 
   Queue->WorkCount = 0;
   Queue->CompletedWorkCount = 0;
 }
 
+struct win32_initial_thread_data
+{
+  work_queue* Queue;
+  s32 QueueThreadIndex;
+};
+
 DWORD WINAPI
 ThreadProc(LPVOID lpParameter)
 {
-  work_queue* Queue = (work_queue*)lpParameter;
+  win32_initial_thread_data* InitData = (win32_initial_thread_data*)lpParameter;
 
+  work_queue* Queue = InitData->Queue;
+  s32 QueueThreadIndex = InitData->QueueThreadIndex;
   for(;;)
   {
-    if(Win32DoMultithreadedWork(Queue))
+    if(Win32DoMultithreadedWork(Queue, QueueThreadIndex))
     {
       WaitForSingleObjectEx(Queue->SemaphoreHandle, INFINITE, FALSE);
     }
@@ -1646,9 +1654,12 @@ WinMain(HINSTANCE Instance,
           ThreadIndex++)
       {
         DWORD ThreadID;
+        win32_initial_thread_data InitData;
+        InitData.Queue = &Handmade.Memory.HighPriorityQueue;
+        InitData.QueueThreadIndex = ThreadIndex;
         HANDLE ThreadHandle = CreateThread(0, 0, 
                                            ThreadProc, 
-                                           &Handmade.Memory.HighPriorityQueue, 
+                                           &InitData, 
                                            0, &ThreadID);
         CloseHandle(ThreadHandle);
       }
@@ -1667,9 +1678,12 @@ WinMain(HINSTANCE Instance,
           ThreadIndex++)
       {
         DWORD ThreadID;
+        win32_initial_thread_data InitData;
+        InitData.Queue = &Handmade.Memory.LowPriorityQueue;
+        InitData.QueueThreadIndex = ThreadIndex;
         HANDLE ThreadHandle = CreateThread(0, 0, 
                                            ThreadProc, 
-                                           &Handmade.Memory.LowPriorityQueue, 
+                                           &InitData, 
                                            0, &ThreadID);
         CloseHandle(ThreadHandle);
       }

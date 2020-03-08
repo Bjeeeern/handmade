@@ -318,7 +318,8 @@ GetMouseIndex(game_input* Input, game_mouse* Mouse)
 	return Result;
 }
 
-#define WORK_QUEUE_CALLBACK(name) void name(void* Data)
+#define QUEUE_EXTERNAL_THREAD_INDEX -1
+#define WORK_QUEUE_CALLBACK(name) void name(void* Data, s32 QueueThreadIndex)
 typedef WORK_QUEUE_CALLBACK(work_queue_callback);
 
 struct work_queue_entry

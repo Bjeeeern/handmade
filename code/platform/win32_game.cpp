@@ -1648,6 +1648,7 @@ WinMain(HINSTANCE Instance,
       Handmade.Memory.HighPriorityQueue.Entries = Handmade.Memory.HighPriorityQueueEntries;
       Handmade.Memory.HighPriorityQueue.MaxEntryCount = 
         ArrayCount(Handmade.Memory.HighPriorityQueueEntries);
+      Handmade.Memory.HighPriorityQueue.ThreadCount = NumberOfHighPriorityThreads;
 
       for(u32 ThreadIndex = 0;
           ThreadIndex < NumberOfHighPriorityThreads;
@@ -1672,6 +1673,7 @@ WinMain(HINSTANCE Instance,
       Handmade.Memory.LowPriorityQueue.Entries = Handmade.Memory.LowPriorityQueueEntries;
       Handmade.Memory.LowPriorityQueue.MaxEntryCount = 
         ArrayCount(Handmade.Memory.LowPriorityQueueEntries);
+      Handmade.Memory.LowPriorityQueue.ThreadCount = NumberOfLowPriorityThreads;
 
       for(u32 ThreadIndex = 0;
           ThreadIndex < NumberOfLowPriorityThreads;

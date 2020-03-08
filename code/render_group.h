@@ -1019,12 +1019,20 @@ internal_function render_group*
 AllocateRenderGroup(memory_arena* Arena, u32 MaxPushBufferSize)
 {
 	render_group* Result = PushStruct(Arena, render_group);
+  *Result = {};
 
 	Result->PushBufferBase = PushArray(Arena, MaxPushBufferSize, u8);
   Result->PushBufferSize = 0;
   Result->MaxPushBufferSize = MaxPushBufferSize;
 
 	return Result;
+}
+
+internal_function void
+ClearRenderGroup(render_group* RenderGroup)
+{
+  RenderGroup->ClearScreen = false;
+  RenderGroup->PushBufferSize = 0;
 }
 
 #define PushRenderElement(Group, type) (type*)PushRenderElement_(Group, sizeof(type), RenderGroupEntryType_##type)

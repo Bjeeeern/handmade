@@ -341,6 +341,7 @@ struct work_queue
 
   //TODO(bjorn): Is this useful across platforms?
   void* SemaphoreHandle;
+  s32 ThreadCount;
 };
 
 typedef void multi_thread_push_work(work_queue* Queue, work_queue_callback* Callback, void* Data);

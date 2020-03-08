@@ -119,6 +119,7 @@ DEBUGLoadBMP(debug_platform_free_file_memory* FreeFileMemory,
 	return Result;
 }
 
+//TODO(bjorn): Return a pointer to a game_bitmap.
 internal_function game_bitmap
 EmptyBitmap(memory_arena* Arena, u32 Width, u32 Height)
 {

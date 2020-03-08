@@ -104,12 +104,9 @@ struct game_state
 };
 
 internal_function void
-GenerateGlyph(work_queue* RenderQueue, memory_arena* TransientArena, font* Font, 
+GenerateGlyph(work_queue* RenderQueue, render_group* RenderGroup, font* Font,
               game_bitmap* Buffer, u8 Character)
 {
-  temporary_memory TempMem = BeginTemporaryMemory(TransientArena);
-  render_group* RenderGroup = AllocateRenderGroup(TransientArena, Megabytes(1));
-
   unicode_to_glyph_data *Entries = (unicode_to_glyph_data *)(Font + 1);
 
   s32 CharEntryIndex = 0;
@@ -215,69 +212,86 @@ GenerateGlyph(work_queue* RenderQueue, memory_arena* TransientArena, font* Font,
     }
   }
 #endif
-
-  EndTemporaryMemory(TempMem);
 }
 
-#if 0
+#if 1
 struct font_gen_work
 {
   work_queue* RenderQueue;
   game_bitmap* Buffer; 
-  memory_arena* TransientArena;
   s8 Character;
   font* Font;
+  render_group** RenderGroupArray;
+  game_bitmap* GlyphArray;
 };
 WORK_QUEUE_CALLBACK(DoFontGenWork)
 {
+  Assert(QueueThreadIndex != QUEUE_EXTERNAL_THREAD_INDEX);
+
   font_gen_work* FontGenWork = (font_gen_work*)Data;
 
-  work_queue* RenderQueue = FontGenWork->RenderQueue;
-  game_bitmap* Buffer = FontGenWork->Buffer;
-  memory_arena* TransientArena = FontGenWork->TransientArena;
-  s8 Character = FontGenWork->Character;
-  font* Font = FontGenWork->Font;
+  work_queue* RenderQueue   = FontGenWork->RenderQueue;
+  game_bitmap* Buffer       = FontGenWork->Buffer;
+  s8 Character              = FontGenWork->Character;
+  font* Font                = FontGenWork->Font;
+  render_group* RenderGroup = FontGenWork->RenderGroupArray[QueueThreadIndex];
+  game_bitmap* Glyph        = FontGenWork->GlyphArray + QueueThreadIndex;
 
-  temporary_memory TempMem = BeginTemporaryMemory(TransientArena);
-  render_group* RenderGroup = AllocateRenderGroup(TransientArena, Megabytes(1));
-
-  game_bitmap Glyph = EmptyBitmap(TransientArena, 512, 1024);
-  Glyph.Alignment = {256, 512};
-  ZeroMemory(Glyph.Memory, (Glyph.Height * Glyph.Pitch * GAME_BITMAP_BYTES_PER_PIXEL));
-  GenerateGlyph(RenderQueue, TransientArena, Font, &Glyph, Character);
+  GenerateGlyph(RenderQueue, RenderGroup, Font, Glyph, Character);
+  ClearRenderGroup(RenderGroup);
 
   u32 CharPerRow = 16;
   m44 GlyphPos = 
     ConstructTransform(v2{Buffer->Width/(f32)(2*CharPerRow) + (Buffer->Width/(f32)CharPerRow) 
-                       * ((Character-'a')%CharPerRow), 
+                       * ((Character)%CharPerRow), 
                        Buffer->Width/(f32)CharPerRow + (Buffer->Width/(f32)(CharPerRow/2)) 
-                       * ((Character-'a')/CharPerRow)}, 
+                       * ((Character)/CharPerRow)}, 
                        v2{Buffer->Width/(f32)CharPerRow, Buffer->Width/(f32)(CharPerRow/2)});
 
-  PushQuad(RenderGroup, GlyphPos, &Glyph, {1,1,1,1});
+  PushQuad(RenderGroup, GlyphPos, Glyph, {1,1,1,1});
 
   SetCamera(RenderGroup, ConstructTransform(v2{-(Buffer->Width*0.5f), -(Buffer->Height*0.5f)}), 
             positive_infinity32, 0.5f);
   TiledRenderGroupToOutput(RenderQueue, RenderGroup, Buffer, (f32)Buffer->Height);
-
-  EndTemporaryMemory(TempMem);
+  ClearRenderGroup(RenderGroup);
 }
 
   internal_function void
 GenerateFontMap(work_queue* RenderQueue, memory_arena* TransientArena, font* Font, 
                 game_bitmap* Buffer)
 {
+  //TODO(bjorn): When do we erase this?
+  //temporary_memory TempMem = BeginTemporaryMemory(TransientArena);
+  render_group** RenderGroupArray = 
+    PushArray(TransientArena, RenderQueue->ThreadCount, render_group*);
+  game_bitmap* GlyphArray = 
+    PushArray(TransientArena, RenderQueue->ThreadCount, game_bitmap);
+
+  for(s32 ThreadIndex = 0;
+      ThreadIndex < RenderQueue->ThreadCount;
+      ThreadIndex++)
+  {
+    GlyphArray[ThreadIndex] = EmptyBitmap(TransientArena, 512, 1024);
+    GlyphArray[ThreadIndex].Alignment = {256, 512};
+
+    RenderGroupArray[ThreadIndex] = AllocateRenderGroup(TransientArena, Megabytes(1));
+  }
+  //TODO(bjorn): When do we erase this?
+  //EndTemporaryMemory(TempMem);
+
   font_gen_work FontGenWork[127];
   s32 Index = 0;
   for(s8 Character = 0;
       Character < 127;
       Character++)
   {
-    FontGenWork[Index].RenderQueue = RenderQueue;
-    FontGenWork[Index].Buffer = Buffer;
-    FontGenWork[Index].TransientArena = TransientArena;
-    FontGenWork[Index].Character = Character;
-    FontGenWork[Index].Font = Font;
+    FontGenWork[Index].RenderQueue      = RenderQueue;
+    FontGenWork[Index].Buffer           = Buffer;
+    FontGenWork[Index].Character        = Character;
+    FontGenWork[Index].Font             = Font;
+    FontGenWork[Index].RenderGroupArray = RenderGroupArray;
+    FontGenWork[Index].GlyphArray       = GlyphArray;
+
     PushWork(RenderQueue, DoFontGenWork, FontGenWork + Index);
     Index += 1;
   }

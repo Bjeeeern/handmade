@@ -362,6 +362,8 @@ struct game_memory
   //TODO(bjorn): Put this in transient or permanent.
   work_queue_entry HighPriorityQueueEntries[256];
   work_queue HighPriorityQueue;
+  work_queue_entry LowPriorityQueueEntries[256];
+  work_queue LowPriorityQueue;
   //TODO(bjorn): work_queue* LowPriorityQueue;
 
 #if HANDMADE_INTERNAL

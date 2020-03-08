@@ -1628,24 +1628,48 @@ WinMain(HINSTANCE Instance,
         VirtualFree(Buffer, 0, MEM_RELEASE);
       }
 
+      u32 NumberOfLowPriorityThreads = 1;
+      u32 NumberOfHighPriorityThreads = ThreadCount-NumberOfLowPriorityThreads;
+
       u32 InitialCount = 0;
-      HANDLE SemaphoreHandle = CreateSemaphoreEx(0,
-                                                 InitialCount,
-                                                 ThreadCount,
-                                                 0, 0, SEMAPHORE_ALL_ACCESS);
-      Handmade.Memory.HighPriorityQueue.SemaphoreHandle = SemaphoreHandle;
+      HANDLE SemaphoreHandleHigh = CreateSemaphoreEx(0,
+                                                     InitialCount,
+                                                     NumberOfHighPriorityThreads,
+                                                     0, 0, SEMAPHORE_ALL_ACCESS);
+      Handmade.Memory.HighPriorityQueue.SemaphoreHandle = SemaphoreHandleHigh;
       Handmade.Memory.HighPriorityQueue.Entries = Handmade.Memory.HighPriorityQueueEntries;
       Handmade.Memory.HighPriorityQueue.MaxEntryCount = 
         ArrayCount(Handmade.Memory.HighPriorityQueueEntries);
 
       for(u32 ThreadIndex = 0;
-          ThreadIndex < ThreadCount;
+          ThreadIndex < NumberOfHighPriorityThreads;
           ThreadIndex++)
       {
         DWORD ThreadID;
         HANDLE ThreadHandle = CreateThread(0, 0, 
                                            ThreadProc, 
                                            &Handmade.Memory.HighPriorityQueue, 
+                                           0, &ThreadID);
+        CloseHandle(ThreadHandle);
+      }
+
+      HANDLE SemaphoreHandleLow = CreateSemaphoreEx(0,
+                                                    InitialCount,
+                                                    NumberOfLowPriorityThreads,
+                                                    0, 0, SEMAPHORE_ALL_ACCESS);
+      Handmade.Memory.LowPriorityQueue.SemaphoreHandle = SemaphoreHandleLow;
+      Handmade.Memory.LowPriorityQueue.Entries = Handmade.Memory.LowPriorityQueueEntries;
+      Handmade.Memory.LowPriorityQueue.MaxEntryCount = 
+        ArrayCount(Handmade.Memory.LowPriorityQueueEntries);
+
+      for(u32 ThreadIndex = 0;
+          ThreadIndex < NumberOfLowPriorityThreads;
+          ThreadIndex++)
+      {
+        DWORD ThreadID;
+        HANDLE ThreadHandle = CreateThread(0, 0, 
+                                           ThreadProc, 
+                                           &Handmade.Memory.LowPriorityQueue, 
                                            0, &ThreadID);
         CloseHandle(ThreadHandle);
       }

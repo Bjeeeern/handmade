@@ -319,8 +319,9 @@ GetMouseIndex(game_input* Input, game_mouse* Mouse)
 }
 
 #define QUEUE_EXTERNAL_THREAD_INDEX -1
-#define WORK_QUEUE_CALLBACK(name) void name(void* Data, s32 QueueThreadIndex)
-typedef WORK_QUEUE_CALLBACK(work_queue_callback);
+#define WORK_QUEUE_CALLBACK(name) void name(void* Data, \
+                                            s32 QueueThreadIndex=QUEUE_EXTERNAL_THREAD_INDEX)
+typedef void work_queue_callback(void*, s32);
 
 struct work_queue_entry
 {
@@ -341,6 +342,7 @@ struct work_queue
 
   //TODO(bjorn): Is this useful across platforms?
   void* SemaphoreHandle;
+  u32* ThreadIndexToThreadID;
   s32 ThreadCount;
 };
 
@@ -363,10 +365,12 @@ struct game_memory
 
   //TODO(bjorn): Put this in transient or permanent.
   work_queue_entry HighPriorityQueueEntries[256];
+  work_queue_entry LowPriorityQueueEntries[512];
+  u32 HighPriorityThreadIDArray[64];
+  u32 LowPriorityThreadIDArray[64];
+
   work_queue HighPriorityQueue;
-  work_queue_entry LowPriorityQueueEntries[256];
   work_queue LowPriorityQueue;
-  //TODO(bjorn): work_queue* LowPriorityQueue;
 
 #if HANDMADE_INTERNAL
 	debug_platform_read_entire_file *DEBUGPlatformReadEntireFile;

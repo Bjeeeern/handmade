@@ -1816,7 +1816,7 @@ WORK_QUEUE_CALLBACK(DoRenderWork)
 TiledRenderGroupToOutput(work_queue* RenderQueue, render_group* RenderGroup,
                          game_bitmap* OutputTarget, f32 ScreenHeightInMeters)
 {
-#if 1
+#if 0
   s32 const TileCountY = 2;
   s32 const TileCountX = 2;
 
@@ -1868,7 +1868,7 @@ TiledRenderGroupToOutput(work_queue* RenderQueue, render_group* RenderGroup,
   CompleteWork(RenderQueue);
 #else
   // rectangle2s ClipRect = RectMinMax(v2s{200,200}, v2s{400,400});
-  rectangle2s ClipRect = RectMinMax(v2s{4,4}, OutputTarget->Dim - v2s{4,4});
+  rectangle2s ClipRect = RectMinMax(v2s{0,0}, (v2s)OutputTarget->Dim);
 
   RenderGroupToOutput(RenderGroup, OutputTarget, ScreenHeightInMeters, ClipRect);
 #endif

@@ -254,6 +254,7 @@ WORK_QUEUE_CALLBACK(DoFontGenWork)
             positive_infinity32, 0.5f);
   TiledRenderGroupToOutput(RenderQueue, RenderGroup, Buffer, (f32)Buffer->Height);
   ClearRenderGroup(RenderGroup);
+  ZeroMemory(Glyph->Memory, (Glyph->Height* Glyph->Pitch* GAME_BITMAP_BYTES_PER_PIXEL));
 }
 
   internal_function void
@@ -279,7 +280,7 @@ GenerateFontMap(work_queue* RenderQueue, memory_arena* TransientArena, font* Fon
   //TODO(bjorn): When do we erase this?
   //EndTemporaryMemory(TempMem);
 
-  font_gen_work FontGenWork[127];
+  font_gen_work* FontGenWork = PushArray(TransientArena, 127, font_gen_work);
   s32 Index = 0;
   for(s8 Character = 0;
       Character < 127;

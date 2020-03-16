@@ -109,7 +109,7 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 																	entity* Entity_A, entity* Entity_B,
 																	body_primitive* A, body_primitive* B
 #if HANDMADE_INTERNAL
-																	,render_group* RenderGroup
+																	, render_group* RenderGroup, b32 DEBUG_VisualiseCollisionBox
 #endif
 																	)
 {
@@ -231,6 +231,7 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 			}
 
 #if HANDMADE_INTERNAL
+      if(DEBUG_VisualiseCollisionBox)
 			{
 				v3 APSize = 0.08f*v3{1,1,1};
 				m44 T = ConstructTransform(Vertex, QuaternionIdentity(), APSize);
@@ -281,8 +282,11 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 			B_EdgeEnds[1] += Entity_B->P;
 
 #if HANDMADE_INTERNAL
-			PushVector(RenderGroup, M44Identity(), A_EdgeEnds[0], A_EdgeEnds[1], {1,1,0});
-			PushVector(RenderGroup, M44Identity(), B_EdgeEnds[0], B_EdgeEnds[1], {1,1,0});
+      if(DEBUG_VisualiseCollisionBox)
+      {
+        PushVector(RenderGroup, M44Identity(), A_EdgeEnds[0], A_EdgeEnds[1], {1,1,0});
+        PushVector(RenderGroup, M44Identity(), B_EdgeEnds[0], B_EdgeEnds[1], {1,1,0});
+      }
 #endif
 
 			v3 ContactPoint;
@@ -326,6 +330,7 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 			}
 
 #if HANDMADE_INTERNAL
+      if(DEBUG_VisualiseCollisionBox)
 			{
 				v3 APSize = 0.08f*v3{1,1,1};
 				m44 T = ConstructTransform(ContactPoint, QuaternionIdentity(), APSize);
@@ -389,7 +394,7 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 	internal_function contact_result
 GenerateContacts(entity* A, entity* B
 #if HANDMADE_INTERNAL
-								 ,render_group* RenderGroup
+								 ,render_group* RenderGroup, b32 DEBUG_VisualiseCollisionBox
 #endif
 								)
 {
@@ -434,7 +439,7 @@ GenerateContacts(entity* A, entity* B
 				GenerateContactsFromPrimitivePair(&Result, A, B, 
 																					Prim_A, Prim_B
 #if HANDMADE_INTERNAL
-																					,RenderGroup
+																					,RenderGroup, DEBUG_VisualiseCollisionBox
 #endif
 																					);
 			}

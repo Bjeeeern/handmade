@@ -104,7 +104,7 @@ struct game_state
 };
 
 internal_function void
-GenerateGlyph(work_queue* RenderQueue, render_group* RenderGroup, font* Font,
+GenerateGlyph(render_group* RenderGroup, font* Font,
               game_bitmap* Buffer, u8 Character)
 {
   unicode_to_glyph_data *Entries = (unicode_to_glyph_data *)(Font + 1);
@@ -174,7 +174,7 @@ GenerateGlyph(work_queue* RenderQueue, render_group* RenderGroup, font* Font,
 #endif
 
   SetCamera(RenderGroup, M44Identity(), positive_infinity32, 0.5f);
-  TiledRenderGroupToOutput(RenderQueue, RenderGroup, Buffer, (f32)Buffer->Height);
+  RenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
 
   for(u32 Y = 1;
       Y < (Buffer->Height-1);
@@ -214,10 +214,22 @@ GenerateGlyph(work_queue* RenderQueue, render_group* RenderGroup, font* Font,
 #endif
 }
 
-#if 1
+internal_function rectangle2 
+CharacterToFontMapLocation(u8 Character)
+{
+  rectangle2 Result;
+
+  Assert(Character <= 126); 
+
+  u32 CharPerRow = 16;
+  v2 Dim = {1.0f/(f32)CharPerRow, 1.0f/(CharPerRow * 0.5f) };
+  v2 BottomLeft = {Dim.X * (Character%CharPerRow), Dim.Y * (Character/CharPerRow)};
+
+  return RectMinDim(BottomLeft, Dim);
+}
+
 struct font_gen_work
 {
-  work_queue* RenderQueue;
   game_bitmap* Buffer; 
   s8 Character;
   font* Font;
@@ -230,46 +242,41 @@ WORK_QUEUE_CALLBACK(DoFontGenWork)
 
   font_gen_work* FontGenWork = (font_gen_work*)Data;
 
-  work_queue* RenderQueue   = FontGenWork->RenderQueue;
   game_bitmap* Buffer       = FontGenWork->Buffer;
   s8 Character              = FontGenWork->Character;
   font* Font                = FontGenWork->Font;
   render_group* RenderGroup = FontGenWork->RenderGroupArray[QueueThreadIndex];
   game_bitmap* Glyph        = FontGenWork->GlyphArray + QueueThreadIndex;
 
-  GenerateGlyph(RenderQueue, RenderGroup, Font, Glyph, Character);
+  GenerateGlyph(RenderGroup, Font, Glyph, Character);
   ClearRenderGroup(RenderGroup);
 
-  u32 CharPerRow = 16;
-  m44 GlyphPos = 
-    ConstructTransform(v2{Buffer->Width/(f32)(2*CharPerRow) + (Buffer->Width/(f32)CharPerRow) 
-                       * ((Character)%CharPerRow), 
-                       Buffer->Width/(f32)CharPerRow + (Buffer->Width/(f32)(CharPerRow/2)) 
-                       * ((Character)/CharPerRow)}, 
-                       v2{Buffer->Width/(f32)CharPerRow, Buffer->Width/(f32)(CharPerRow/2)});
+  rectangle2 TargetLoc = CharacterToFontMapLocation(Character);
+  m44 GlyphPos = ConstructTransform(GetRectCenter(TargetLoc) * Buffer->Width, 
+                                    GetRectDim(TargetLoc) * Buffer->Width);
 
-  PushQuad(RenderGroup, GlyphPos, Glyph, {1,1,1,1});
+  PushQuad(RenderGroup, GlyphPos, Glyph);
 
   SetCamera(RenderGroup, ConstructTransform(v2{-(Buffer->Width*0.5f), -(Buffer->Height*0.5f)}), 
             positive_infinity32, 0.5f);
-  TiledRenderGroupToOutput(RenderQueue, RenderGroup, Buffer, (f32)Buffer->Height);
+  RenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
   ClearRenderGroup(RenderGroup);
   ZeroMemory(Glyph->Memory, (Glyph->Height* Glyph->Pitch* GAME_BITMAP_BYTES_PER_PIXEL));
 }
 
   internal_function void
-GenerateFontMap(work_queue* RenderQueue, memory_arena* TransientArena, font* Font, 
+GenerateFontMap(work_queue* WorkQueue, memory_arena* TransientArena, font* Font, 
                 game_bitmap* Buffer)
 {
   //TODO(bjorn): When do we erase this?
   //temporary_memory TempMem = BeginTemporaryMemory(TransientArena);
   render_group** RenderGroupArray = 
-    PushArray(TransientArena, RenderQueue->ThreadCount, render_group*);
+    PushArray(TransientArena, WorkQueue->ThreadCount, render_group*);
   game_bitmap* GlyphArray = 
-    PushArray(TransientArena, RenderQueue->ThreadCount, game_bitmap);
+    PushArray(TransientArena, WorkQueue->ThreadCount, game_bitmap);
 
   for(s32 ThreadIndex = 0;
-      ThreadIndex < RenderQueue->ThreadCount;
+      ThreadIndex < WorkQueue->ThreadCount;
       ThreadIndex++)
   {
     GlyphArray[ThreadIndex] = EmptyBitmap(TransientArena, 512, 1024);
@@ -286,52 +293,16 @@ GenerateFontMap(work_queue* RenderQueue, memory_arena* TransientArena, font* Fon
       Character < 127;
       Character++)
   {
-    FontGenWork[Index].RenderQueue      = RenderQueue;
     FontGenWork[Index].Buffer           = Buffer;
     FontGenWork[Index].Character        = Character;
     FontGenWork[Index].Font             = Font;
     FontGenWork[Index].RenderGroupArray = RenderGroupArray;
     FontGenWork[Index].GlyphArray       = GlyphArray;
 
-    PushWork(RenderQueue, DoFontGenWork, FontGenWork + Index);
+    PushWork(WorkQueue, DoFontGenWork, FontGenWork + Index);
     Index += 1;
   }
 }
-#else
-  internal_function void
-GenerateFontMap(work_queue* RenderQueue, memory_arena* TransientArena, font* Font, 
-                game_bitmap* Buffer)
-{
-  for(s8 Character = 0;
-      Character < 127;
-      Character++)
-  {
-    temporary_memory TempMem = BeginTemporaryMemory(TransientArena);
-    render_group* RenderGroup = AllocateRenderGroup(TransientArena, Megabytes(1));
-
-    game_bitmap Glyph = EmptyBitmap(TransientArena, 512, 1024);
-    Glyph.Alignment = {256, 512};
-    ZeroMemory(Glyph.Memory, (Glyph.Height * Glyph.Pitch * GAME_BITMAP_BYTES_PER_PIXEL));
-    GenerateGlyph(RenderQueue, TransientArena, Font, &Glyph, Character);
-
-    u32 CharPerRow = 16;
-    m44 GlyphPos = 
-      ConstructTransform(v2{Buffer->Width/(f32)(2*CharPerRow) + (Buffer->Width/(f32)CharPerRow) 
-                         * ((Character)%CharPerRow), 
-                         Buffer->Width/(f32)CharPerRow + (Buffer->Width/(f32)(CharPerRow/2)) 
-                         * ((Character)/CharPerRow)}, 
-                         v2{Buffer->Width/(f32)CharPerRow, Buffer->Width/(f32)(CharPerRow/2)});
-
-    PushQuad(RenderGroup, GlyphPos, &Glyph, {1,1,1,1});
-
-    SetCamera(RenderGroup, ConstructTransform(v2{-(Buffer->Width*0.5f), -(Buffer->Height*0.5f)}), 
-              positive_infinity32, 0.5f);
-    TiledRenderGroupToOutput(RenderQueue, RenderGroup, Buffer, (f32)Buffer->Height);
-
-    EndTemporaryMemory(TempMem);
-  }
-}
-#endif
 
   internal_function void
 GenerateTile(game_state* GameState, work_queue* RenderQueue, game_bitmap* Buffer)
@@ -340,8 +311,6 @@ GenerateTile(game_state* GameState, work_queue* RenderQueue, game_bitmap* Buffer
   render_group* RenderGroup = AllocateRenderGroup(&GameState->TransientArena, Megabytes(4));
 
   random_series Series = Seed(0);
-
-  v4 Color = {1.0f,1.0f,1.0f,1.0f};
 
 #if 1
   u32 Count = 200;
@@ -363,7 +332,7 @@ GenerateTile(game_state* GameState, work_queue* RenderQueue, game_bitmap* Buffer
               } break;
     }
 
-    PushQuad(RenderGroup, ConstructTransform(Offset, Bitmap->Dim), Bitmap, Color);
+    PushQuad(RenderGroup, ConstructTransform(Offset, Bitmap->Dim), Bitmap);
   }
 
   for(u32 Index = 0; Index < Count/2; Index++)
@@ -380,7 +349,7 @@ GenerateTile(game_state* GameState, work_queue* RenderQueue, game_bitmap* Buffer
       Bitmap = GameState->Tuft + RandomChoice(&Series, 3);
     }
 
-    PushQuad(RenderGroup, ConstructTransform(Offset, Bitmap->Dim), Bitmap, Color);
+    PushQuad(RenderGroup, ConstructTransform(Offset, Bitmap->Dim), Bitmap);
   }
 
   SetCamera(RenderGroup, M44Identity(), positive_infinity32, 0.5f);
@@ -600,7 +569,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 	v3s RoomOrigin = (v3s)RoundV2ToV2S((v2)v2u{RoomWidthInTiles, RoomHeightInTiles} / 2.0f);
 	world_map_position RoomOriginWorldPos = GetChunkPosFromAbsTile(WorldMap, RoomOrigin);
 #if HANDMADE_INTERNAL
-	GameState->DEBUG_VisualiseCollisionBox = true;
+	GameState->DEBUG_VisualiseCollisionBox = false;
 	for(s32 Index = 0;
 			Index < 10;
 			Index++)
@@ -861,6 +830,14 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 		E->Rotates = false;
 		entity* F = AddParticle(SimRegion, v3{0,-2.1f,0}, 0.0f, v3{4.0f,0.2f,2.0f});
 		F->Rotates = false;
+
+    const char* TestString = "Hej hej hej pa dig fru Honoka!";
+    for(u32 Index = 0;
+        Index < 30;
+        Index++)
+    {
+      AddGlyph(SimRegion, v3{-7.5f + 0.5f*Index, -4.0f, 0.0f}, TestString[Index]);
+    }
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}
@@ -1281,7 +1258,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 						{
 							Contacts = GenerateContacts(Entity, OtherEntity
 #if HANDMADE_INTERNAL
-																					,RenderGroup
+																					,RenderGroup, GameState->DEBUG_VisualiseCollisionBox
 #endif
 																					);
 						}
@@ -1656,6 +1633,18 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #endif
         }
 
+				if(Entity->VisualType == EntityVisualType_Glyph)
+				{
+          m44 QuadTran = ConstructTransform({0,0,0}, 
+                                            Entity->Body.Primitives[1].S);
+          u8 Character = (u8)Entity->Character;
+          if(Character < 32 || Character > 126)
+          {
+            Character = '?';
+          }
+          rectangle2 SubRect = CharacterToFontMapLocation(Character);
+          PushQuad(RenderGroup, T*QuadTran, &GameState->GenFontMap, SubRect);
+				}
 				if(Entity->VisualType == EntityVisualType_Wall)
 				{
           m44 QuadTran = ConstructTransform({0,0,0}, 
@@ -1663,13 +1652,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                                             Entity->Body.Primitives[1].S);
           PushQuad(RenderGroup, T*QuadTran, &GameState->RockWall);
 				}
-
 				if(Entity->VisualType == EntityVisualType_Player)
 				{
 					hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
 
 					f32 ZAlpha = Clamp01(1.0f - (Entity->P.Z / 2.0f));
-					PushQuad(RenderGroup, T, &GameState->Shadow, {1, 1, 1, ZAlpha});
+					PushQuad(RenderGroup, T, &GameState->Shadow, RectMinDim({0,0},{1,1}), {1, 1, 1, ZAlpha});
 					PushQuad(RenderGroup, T, &Hero->Torso);
 					PushQuad(RenderGroup, T, &Hero->Cape);
 					PushQuad(RenderGroup, T, &Hero->Head);
@@ -1679,7 +1667,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
 
 					f32 ZAlpha = Clamp01(1.0f - (Entity->P.Z / 2.0f));
-					PushQuad(RenderGroup, T, &GameState->Shadow, {1, 1, 1, ZAlpha});
+					PushQuad(RenderGroup, T, &GameState->Shadow, RectMinDim({0,0},{1,1}), {1, 1, 1, ZAlpha});
 					PushQuad(RenderGroup, T, &Hero->Torso);
 				}
 				if(Entity->VisualType == EntityVisualType_Familiar)
@@ -1687,7 +1675,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
 
 					f32 ZAlpha = Clamp01(1.0f - ((Entity->P.Z + 1.4f) / 2.0f));
-					PushQuad(RenderGroup, T, &GameState->Shadow, {1, 1, 1, ZAlpha});
+					PushQuad(RenderGroup, T, &GameState->Shadow, RectMinDim({0,0},{1,1}), {1, 1, 1, ZAlpha});
 					PushQuad(RenderGroup, T, &Hero->Head);
 				}
 				if(Entity->VisualType == EntityVisualType_Sword)
@@ -1843,11 +1831,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// NOTE(bjorn): Rendering
 	//
   m44 Transform = ConstructTransform({}, QuaternionIdentity(), {6,6,1});
-  v4 Color = {1,1,1,1};
 #if 0
-  PushQuad(RenderGroup, Transform, &GameState->GenTile, Color);
+  PushQuad(RenderGroup, Transform, &GameState->GenTile);
 #else
-  PushQuad(RenderGroup, Transform, &GameState->GenFontMap, Color);
+  PushQuad(RenderGroup, Transform, &GameState->GenFontMap);
 #endif
 #if 1
   TiledRenderGroupToOutput(&Memory->HighPriorityQueue, RenderGroup, Buffer, 

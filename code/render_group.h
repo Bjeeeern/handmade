@@ -977,6 +977,7 @@ struct render_entry_quad
 	game_bitmap* Bitmap;
 	v4 Color;
 	m44 Tran;
+  rectangle2 BitmapUVRect;
 };
 struct render_entry_triangle_fill_flip
 {
@@ -1072,12 +1073,14 @@ PushBlankQuad(render_group* RenderGroup, m44 T, v4 Color)
 }
 
 internal_function void
-PushQuad(render_group* RenderGroup, m44 T, game_bitmap* Bitmap, v4 Color = {1,1,1,1})
+PushQuad(render_group* RenderGroup, m44 T, game_bitmap* Bitmap, 
+         rectangle2 BitmapUVRect = RectMinDim({0,0},{1,1}), v4 Color = {1,1,1,1})
 {
 	render_entry_quad* Entry = PushRenderElement(RenderGroup, render_entry_quad);
 	Entry->Tran = T;
 	Entry->Bitmap = Bitmap;
 	Entry->Color = Color;
+	Entry->BitmapUVRect = BitmapUVRect;
 }
 
 internal_function void
@@ -1626,11 +1629,12 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
 
           //TODO(bjorn): Why cant this be the same as the exact lens chamber size?
 
+          rect_corner_v2_result UVCorners = GetRectCorners(Entry->BitmapUVRect);
           {
             uv_triangle_clip_result ClipResult = 
               ClipUVTriangleByZPlane(RenderGroup->CamParam.NearClipPoint, 
                                      Quad.Verts[0], Quad.Verts[1], Quad.Verts[2], 
-                                     {0,0}, {0,1}, {1,1});
+                                     UVCorners.BL, UVCorners.TL, UVCorners.TR);
             if(ClipResult.TriCount > 0)
             {
               DrawTriangle(OutputTarget, 
@@ -1667,7 +1671,7 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
             uv_triangle_clip_result ClipResult = 
               ClipUVTriangleByZPlane(RenderGroup->CamParam.NearClipPoint, 
                                      Quad.Verts[0], Quad.Verts[2], Quad.Verts[3], 
-                                     {0,0}, {1,1}, {1,0});
+                                     UVCorners.BL, UVCorners.TR, UVCorners.BR);
             if(ClipResult.TriCount > 0)
             {
               DrawTriangle(OutputTarget, 
@@ -1797,6 +1801,13 @@ RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 Sc
   END_TIMED_BLOCK(RenderGroupToOutput);
 }
 
+  internal_function void
+RenderGroupToOutput(render_group* RenderGroup, game_bitmap* OutputTarget, f32 ScreenHeightInMeters)
+{
+  rectangle2s ClipRect = RectMinMax(v2s{0,0}, (v2s)OutputTarget->Dim);
+  RenderGroupToOutput(RenderGroup, OutputTarget, ScreenHeightInMeters, ClipRect);
+}
+
 struct render_work
 {
   render_group* RenderGroup; 
@@ -1816,7 +1827,6 @@ WORK_QUEUE_CALLBACK(DoRenderWork)
 TiledRenderGroupToOutput(work_queue* RenderQueue, render_group* RenderGroup,
                          game_bitmap* OutputTarget, f32 ScreenHeightInMeters)
 {
-#if 0
   s32 const TileCountY = 2;
   s32 const TileCountX = 2;
 
@@ -1856,22 +1866,13 @@ TiledRenderGroupToOutput(work_queue* RenderQueue, render_group* RenderGroup,
       RenderWork[Index].ScreenHeightInMeters = ScreenHeightInMeters;
       RenderWork[Index].ClipRect = ClipRect;
 
-#if 1
       PushWork(RenderQueue, DoRenderWork, &RenderWork[Index]);
-#else
       DoRenderWork(&RenderWork[Index]);
-#endif
 
       Index++;
     }
   }
   CompleteWork(RenderQueue);
-#else
-  // rectangle2s ClipRect = RectMinMax(v2s{200,200}, v2s{400,400});
-  rectangle2s ClipRect = RectMinMax(v2s{0,0}, (v2s)OutputTarget->Dim);
-
-  RenderGroupToOutput(RenderGroup, OutputTarget, ScreenHeightInMeters, ClipRect);
-#endif
 }
 
 

@@ -467,6 +467,12 @@ operator*(v2 lhs, s32 rhs)
   return lhs;
 }
 inline v2
+operator*(v2 lhs, u32 rhs)
+{
+  lhs *= (f32)rhs;
+  return lhs;
+}
+inline v2
 operator*(v2s lhs, f32 rhs)
 {
   return {lhs.X * rhs, lhs.Y * rhs};
@@ -1952,6 +1958,14 @@ GetRectDim(rectangle2 Rect)
   return Result;
 };
 
+inline v2
+GetRectCenter(rectangle2 Rect)
+{
+	v2 Result = {};
+	Result = (Rect.Max + Rect.Min) * 0.5f;
+  return Result;
+};
+
 struct rect_corner_v2_result
 {
   union
@@ -1960,6 +1974,10 @@ struct rect_corner_v2_result
     struct
     {
       v2 A,B,C,D;
+    };
+    struct
+    {
+      v2 BL,TL,TR,BR;
     };
   };
 };
@@ -2202,6 +2220,19 @@ ConstructTransform(v3 P, q O, v3 S)
 									0,  S.Y,   0,
 									0,    0, S.Z};
 	m33 M = RotMat * ScaleMat;
+
+	return {M.A, M.B, M.C, P.X,
+					M.D, M.E, M.F, P.Y,
+					M.G, M.H, M.I, P.Z,
+					  0,   0,   0,   1};
+}
+inline m44
+ConstructTransform(v3 P, v3 S)
+{
+	m33 ScaleMat = {S.X,  0,   0,
+									0,  S.Y,   0,
+									0,    0, S.Z};
+	m33 M = ScaleMat;
 
 	return {M.A, M.B, M.C, P.X,
 					M.D, M.E, M.F, P.Y,

@@ -45,6 +45,7 @@ enum entity_visual_type
 	EntityVisualType_Monstar,
 	EntityVisualType_Familiar,
 	EntityVisualType_Sword,
+	EntityVisualType_Glyph,
 };
 
 #define HIT_POINT_SUB_COUNT 4
@@ -244,6 +245,9 @@ struct entity
 	//NOTE(bjorn): Force field
 	f32 ForceFieldRadiusSquared;
 	f32 ForceFieldStrenght;
+
+  //NOTE(bjorn): Glyph
+  u32 Character;
 };
 
 #if HANDMADE_INTERNAL
@@ -828,6 +832,19 @@ AddWall(sim_region* SimRegion, v3 InitP, f32 Mass = 1000.0f)
 
 	Entity->MoveSpec.Gravity = v3{0, 0,-1} * 20.0f;
 	SetStandardFrictionForGroundObjects(&Entity->MoveSpec);
+
+	return Entity;
+}
+
+	internal_function entity*
+AddGlyph(sim_region* SimRegion, v3 InitP, u8 Character, f32 InitS = 1.0f, f32 Mass = 5.0f)
+{
+	entity* Entity = AddEntity(SimRegion, EntityVisualType_Glyph, InitP);
+
+	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, {0.5f,1.0f,0.01f});
+	CalibratePhysicalBody(Entity, Mass, 0.5f, 0.5f, InitS);
+
+  Entity->Character = (u32)Character;
 
 	return Entity;
 }

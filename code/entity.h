@@ -208,10 +208,11 @@ struct entity
 					entity_reference struct_terminator0_;
 				};
 			};
-			//TODO STUDY(bjorn): Does a parent-child entity grouping have in anyway
+			//TODO STUDY(bjorn): Does a parent-child entity grouping have to, in anyway
 			//be a dependency on the attachment system? Maybe I could keep them
 			//somewhat separable.
 			entity_reference Parent;
+			entity_reference Child;
 
 			//TODO(bjorn): I use these to identify the camera and the player rigth
 			//now. Maybe the player is just undefined and the real "player" could in
@@ -248,6 +249,7 @@ struct entity
 
   //NOTE(bjorn): Glyph
   u32 Character;
+  f32 Hover;
 };
 
 #if HANDMADE_INTERNAL
@@ -656,12 +658,11 @@ AddCamera(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_NotRendered, InitP);
 
-	Entity->MoveSpec.Speed = 80.f * 2.0f;
-	Entity->MoveSpec.Damping = 0.98f;
+	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{0.1f, 0.1f, 0.1f});
+	CalibratePhysicalBody(Entity, 1.0f, 0.0f, 0.0f);
 
-	Entity->StickToPrey = true;
-	Entity->HunterSearchRadius = positive_infinity32;
-	Entity->MinimumHuntRangeSquared = Square(0.2f);
+	Entity->MoveSpec.Speed = 80.f;
+	Entity->MoveSpec.Damping = 0.98f;
 
 	Entity->IsCamera = true;
 	Entity->CamZoom = -20.0f;

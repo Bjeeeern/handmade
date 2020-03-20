@@ -588,262 +588,41 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 																		 RoomOriginWorldPos, GameState->CameraUpdateBounds, 0);
 
 		entity* MainCamera = AddCamera(SimRegion, v3{0, 0, 0});
-		//TODO Is there a less cheesy (and safer!) way to do this assignment of the
-		//camera storage index?
-		GameState->MainCameraStorageIndex = 1;
 		MainCamera->Keyboard = GetKeyboard(Input, 1);
 		MainCamera->Mouse = GetMouse(Input, 1);
 
-		entity* Player = AddPlayer(SimRegion, v3{-2, 1, 0} * WorldMap->TileSideInMeters);
-		Player->Keyboard = GetKeyboard(Input, 1);
 
-		MainCamera->Prey = Player;
-		MainCamera->Player = Player;
-		MainCamera->FreeMover = AddInvisibleControllable(SimRegion);
-		MainCamera->FreeMover->Keyboard = GetKeyboard(Input, 1);
-
-		entity* Familiar = AddFamiliar(SimRegion, v3{4, 5, 0} * WorldMap->TileSideInMeters);
-		Familiar->Prey = Player;
-
-		AddFloor(SimRegion, v3{0, 0, -0.5f} * WorldMap->TileSideInMeters);
-
-		AddMonstar(SimRegion, v3{ 2, 5, 0} * WorldMap->TileSideInMeters);
-
-		entity* A = AddWall(SimRegion, v3{2, 4, 0} * WorldMap->TileSideInMeters, 10.0f);
-		entity* B = AddWall(SimRegion, v3{5, 4, 0} * WorldMap->TileSideInMeters,  5.0f);
-
-		A->dP = {1, 0, 0};
-		B->dP = {-1, 0, 0};
-		//TODO(bjorn): Have an object stuck to the mouse.
-		//GameState->DEBUG_EntityBoundToMouse = AIndex;
-
-		entity* E[6];
-		for(u32 i=0;
-				i < 6;
-				i++)
-		{
-			E[i] = AddWall(SimRegion, v3{2.0f + 2.0f*i, 2.0f, 0.0f} * WorldMap->TileSideInMeters, 
-										 10.0f + i);
-			E[i]->dP = {2.0f-i, -2.0f+i};
-		}
-
-		u32 ScreenX = 0;
-		u32 ScreenY = 0;
-		u32 ScreenZ = 0;
-		for(u32 TileY = 0;
-				TileY < RoomHeightInTiles;
-				++TileY)
-		{
-			for(u32 TileX = 0;
-					TileX < RoomWidthInTiles;
-					++TileX)
-			{
-				v3u AbsTile = {
-										ScreenX * RoomWidthInTiles + TileX, 
-										ScreenY * RoomHeightInTiles + TileY, 
-										ScreenZ};
-
-				u32 TileValue = 1;
-				if((TileX == 0))
-				{
-					TileValue = 2;
-				}
-				if((TileX == (RoomWidthInTiles-1)))
-				{
-					TileValue = 2;
-				}
-				if((TileY == 0))
-				{
-					TileValue = 2;
-				}
-				if((TileY == (RoomHeightInTiles-1)))
-				{
-					TileValue = 2;
-				}
-
-				if((TileY != RoomHeightInTiles && TileX != RoomWidthInTiles/2) && TileValue ==  2)
-				{
-					entity* Wall = AddWall(SimRegion, (v3)AbsTile * WorldMap->TileSideInMeters);
-				}
-			}
-		}
-
-		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
-	}
-
-#if HANDMADE_INTERNAL
-	{ //NOTE(bjorn): Test location 1 setup
-		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, 
-																		 &GameState->FrameBoundedTransientArena, WorldMap, 
-																		 GameState->DEBUG_TestLocations[1], 
-																		 GameState->CameraUpdateBounds, 0);
-
-		AddFloor(SimRegion, v3{0, 0, -0.5f} * WorldMap->TileSideInMeters);
-		entity* ForceField = AddForceField(SimRegion, v3{0, 0, 6});
-		ForceField->Keyboard = GetKeyboard(Input, 1);
-		for(s32 ParticleIndex = 0;
-				ParticleIndex < 9;
-				ParticleIndex++)
-		{
-			f32 x = (f32)((ParticleIndex % 3) - 3/2);
-			f32 y = (f32)((ParticleIndex / 3) - 3/2);
-
-			AddParticle(SimRegion, v3{x, y, 0.0f} * 2.0f * WorldMap->TileSideInMeters, 
-									1.0f + ParticleIndex * 20.0f);
-		}
-
-		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
-	}
-
-	{ //NOTE(bjorn): Test location 2 setup
-		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, 
-																		 &GameState->FrameBoundedTransientArena, WorldMap, 
-																		 GameState->DEBUG_TestLocations[2], 
-																		 GameState->CameraUpdateBounds, 0);
-
-		AddFloor(SimRegion, v3{0, 0, -0.5f} * WorldMap->TileSideInMeters);
-		entity* Fixture = AddFixture(SimRegion, v3{0, 0, 24});
-
-		f32 SpringConstant = 20.0f;
-
-		entity* PrevParticle = 0;
-		for(s32 ParticleIndex = 0;
-				ParticleIndex < 9;
-				ParticleIndex++)
-		{
-			f32 x = (f32)((ParticleIndex % 3) - 3/2);
-			f32 y = (f32)((ParticleIndex / 3) - 3/2);
-
-			v3 Pos = v3{x, y, 0.0f} * 2.0f * WorldMap->TileSideInMeters;
-			entity* Particle = AddParticle(SimRegion, Pos, 10.0f);
-
-			if(ParticleIndex < 7)
-			{
-				AddOneWaySpringAttachment(Particle, Fixture, SpringConstant, 2.0f);
-			}
-			else
-			{ 
-				AddTwoWaySpringAttachment(Particle, PrevParticle, SpringConstant*1.5f, 0.1f);
-			}
-
-			PrevParticle = Particle;
-		}
-
-		entity* A = AddMonstar(SimRegion, v3{6, 0, 0} * WorldMap->TileSideInMeters);
-		entity* B = AddMonstar(SimRegion, v3{6, -4, 0} * WorldMap->TileSideInMeters);
-		entity* C = AddMonstar(SimRegion, v3{6, -7, 0} * WorldMap->TileSideInMeters);
-		entity* D = AddMonstar(SimRegion, v3{3, -7, 0} * WorldMap->TileSideInMeters);
-		A->Keyboard = GetKeyboard(Input, 1);
-		A->MoveSpec.MoveOnInput = true;
-
-		AddTwoWayBungeeAttachment(A, B, SpringConstant*5.0f, 5.0f);
-		AddTwoWayRodAttachment(A, C, 3.0f);
-		AddTwoWayCableAttachment(D, C, 0.5f, 5.0f);
-
-		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
-	}
-
-	{ //NOTE(bjorn): Test location 3 setup
-		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, 
-																		 &GameState->FrameBoundedTransientArena, WorldMap, 
-																		 GameState->DEBUG_TestLocations[3], 
-																		 GameState->CameraUpdateBounds, 0);
-
-		AddFloor(SimRegion, v3{0, 0, -0.5f} * WorldMap->TileSideInMeters);
-		entity* Fixture = AddFixture(SimRegion, v3{0, 0, 20});
-
-		f32 SpringConstant = 20.0f;
-
-		entity* A = AddParticle(SimRegion, v3{ 0,0,10}, 20.0f, 2.0f*v3{1,1,1});
-		//TODO(bjorn): Test spinning particle A
-		AddOneWaySpringAttachment(A, Fixture, SpringConstant * 4.0f, 2.0f, 
-															-v3{0.5f,0.5f,0.5f}, {0,0,0});
-
-		entity* B = AddParticle(SimRegion, v3{ 1, 1, 1}, 5.0f);
-		entity* C = AddParticle(SimRegion, v3{-1, 1, 1}, 5.0f);
-		entity* D = AddParticle(SimRegion, v3{-1,-1, 1}, 5.0f);
-		entity* E = AddParticle(SimRegion, v3{ 1,-1, 1}, 5.0f);
-
-		AddTwoWaySpringAttachment(A, B, SpringConstant, 2.0f, 
-															A->Body.Primitives[1].Tran * v3{-0.5f,0.5f,0.5f}, 
-															A->Body.Primitives[1].Tran * v3{0,0,0});
-		AddTwoWaySpringAttachment(A, C, SpringConstant, 2.0f, 
-															A->Body.Primitives[1].Tran * v3{0.5f,-0.5f,0.5f}, 
-															A->Body.Primitives[1].Tran * v3{0,0,0});
-		AddTwoWaySpringAttachment(A, D, SpringConstant, 2.0f, 
-															A->Body.Primitives[1].Tran * v3{0.5f,0.5f,-0.5f}, 
-															A->Body.Primitives[1].Tran * v3{0,0,0});
-		AddTwoWaySpringAttachment(A, E, SpringConstant, 2.0f, 
-															A->Body.Primitives[1].Tran * v3{0.5f,0.5f,0.5f}, 
-															A->Body.Primitives[1].Tran * v3{0,0,0});
-
-		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
-	}
-
-	{ //NOTE(bjorn): Test location 4 setup
-		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, 
-																		 &GameState->FrameBoundedTransientArena, WorldMap, 
-																		 GameState->DEBUG_TestLocations[4], 
-																		 GameState->CameraUpdateBounds, 0);
-
-		AddFloor(SimRegion, v3{0, 0, -0.5f});
-		entity* Fixture = AddFixture(SimRegion, v3{4, 5, 0});
-
-		entity* A = AddParticle(SimRegion, v3{0,0,0}, 20.0f, v3{1,10,1});
-		AddOneWaySpringAttachment(A, Fixture, 10.0f, 2.0f, 
-															A->Body.Primitives[1].Tran * v3{0.0f,0.5f,0.0f}, 
-															A->Body.Primitives[1].Tran * v3{0,0,0});
-
-		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
-	}
-
-	{ //NOTE(bjorn): Test location 5 setup
-		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, 
-																		 &GameState->FrameBoundedTransientArena, WorldMap, 
-																		 GameState->DEBUG_TestLocations[5], 
-																		 GameState->CameraUpdateBounds, 0);
-
-		AddFloor(SimRegion, v3{0, 0, -2.0f});
-
-		entity* A = AddParticle(SimRegion, v3{ 0, 0, 6}, 20.0f, v3{1.0f, 1.0f, 1.0f});
-		A->O = 
-      AngleAxisToQuaternion(tau32*0.125f, {0,1,0}) * AngleAxisToQuaternion(tau32*0.125f, {1,0,0});
-		A->dO = {0,pi32,0};
-
-		AddParticle(SimRegion, v3{ 0, 0, 8}, 20.0f, v3{1.0f, 1.0f, 1.0f});
-		AddParticle(SimRegion, v3{ 0, 0, 10}, 20.0f, v3{1.0f, 1.0f, 1.0f});
-		AddParticle(SimRegion, v3{ 0, 0, 12}, 20.0f, v3{1.0f, 1.0f, 1.0f});
-		AddSphereParticle(SimRegion, v3{ 0, 0, 14}, 20.0f, 0.5f);
-
-		entity* B = AddParticle(SimRegion, v3{-1.2f,0,3.0f}, 0.0f, v3{3.0f,6.0f,0.2f});
-		B->Rotates = false;
-		B->O = AngleAxisToQuaternion(tau32*0.125f, {0,1,0});
-		entity* C = AddParticle(SimRegion, v3{1.2f,0,6.0f}, 0.0f, v3{3.0f,6.0f,0.2f});
-		C->Rotates = false;
-		C->O = AngleAxisToQuaternion(tau32*0.125f, {0,-1,0});
-
-		entity* Q = AddParticle(SimRegion, v3{-2.0f,0,0}, 0.0f, v3{0.2f,4.0f,2.0f});
-		Q->Rotates = false;
-		//entity* D = AddParticle(SimRegion, v3{ 2.0f,0,0}, 0.0f, v3{0.2f,4.0f,2.0f});
-		//D->Rotates = false;
-		entity* E = AddParticle(SimRegion, v3{0, 2.1f,0}, 0.0f, v3{4.0f,0.2f,2.0f});
-		E->Rotates = false;
-		entity* F = AddParticle(SimRegion, v3{0,-2.1f,0}, 0.0f, v3{4.0f,0.2f,2.0f});
-		F->Rotates = false;
-
+    entity* LastGlyph = 0;
     const char* TestString = "Hej hej hej pa dig fru Honoka!";
     for(u32 Index = 0;
         Index < 30;
         Index++)
     {
-      AddGlyph(SimRegion, v3{-7.5f + 0.5f*Index, -4.0f, 0.0f}, TestString[Index]);
+      LastGlyph = AddGlyph(SimRegion, v3{-7.5f + 0.5f*Index, -4.0f, 0.0f}, TestString[Index]);
     }
+
+		MainCamera->FreeMover = AddInvisibleControllable(SimRegion);
+		MainCamera->FreeMover->Keyboard = GetKeyboard(Input, 1);
+
+    LastGlyph->Parent = MainCamera;
+    MainCamera->Child = LastGlyph;
+		AddOneWaySpringAttachment(MainCamera, LastGlyph, 10.0f, 0.0f);
 
 		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
 	}
-#endif
 
 	EndTemporaryMemory(TempMem);
+
+  //TODO Is there a way to do this assignment of the camera storage index?
+  for(u32 StorageIndex = 1;
+      StorageIndex < GameState->Entities.EntityCount;
+      StorageIndex++)
+  {
+    if(GameState->Entities.Entities[StorageIndex].Sim.IsCamera)
+    {
+      GameState->MainCameraStorageIndex = StorageIndex;
+    }
+  }
 
 #if 0
   GameState->GenTile = EmptyBitmap(TransientArena, 3, 3);
@@ -908,9 +687,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		InitializeGame(Memory, GameState, Input);
 
 		Memory->IsInitialized = true;
-#if HANDMADE_INTERNAL
-		DEBUG_SwitchToLocation = 5;
-#endif
 	}
 
   if(Input->ExecutableReloaded)
@@ -1123,33 +899,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	// NOTE(bjorn): Moving and Rendering
 	//
-  {
-#if 0
-    local_persist f32 t = 0.0f;
-    m44 Transform = ConstructTransform({1.0f*Sin(t*pi32*0.0f), 0.0f}, 
-                                       AngleAxisToQuaternion(pi32*Modulate(t*pi32*0.0f, 
-                                                                           0.0f, tau32), 
-                                                             {0,0,1}), 
-                                       {6,6,1});
-    v4 Color = {Sin(10.0f*t*pi32)*0.5f+0.5f,
-                 Sin(10.0f*t*pi32 + 0.3f*pi32)*0.5f+0.5f,
-                 Sin(10.0f*t*pi32 + 0.7f*pi32)*0.5f+0.5f,
-                 1.0f};
-    t += 0.01f;
-#else
-    m44 Transform = ConstructTransform({}, QuaternionIdentity(), {6,6,1});
-    v4 Color = {1,1,1,1};
-#endif
 
-#if 0
-    PushQuad(RenderGroup, Transform, &GameState->GenTile, Color);
-#endif
-  }
-
-	//
 	// NOTE(bjorn): Create sim region by camera
-	//
-
 	sim_region* SimRegion = 0;
 	{
 		stored_entity* StoredMainCamera = 
@@ -1405,6 +1156,20 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #endif
 				}
 
+        if(Entity->Character &&
+           Entity->Parent != MainCamera && 
+           MainCamera->Keyboard->UnicodeCodePointsWritten[0] == Entity->Character)
+        {
+          //TODO NEXT
+          //RemoveOneWayAttachment(MainCamera, MainCamera->Child);
+
+          MainCamera->Child->Parent = 0;
+          MainCamera->Child = Entity;
+          MainCamera->Child->Parent = MainCamera;
+
+          AddOneWaySpringAttachment(MainCamera, Entity, 10.0f, 0.0f);
+        }
+
 				v3 OldP = Entity->P;
 
 				if(Step == 1 && //TODO(bjorn): This is easy to forget. Conceptualize?
@@ -1635,6 +1400,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				if(Entity->VisualType == EntityVisualType_Glyph)
 				{
+          v4 Color = Entity->Parent == MainCamera ? v4{1.0f,0.5f,0.5f,1.0f} : v4{1,1,1,1};
           m44 QuadTran = ConstructTransform({0,0,0}, 
                                             Entity->Body.Primitives[1].S);
           u8 Character = (u8)Entity->Character;
@@ -1643,7 +1409,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             Character = '?';
           }
           rectangle2 SubRect = CharacterToFontMapLocation(Character);
-          PushQuad(RenderGroup, T*QuadTran, &GameState->GenFontMap, SubRect);
+          PushQuad(RenderGroup, T*QuadTran, &GameState->GenFontMap, SubRect, Color);
 				}
 				if(Entity->VisualType == EntityVisualType_Wall)
 				{
@@ -1830,12 +1596,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	//
 	// NOTE(bjorn): Rendering
 	//
-  m44 Transform = ConstructTransform({}, QuaternionIdentity(), {6,6,1});
-#if 0
-  PushQuad(RenderGroup, Transform, &GameState->GenTile);
-#else
-  PushQuad(RenderGroup, Transform, &GameState->GenFontMap);
-#endif
 #if 1
   TiledRenderGroupToOutput(&Memory->HighPriorityQueue, RenderGroup, Buffer, 
                            MainCamera->CamScreenHeight);

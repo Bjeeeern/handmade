@@ -30,11 +30,26 @@ struct attachment_info
 #define ATTACHMENT_H_FIRST_PASS
 #else
 
-//TODO(bjorn): If no attachments just do nothing but also put in asserts.
 internal_function void
-RemoveOneWayAttachment(entity* Subject, entity* EndPoint);
+MoveAllOneWayAttachments(entity* Subject, entity* OldEndPoint, entity* NewEndPoint)
+{
+  for(u32 AttachmentIndex = 0;
+      AttachmentIndex < ArrayCount(Subject->Attachments);
+      AttachmentIndex++)
+  {
+    if(Subject->Attachments[AttachmentIndex] == OldEndPoint)
+    {
+      Subject->Attachments[AttachmentIndex] = NewEndPoint;
+    }
+  }
+}
+
+//TODO(bjorn)
 internal_function void
-RemoveTwoWayAttachment(entity* A, entity* B);
+RemoveAllOneWayAttachments(entity* Subject, entity* EndPoint);
+//TODO(bjorn)
+internal_function void
+RemoveAllTwoWayAttachments(entity* A, entity* B);
 
 	internal_function attachment_info*
 AddAttachmentRaw(entity* Subject, entity* EndPoint, 

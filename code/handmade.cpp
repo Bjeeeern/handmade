@@ -768,6 +768,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				//Memory->IsInitialized = false;
 			}
 
+#if 0
 			if(Clicked(Keyboard, P))
 			{
 				if(GameState->SimulationSpeedModifier)
@@ -795,6 +796,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #endif
 				}
 			}
+#endif
 #if HANDMADE_INTERNAL
 			if(Clicked(Keyboard, M))
 			{
@@ -820,6 +822,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				}
 			}
 
+#if 0
 			for(s32 NumKeyIndex = 0;
 					NumKeyIndex < ArrayCount(Keyboard->Numbers);
 					NumKeyIndex++)
@@ -874,6 +877,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 					EndSim(Input, Entities, WorldArena, SimRegion);
 				}
 			}
+#endif
 #endif
 		}
 	}
@@ -1160,14 +1164,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
            Entity->Parent != MainCamera && 
            MainCamera->Keyboard->UnicodeCodePointsWritten[0] == Entity->Character)
         {
-          //TODO NEXT
-          //RemoveOneWayAttachment(MainCamera, MainCamera->Child);
+          MoveAllOneWayAttachments(MainCamera, MainCamera->Child, Entity);
 
           MainCamera->Child->Parent = 0;
           MainCamera->Child = Entity;
-          MainCamera->Child->Parent = MainCamera;
-
-          AddOneWaySpringAttachment(MainCamera, Entity, 10.0f, 0.0f);
+          Entity->Parent = MainCamera;
         }
 
 				v3 OldP = Entity->P;

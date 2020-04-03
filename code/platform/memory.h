@@ -34,6 +34,13 @@ PushSize_(memory_arena* Arena, memi Size)
 	return Result;
 }
 
+internal_function void
+SubArena(memory_arena* New, memory_arena* Base, memi Size)
+{
+  void* BasePointer = PushSize(Base, Size);
+	InitializeArena(New, Size, (u8*)BasePointer);
+}
+
 #define ZeroArray(Array) ZeroMemory_((u8*)(Array), sizeof(Array))
 #define ZeroMemory(Pointer, Size) ZeroMemory_((u8*)(Pointer), (Size))
 void
@@ -83,6 +90,45 @@ internal_function void
 CheckMemoryArena(memory_arena* Arena)
 {
 	Assert(Arena->TempMemCount == 0);
+}
+
+struct task_with_memory
+{
+  b32 _BeingUsed;
+  temporary_memory _TempMem;
+  memory_arena Arena;
+};
+
+internal_function task_with_memory*
+BeginTaskWithMemory(task_with_memory* Tasks, u32 TaskCount)
+{
+  task_with_memory* Result = 0;
+
+  for(u32 TaskIndex = 0;
+      TaskIndex < TaskCount;
+      TaskCount++)
+  {
+    task_with_memory* Task = Tasks + TaskIndex;
+
+    if(!Task->_BeingUsed)
+    {
+      //TODO IMPORTANT(bjorn): Not threadsafe. If called linearly work cannot be stacked though.
+      Task->_BeingUsed = true;
+      Task->_TempMem = BeginTemporaryMemory(&Task->Arena);
+
+      Result = Task;
+      break;
+    }
+  }
+
+  return Result;
+}
+
+internal_function void
+EndTaskWithMemory(task_with_memory* Task)
+{
+  EndTemporaryMemory(Task->_TempMem);
+  Task->_BeingUsed = false;
 }
 
 #define MEMORY_H

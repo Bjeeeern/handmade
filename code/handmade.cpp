@@ -53,6 +53,10 @@ struct hero_bitmaps
 struct game_state
 {
   //TODO STUDY(bjorn): transient_state
+	memory_arena TransientArena;
+	memory_arena FrameBoundedTransientArena;
+  task_with_memory Tasks[4];
+
   game_bitmap GenTile;
   game_bitmap GenFontMap;
 
@@ -61,9 +65,6 @@ struct game_state
 
 	memory_arena WorldArena;
 	world_map* WorldMap;
-
-	memory_arena FrameBoundedTransientArena;
-	memory_arena TransientArena;
 
 	//TODO(bjorn): Should we allow split-screen?
 	u64 MainCameraStorageIndex;
@@ -233,8 +234,8 @@ struct font_gen_work
   game_bitmap* Buffer; 
   s8 Character;
   font* Font;
-  render_group** RenderGroupArray;
-  game_bitmap* GlyphArray;
+  task_with_memory* Tasks;
+  u32 TaskCount;
 };
 WORK_QUEUE_CALLBACK(DoFontGenWork)
 {
@@ -245,48 +246,38 @@ WORK_QUEUE_CALLBACK(DoFontGenWork)
   game_bitmap* Buffer       = FontGenWork->Buffer;
   s8 Character              = FontGenWork->Character;
   font* Font                = FontGenWork->Font;
-  render_group* RenderGroup = FontGenWork->RenderGroupArray[QueueThreadIndex];
-  game_bitmap* Glyph        = FontGenWork->GlyphArray + QueueThreadIndex;
 
-  GenerateGlyph(RenderGroup, Font, Glyph, Character);
-  ClearRenderGroup(RenderGroup);
+  task_with_memory* Task = BeginTaskWithMemory(FontGenWork->Tasks, FontGenWork->TaskCount);
+  if(Task)
+  {
+    memory_arena* Arena = &Task->Arena;
 
-  rectangle2 TargetLoc = CharacterToFontMapLocation(Character);
-  m44 GlyphPos = ConstructTransform(GetRectCenter(TargetLoc) * Buffer->Width, 
-                                    GetRectDim(TargetLoc) * Buffer->Width);
+    game_bitmap Glyph = EmptyBitmap(Arena, 512, 1024);
+    Glyph.Alignment = {256, 512};
 
-  PushQuad(RenderGroup, GlyphPos, Glyph);
+    render_group* RenderGroup = AllocateRenderGroup(Arena, Megabytes(1));
 
-  SetCamera(RenderGroup, ConstructTransform(v2{-(Buffer->Width*0.5f), -(Buffer->Height*0.5f)}), 
-            positive_infinity32, 0.5f);
-  RenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
-  ClearRenderGroup(RenderGroup);
-  ZeroMemory(Glyph->Memory, (Glyph->Height* Glyph->Pitch* GAME_BITMAP_BYTES_PER_PIXEL));
+    GenerateGlyph(RenderGroup, Font, &Glyph, Character);
+    ClearRenderGroup(RenderGroup);
+
+    rectangle2 TargetLoc = CharacterToFontMapLocation(Character);
+    m44 GlyphPos = ConstructTransform(GetRectCenter(TargetLoc) * Buffer->Width, 
+                                      GetRectDim(TargetLoc) * Buffer->Width);
+
+    PushQuad(RenderGroup, GlyphPos, &Glyph);
+
+    SetCamera(RenderGroup, ConstructTransform(v2{-(Buffer->Width*0.5f), -(Buffer->Height*0.5f)}), 
+              positive_infinity32, 0.5f);
+    RenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
+
+    EndTaskWithMemory(Task);
+  }
 }
 
   internal_function void
 GenerateFontMap(work_queue* WorkQueue, memory_arena* TransientArena, font* Font, 
-                game_bitmap* Buffer)
+                game_bitmap* Buffer, task_with_memory* Tasks, u32 TaskCount)
 {
-  //TODO(bjorn): When do we erase this?
-  //temporary_memory TempMem = BeginTemporaryMemory(TransientArena);
-  render_group** RenderGroupArray = 
-    PushArray(TransientArena, WorkQueue->ThreadCount, render_group*);
-  game_bitmap* GlyphArray = 
-    PushArray(TransientArena, WorkQueue->ThreadCount, game_bitmap);
-
-  for(s32 ThreadIndex = 0;
-      ThreadIndex < WorkQueue->ThreadCount;
-      ThreadIndex++)
-  {
-    GlyphArray[ThreadIndex] = EmptyBitmap(TransientArena, 512, 1024);
-    GlyphArray[ThreadIndex].Alignment = {256, 512};
-
-    RenderGroupArray[ThreadIndex] = AllocateRenderGroup(TransientArena, Megabytes(1));
-  }
-  //TODO(bjorn): When do we erase this?
-  //EndTemporaryMemory(TempMem);
-
   font_gen_work* FontGenWork = PushArray(TransientArena, 127, font_gen_work);
   s32 Index = 0;
   for(s8 Character = 0;
@@ -296,8 +287,8 @@ GenerateFontMap(work_queue* WorkQueue, memory_arena* TransientArena, font* Font,
     FontGenWork[Index].Buffer           = Buffer;
     FontGenWork[Index].Character        = Character;
     FontGenWork[Index].Font             = Font;
-    FontGenWork[Index].RenderGroupArray = RenderGroupArray;
-    FontGenWork[Index].GlyphArray       = GlyphArray;
+    FontGenWork[Index].Tasks            = Tasks;
+    FontGenWork[Index].TaskCount        = TaskCount;
 
     PushWork(WorkQueue, DoFontGenWork, FontGenWork + Index);
     Index += 1;
@@ -366,10 +357,19 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 {
 	InitializeArena(&GameState->WorldArena, Memory->PermanentStorageSize - sizeof(game_state),
 									(u8*)Memory->PermanentStorage + sizeof(game_state));
-	InitializeArena(&GameState->FrameBoundedTransientArena, Memory->TransientStorageSize>>1, 
-									(u8*)Memory->TransientStorage);
-	InitializeArena(&GameState->TransientArena, Memory->TransientStorageSize>>1, 
-									(u8*)Memory->TransientStorage + (Memory->TransientStorageSize>>1));
+	InitializeArena(&GameState->TransientArena, Memory->TransientStorageSize, 
+                  (u8*)Memory->TransientStorage);
+  SubArena(&GameState->FrameBoundedTransientArena, &GameState->TransientArena, 
+           Memory->TransientStorageSize/8);
+  for(u32 TaskIndex = 0;
+      TaskIndex < ArrayCount(GameState->Tasks);
+      TaskIndex++)
+  {
+    task_with_memory* Task = GameState->Tasks + TaskIndex;
+
+    Task->_BeingUsed = false;
+    SubArena(&Task->Arena, &GameState->TransientArena, Megabytes(8));
+  }
 
 	GameState->SimulationSpeedModifier = 1;
 
@@ -636,8 +636,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
   GameState->GenFontMap = EmptyBitmap(TransientArena, 1024, 1024);
   GameState->GenFontMap.Alignment = {512, 512};
   GenerateFontMap(&Memory->LowPriorityQueue, &GameState->TransientArena, GameState->Font, 
-                  &GameState->GenFontMap);
-  //CheckMemoryArena(TransientArena);
+                  &GameState->GenFontMap, GameState->Tasks, ArrayCount(GameState->Tasks));
 }
 
 #if HANDMADE_INTERNAL
@@ -703,7 +702,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                                             GameState->GenFontMap.Pitch*
                                             GAME_BITMAP_BYTES_PER_PIXEL));
     GenerateFontMap(&Memory->LowPriorityQueue, &GameState->TransientArena,
-                    GameState->Font, &GameState->GenFontMap);
+                    GameState->Font, &GameState->GenFontMap, GameState->Tasks,
+                    ArrayCount(GameState->Tasks));
   }
 
   memory_arena* WorldArena = &GameState->WorldArena;

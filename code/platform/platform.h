@@ -318,15 +318,20 @@ GetMouseIndex(game_input* Input, game_mouse* Mouse)
 	return Result;
 }
 
-#define QUEUE_EXTERNAL_THREAD_INDEX -1
-#define WORK_QUEUE_CALLBACK(name) void name(void* Data, \
-                                            s32 QueueThreadIndex=QUEUE_EXTERNAL_THREAD_INDEX)
-typedef void work_queue_callback(void*, s32);
+#define WORK_QUEUE_CALLBACK(name) void name(void* Data, u8* Memory = 0, memi Size = 0)
+typedef void work_queue_callback(void* Data, u8* Memory, memi Size);
 
 struct work_queue_entry
 {
   work_queue_callback* Callback;
   void* Data;
+};
+
+struct thread_id_memory_mapping
+{
+  u32 Id;
+  u8* Memory;
+  memi Size;
 };
 
 struct work_queue
@@ -342,7 +347,8 @@ struct work_queue
 
   //TODO(bjorn): Is this useful across platforms?
   void* SemaphoreHandle;
-  u32* ThreadIndexToThreadID;
+
+  thread_id_memory_mapping* IdToMemory;
   s32 ThreadCount;
 };
 
@@ -355,10 +361,10 @@ struct game_memory
 	b32 IsInitialized;
 
 	memi PermanentStorageSize;
-	void* PermanentStorage; 
+	u8* PermanentStorage; 
 
 	memi TransientStorageSize;
-	void* TransientStorage; 
+	u8* TransientStorage; 
 
   multi_thread_push_work* PushWork;
   multi_thread_complete_work* CompleteWork;
@@ -366,8 +372,7 @@ struct game_memory
   //TODO(bjorn): Put this in transient or permanent.
   work_queue_entry HighPriorityQueueEntries[256];
   work_queue_entry LowPriorityQueueEntries[512];
-  u32 HighPriorityThreadIDArray[64];
-  u32 LowPriorityThreadIDArray[64];
+  thread_id_memory_mapping IdToMemoryMappingEntries[64];
 
   work_queue HighPriorityQueue;
   work_queue LowPriorityQueue;

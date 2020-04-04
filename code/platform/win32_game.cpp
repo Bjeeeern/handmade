@@ -1274,19 +1274,28 @@ Win32PushWork(work_queue* Queue, work_queue_callback* Callback, void* Data)
   ReleaseSemaphore(Queue->SemaphoreHandle, 1, 0);
 }
 
-internal_function s32
-Win32GetCurrentQueueThreadIndex(work_queue* Queue)
+struct memory_and_size
 {
-  s32 Result = QUEUE_EXTERNAL_THREAD_INDEX;
+  u8* Memory;
+  memi Size;
+};
+internal_function memory_and_size
+Win32GetCurrentThreadMemoryAndSize(work_queue* Queue)
+{
+  memory_and_size Result = {};
+
   for(s32 Index = 0;
       Index < Queue->ThreadCount;
       Index++)
   {
-    if(Queue->ThreadIndexToThreadID[Index] == GetCurrentThreadId())
+    thread_id_memory_mapping* Mapping = Queue->IdToMemory + Index;
+    if(Mapping->Id == GetCurrentThreadId())
     {
-      Result = Index;
+      Result.Memory = Mapping->Memory;
+      Result.Size = Mapping->Size;
     }
   }
+
   return Result;
 }
 
@@ -1310,7 +1319,8 @@ Win32DoMultithreadedWork(work_queue* Queue)
     if(Test == OriginalNextEntryToRead)
     {
       work_queue_entry* Entry = Queue->Entries + OriginalNextEntryToRead;
-      Entry->Callback(Entry->Data, Win32GetCurrentQueueThreadIndex(Queue));
+      memory_and_size Usable = Win32GetCurrentThreadMemoryAndSize(Queue);
+      Entry->Callback(Entry->Data, Usable.Memory, Usable.Size);
 
       InterlockedIncrement((LONG volatile*)&Queue->CompletedWorkCount);
     }
@@ -1547,6 +1557,53 @@ WinMain(HINSTANCE Instance,
 		s16 *SoundSamplesBuffer = (s16 *)VirtualAlloc(0, SoundOutput.SecondaryBufferSize, 
 																									MEM_RESERVE|MEM_COMMIT,
 																									PAGE_READWRITE);
+
+    // TODO(bjorn): As for this fix for in-game game switching, since the memrecords are
+    //              shared, the size implicitly has to be shared between the games. I
+    //              might want to fix this in the future.
+    u64 CommonPermanentStorageSize = Megabytes(256);
+    // TODO(bjorn): TransientStorage needs to be broken up into game transient
+    // and cache transient. Only game transient needs to be stored for state
+    // playback.
+    u64 CommonTransientStorageSize = Gigabytes(1);
+    u64 CommonStorageTotalSize = CommonPermanentStorageSize + CommonTransientStorageSize;
+    Handmade.Memory.PermanentStorageSize = CommonPermanentStorageSize; 
+    Handmade.Memory.TransientStorageSize = CommonTransientStorageSize;
+#if HANDMADE_INTERNAL
+    Handmade.Memory.DEBUGPlatformFreeFileMemory = DEBUGPlatformFreeFileMemory;
+    Handmade.Memory.DEBUGPlatformReadEntireFile = DEBUGPlatformReadEntireFile;
+    Handmade.Memory.DEBUGPlatformWriteEntireFile = DEBUGPlatformWriteEntireFile;
+    Handmade.Memory.DEBUGPlatformGetFileEditTimestamp = DEBUGPlatformGetFileEditTimestamp;
+
+    for(s32 RecordIndex = 0;
+        RecordIndex < 10;
+        ++RecordIndex)
+    {
+			Win32State.MemoryRecords[RecordIndex] = VirtualAlloc(0, 
+																													 CommonStorageTotalSize, 
+																													 MEM_RESERVE|MEM_COMMIT,
+																													 PAGE_READWRITE);
+		}
+#endif
+
+#if HANDMADE_INTERNAL
+		void *HandmadeBaseAddress = (void *)Terabytes(1);
+		void *MyGameBaseAddress = (void *)Terabytes(2);
+#else
+		void *HandmadeBaseAddress = 0;
+		void *MyGameBaseAddress = 0;
+#endif
+		u64 HandmadeTotalStorageSize = (Handmade.Memory.PermanentStorageSize + 
+																		Handmade.Memory.TransientStorageSize);
+		Handmade.Memory.PermanentStorage = (u8*)VirtualAlloc(HandmadeBaseAddress, 
+                                                         HandmadeTotalStorageSize, 
+                                                         MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+		Handmade.Memory.TransientStorage = (Handmade.Memory.PermanentStorage + 
+																				Handmade.Memory.PermanentStorageSize);
+
+		Win32State.GameMemoryBlockSize = HandmadeTotalStorageSize;
+		Win32State.GameMemoryBlock = Handmade.Memory.PermanentStorage;
+
     {
       u32 ThreadCount = 0;
 
@@ -1656,9 +1713,8 @@ WinMain(HINSTANCE Instance,
       Handmade.Memory.HighPriorityQueue.Entries = Handmade.Memory.HighPriorityQueueEntries;
       Handmade.Memory.HighPriorityQueue.MaxEntryCount = 
         ArrayCount(Handmade.Memory.HighPriorityQueueEntries);
-      Handmade.Memory.HighPriorityQueue.ThreadIndexToThreadID = 
-        Handmade.Memory.HighPriorityThreadIDArray;
-      Handmade.Memory.HighPriorityQueue.ThreadCount = NumberOfHighPriorityThreads;
+      Handmade.Memory.HighPriorityQueue.IdToMemory = Handmade.Memory.IdToMemoryMappingEntries;
+      Handmade.Memory.HighPriorityQueue.ThreadCount = ThreadCount;
 
       for(u32 ThreadIndex = 0;
           ThreadIndex < NumberOfHighPriorityThreads;
@@ -1667,7 +1723,7 @@ WinMain(HINSTANCE Instance,
         DWORD ThreadID;
         work_queue* Queue = &Handmade.Memory.HighPriorityQueue;
         HANDLE ThreadHandle = CreateThread(0, 0, ThreadProc, Queue, 0, &ThreadID);
-        Queue->ThreadIndexToThreadID[ThreadIndex] = ThreadID;
+        Queue->IdToMemory[ThreadIndex].Id = ThreadID;
         CloseHandle(ThreadHandle);
       }
 
@@ -1679,69 +1735,27 @@ WinMain(HINSTANCE Instance,
       Handmade.Memory.LowPriorityQueue.Entries = Handmade.Memory.LowPriorityQueueEntries;
       Handmade.Memory.LowPriorityQueue.MaxEntryCount = 
         ArrayCount(Handmade.Memory.LowPriorityQueueEntries);
-      Handmade.Memory.LowPriorityQueue.ThreadIndexToThreadID = 
-        Handmade.Memory.LowPriorityThreadIDArray;
-      Handmade.Memory.LowPriorityQueue.ThreadCount = NumberOfLowPriorityThreads;
+      Handmade.Memory.LowPriorityQueue.IdToMemory = Handmade.Memory.IdToMemoryMappingEntries;
+      Handmade.Memory.LowPriorityQueue.ThreadCount = ThreadCount;
 
-      for(u32 ThreadIndex = 0;
-          ThreadIndex < NumberOfLowPriorityThreads;
+      for(u32 ThreadIndex = NumberOfHighPriorityThreads;
+          ThreadIndex < (NumberOfHighPriorityThreads + NumberOfLowPriorityThreads);
           ThreadIndex++)
       {
         DWORD ThreadID;
         work_queue* Queue = &Handmade.Memory.LowPriorityQueue;
         HANDLE ThreadHandle = CreateThread(0, 0, ThreadProc, Queue, 0, &ThreadID);
-        Queue->ThreadIndexToThreadID[ThreadIndex] = ThreadID;
+        Queue->IdToMemory[ThreadIndex].Id = ThreadID;
+        Queue->IdToMemory[ThreadIndex].Size = Megabytes(8);
+        Assert(Handmade.Memory.TransientStorageSize > Queue->IdToMemory[ThreadIndex].Size);
+        Handmade.Memory.TransientStorageSize -= Queue->IdToMemory[ThreadIndex].Size;
+        Queue->IdToMemory[ThreadIndex].Memory = Handmade.Memory.TransientStorage;
+        Handmade.Memory.TransientStorage += Queue->IdToMemory[ThreadIndex].Size;
         CloseHandle(ThreadHandle);
       }
     }
     Handmade.Memory.PushWork = Win32PushWork;
     Handmade.Memory.CompleteWork = Win32CompleteWork;
-
-    // TODO(bjorn): As for this fix for in-game game switching, since the memrecords are
-    //              shared, the size implicitly has to be shared between the games. I
-    //              might want to fix this in the future.
-    u64 CommonPermanentStorageSize = Megabytes(256);
-    // TODO(bjorn): TransientStorage needs to be broken up into game transient
-    // and cache transient. Only game transient needs to be stored for state
-    // playback.
-    u64 CommonTransientStorageSize = Gigabytes(1);
-    u64 CommonStorageTotalSize = CommonPermanentStorageSize + CommonTransientStorageSize;
-    Handmade.Memory.PermanentStorageSize = CommonPermanentStorageSize; 
-    Handmade.Memory.TransientStorageSize = CommonTransientStorageSize;
-#if HANDMADE_INTERNAL
-    Handmade.Memory.DEBUGPlatformFreeFileMemory = DEBUGPlatformFreeFileMemory;
-    Handmade.Memory.DEBUGPlatformReadEntireFile = DEBUGPlatformReadEntireFile;
-    Handmade.Memory.DEBUGPlatformWriteEntireFile = DEBUGPlatformWriteEntireFile;
-    Handmade.Memory.DEBUGPlatformGetFileEditTimestamp = DEBUGPlatformGetFileEditTimestamp;
-
-    for(s32 RecordIndex = 0;
-        RecordIndex < 10;
-        ++RecordIndex)
-    {
-			Win32State.MemoryRecords[RecordIndex] = VirtualAlloc(0, 
-																													 CommonStorageTotalSize, 
-																													 MEM_RESERVE|MEM_COMMIT,
-																													 PAGE_READWRITE);
-		}
-#endif
-
-#if HANDMADE_INTERNAL
-		void *HandmadeBaseAddress = (void *)Terabytes(1);
-		void *MyGameBaseAddress = (void *)Terabytes(2);
-#else
-		void *HandmadeBaseAddress = 0;
-		void *MyGameBaseAddress = 0;
-#endif
-		u64 HandmadeTotalStorageSize = (Handmade.Memory.PermanentStorageSize + 
-																		Handmade.Memory.TransientStorageSize);
-		Handmade.Memory.PermanentStorage = VirtualAlloc(HandmadeBaseAddress, 
-																										HandmadeTotalStorageSize, 
-																										MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
-		Handmade.Memory.TransientStorage = ((u8 *)Handmade.Memory.PermanentStorage + 
-																				Handmade.Memory.PermanentStorageSize);
-
-		Win32State.GameMemoryBlockSize = HandmadeTotalStorageSize;
-		Win32State.GameMemoryBlock = Handmade.Memory.PermanentStorage;
 
 		game_input OldGameInput = {};
 

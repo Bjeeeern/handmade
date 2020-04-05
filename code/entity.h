@@ -208,11 +208,8 @@ struct entity
 					entity_reference struct_terminator0_;
 				};
 			};
-			//TODO STUDY(bjorn): Does a parent-child entity grouping have to, in anyway
-			//be a dependency on the attachment system? Maybe I could keep them
-			//somewhat separable.
-			entity_reference Parent;
-			entity_reference Child;
+			entity_reference CurrentGlyph;
+			entity_reference PotentialGlyph;
 
 			//TODO(bjorn): I use these to identify the camera and the player rigth
 			//now. Maybe the player is just undefined and the real "player" could in
@@ -246,6 +243,10 @@ struct entity
 	//NOTE(bjorn): Force field
 	f32 ForceFieldRadiusSquared;
 	f32 ForceFieldStrenght;
+
+  //NOTE(bjorn): Camera
+  f32 BestDistanceToGlyphSquared;
+  f32 GlyphSwitchCooldown;
 
   //NOTE(bjorn): Glyph
   u32 Character;
@@ -673,6 +674,8 @@ AddCamera(sim_region* SimRegion, v3 InitP)
   Entity->CamScreenHeight = RealGameScreen * RealToGameUpscale;
   Entity->CamObserverToScreenDistance = RealObserverDistance * RealToGameUpscale;
 
+  Entity->BestDistanceToGlyphSquared = positive_infinity32;
+
 	return Entity;
 }
 
@@ -1086,6 +1089,7 @@ DetachToMoveFreely(entity* Camera)
 	Camera->Prey = Camera->FreeMover;
 }
 
+#if HANDMADE_INTERNAL
 	internal_function entity*
 FindPlayerInSimUpdateRegion(sim_region* SimRegion, entity* Camera)
 {
@@ -1109,6 +1113,7 @@ FindPlayerInSimUpdateRegion(sim_region* SimRegion, entity* Camera)
 
 	return Result;
 }
+#endif
 
 #define ENTITY_H
 #endif //ENTITY_H_FIRST_PASS

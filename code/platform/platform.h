@@ -199,7 +199,8 @@ struct game_keyboard
 {
   b32 IsConnected;
 	//IMPORTANT(bjorn): '\r\n' '\n' and '\r' should _ALL_ be converted to '\n'
-	u32 UnicodeCodePointsWritten[256];
+	u32 UnicodeIn[256];
+	u32 UnicodeInCount;
 	union
 	{
 		game_button Buttons[45];

@@ -942,7 +942,7 @@ Win32ProcessWindowMessages(HWND WindowHandle, b32 *GameIsRunning, u8 *WindowAlph
 													 win32_window_callback_data* WindowCallbackData,
 													 win32_offscreen_buffer* Buffer)
 {
-	s32 UnicodeCodePointIndex = 0;
+	u32 UnicodeCodePointIndex = 0;
 	u16 PrevChar = 0;
 	MSG Message;
 	while(PeekMessage(&Message, 0, 0, 0, PM_REMOVE))
@@ -957,7 +957,7 @@ Win32ProcessWindowMessages(HWND WindowHandle, b32 *GameIsRunning, u8 *WindowAlph
 				} break;
 			case WM_CHAR:
 				{
-					Assert(ArrayCount(NewKeyboard->UnicodeCodePointsWritten) != UnicodeCodePointIndex);
+					Assert(ArrayCount(NewKeyboard->UnicodeIn) != UnicodeCodePointIndex);
 					b32 IsLowEnd = ((u16)Message.wParam & 0b1101110000000000) == 0b1111110000000000;
 					b32 IsHighEnd = ((u16)Message.wParam & 0b1101100000000000) == 0b1111110000000000;
 					if(IsLowEnd)
@@ -980,7 +980,8 @@ Win32ProcessWindowMessages(HWND WindowHandle, b32 *GameIsRunning, u8 *WindowAlph
 					}
 
 					if(UnicodeCodePoint == '\r') { UnicodeCodePoint = '\n'; }
-					NewKeyboard->UnicodeCodePointsWritten[UnicodeCodePointIndex++] = UnicodeCodePoint;
+					NewKeyboard->UnicodeIn[UnicodeCodePointIndex++] = UnicodeCodePoint;
+					NewKeyboard->UnicodeInCount = UnicodeCodePointIndex;
 				} break;
 			case WM_SYSKEYDOWN:
 			case WM_SYSKEYUP:

@@ -575,27 +575,68 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 		MainCamera->Keyboard = GetKeyboard(Input, 1);
 		MainCamera->Mouse = GetMouse(Input, 1);
 
+    random_series Series = Seed(0);
 
+    //TODO IMPORTANT Finish this!!
     entity* LastGlyph = 0;
-    const char* TestString = "Hej hej hej pa dig fru Honoka!";
-    for(u32 Index = 0;
-        Index < 30;
-        Index++)
+    entity* LeftGlyph = 0;
+    entity* NextLeftGlyph = 0;
+    entity* BottomGlyphs[6] = {};
+    entity* NextBottomGlyphs[6] = {};
+    const char* CharSet = "sdfjkl";
+    for(u32 Y = 0;
+        Y < 3;
+        Y++)
     {
-      LastGlyph = AddGlyph(SimRegion, v3{-7.5f + 0.5f*Index, -4.0f, 0.0f}, TestString[Index]);
+      for(u32 X = 0;
+          X < 6;
+          X++)
+      {
+        LeftGlyph = LastGlyph;
+        entity* BottomGlyph = BottomGlyphs[X];
+        u8 Pick = CharSet[RandomChoice(&Series, ArrayCount(CharSet)-2)];
+
+        if(LeftGlyph && 
+           !BottomGlyph)
+        {
+          while(Pick == LeftGlyph->Character) 
+          {
+            Pick = CharSet[RandomChoice(&Series, ArrayCount(CharSet)-2)];
+          }
+        }
+        if(!LeftGlyph && 
+           BottomGlyph)
+        {
+          while(Pick == BottomGlyph->Character) 
+          {
+            Pick = CharSet[RandomChoice(&Series, ArrayCount(CharSet)-2)];
+          }
+        }
+        if(LeftGlyph &&
+           BottomGlyph)
+        {
+          while(Pick == LeftGlyph->Character ||
+                Pick == BottomGlyph->Character) 
+          {
+            Pick = CharSet[RandomChoice(&Series, ArrayCount(CharSet)-2)];
+          }
+        }
+
+        LastGlyph = AddGlyph(SimRegion, v3{-7.5f + 0.5f*X, -7.5f + 1.0f*Y, 0.0f}, Pick);
+        BottomGlyphs[X] = LastGlyph;
+      }
     }
 
-		MainCamera->FreeMover = AddInvisibleControllable(SimRegion);
-		MainCamera->FreeMover->Keyboard = GetKeyboard(Input, 1);
+    MainCamera->FreeMover = AddInvisibleControllable(SimRegion);
+    MainCamera->FreeMover->Keyboard = GetKeyboard(Input, 1);
 
-    LastGlyph->Parent = MainCamera;
-    MainCamera->Child = LastGlyph;
-		AddOneWaySpringAttachment(MainCamera, LastGlyph, 10.0f, 0.0f);
+    MainCamera->CurrentGlyph = LastGlyph;
+    AddOneWaySpringAttachment(MainCamera, LastGlyph, 10.0f, 0.0f);
 
-		EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
-	}
+    EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
+  }
 
-	EndTemporaryMemory(TempMem);
+  EndTemporaryMemory(TempMem);
 
   //TODO Is there a way to do this assignment of the camera storage index?
   for(u32 StorageIndex = 1;
@@ -920,6 +961,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 																										GameState->MainCameraStorageIndex);
 	Assert(MainCamera);
 
+  //TODO IMPORTANT(Bjorn) Try cleaning up the game loop by factoring out clear
+  //events relegated to the entity.h file so that the loop logic is separate
+  //from the game implementation.
 	u32 LastStep = Steps;
 	for(u32 Step = 1;
 			Step <= LastStep;
@@ -1143,15 +1187,20 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #endif
 				}
 
-        if(Entity->Character &&
-           Entity->Parent != MainCamera && 
-           MainCamera->Keyboard->UnicodeCodePointsWritten[0] == Entity->Character)
+        f32 DistanceToGlyphSquared = LengthSquared(Entity->P - MainCamera->P);
+        b32 SwitchToOtherGlyph = 
+          (Entity->Character &&
+           Entity != MainCamera &&
+           MainCamera->GlyphSwitchCooldown == 0 &&
+           Entity != MainCamera->CurrentGlyph && 
+           MainCamera->Keyboard->UnicodeInCount > 0 &&
+           MainCamera->Keyboard->UnicodeIn[0] == Entity->Character &&
+           DistanceToGlyphSquared < MainCamera->BestDistanceToGlyphSquared);
+        if(SwitchToOtherGlyph)
         {
-          MoveAllOneWayAttachments(MainCamera, MainCamera->Child, Entity);
+          MainCamera->BestDistanceToGlyphSquared = DistanceToGlyphSquared;
 
-          MainCamera->Child->Parent = 0;
-          MainCamera->Child = Entity;
-          Entity->Parent = MainCamera;
+          MainCamera->PotentialGlyph = Entity;
         }
 
 				v3 OldP = Entity->P;
@@ -1384,7 +1433,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 				if(Entity->VisualType == EntityVisualType_Glyph)
 				{
-          v4 Color = Entity->Parent == MainCamera ? v4{1.0f,0.5f,0.5f,1.0f} : v4{1,1,1,1};
+          v4 Color = Entity == MainCamera->CurrentGlyph ? v4{1.0f,0.5f,0.5f,1.0f} : v4{1,1,1,1};
           m44 QuadTran = ConstructTransform({0,0,0}, 
                                             Entity->Body.Primitives[1].S);
           u8 Character = (u8)Entity->Character;
@@ -1573,13 +1622,30 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		}
 	}
 
-	EndSim(Input, Entities, WorldArena, SimRegion);
+  //TODO IMPORTANT(bjorn): Create a functionality for having entities
+  //responding after all other entities have had a chance to be iterated. Using
+  //the EntityPairUpdateGenerationIndex maybe.
+  {
+    MainCamera->GlyphSwitchCooldown = Max(0, MainCamera->GlyphSwitchCooldown - SecondsToUpdate);
+    MainCamera->BestDistanceToGlyphSquared = positive_infinity32;
+    if(MainCamera->PotentialGlyph &&
+       MainCamera->GlyphSwitchCooldown == 0)
+    {
+      MoveAllOneWayAttachments(MainCamera, MainCamera->CurrentGlyph, MainCamera->PotentialGlyph);
+      MainCamera->CurrentGlyph = MainCamera->PotentialGlyph;
+      MainCamera->PotentialGlyph = 0;
+      MainCamera->GlyphSwitchCooldown = 0.1f;
+    }
+  }
+
+
+  EndSim(Input, Entities, WorldArena, SimRegion);
 
   ClearScreen(RenderGroup, {0.5f, 0.5f, 0.5f});
 
-	//
-	// NOTE(bjorn): Rendering
-	//
+  //
+  // NOTE(bjorn): Rendering
+  //
 #if 1
   TiledRenderGroupToOutput(&Memory->HighPriorityQueue, RenderGroup, Buffer, 
                            MainCamera->CamScreenHeight);
@@ -1591,7 +1657,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
   game_mouse* Mouse = GetMouse(Input, 1);
   DrawLine(Buffer, Buffer->Dim*0.5f, Hadamard(Buffer->Dim, Mouse->P), 
-                v3{1,1,1}*0.5f, RectMinMax(v2s{0, 0}, Buffer->Dim), true);
+           v3{1,1,1}*0.5f, RectMinMax(v2s{0, 0}, Buffer->Dim), true);
   DrawLine(Buffer, Buffer->Dim*0.5f, Hadamard(Buffer->Dim, Mouse->P), 
                 v3{1,1,1}*0.5f, RectMinMax(v2s{0, 0}, Buffer->Dim), false);
 #endif

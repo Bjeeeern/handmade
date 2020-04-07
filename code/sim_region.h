@@ -267,7 +267,7 @@ SetAddedSimEntityFlagsAndState(sim_region* SimRegion, entity* Entity)
 	if(Entity->IsSpacial)
 	{
 		Entity->P = GetWorldMapPosDifference(SimRegion->WorldMap, Entity->WorldP, SimRegion->Origin);
-		UpdateEntityDerivedMembers(Entity, SimRegion->OuterBounds);
+		ComputeSecondOrderEntityState(Entity, SimRegion->OuterBounds);
 	}
 
 	Entity->EntityPairUpdateGenerationIndex = 0;

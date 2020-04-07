@@ -107,11 +107,7 @@ AddContact(contact_result* Contacts, entity* A, entity* B,
 	internal_function void
 GenerateContactsFromPrimitivePair(contact_result* Contacts, 
 																	entity* Entity_A, entity* Entity_B,
-																	body_primitive* A, body_primitive* B
-#if HANDMADE_INTERNAL
-																	, render_group* RenderGroup, b32 DEBUG_VisualiseCollisionBox
-#endif
-																	)
+																	body_primitive* A, body_primitive* B)
 {
 	if(A->CollisionShape == CollisionShape_Sphere && 
 		 B->CollisionShape == CollisionShape_Sphere)
@@ -230,15 +226,6 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 				Vertex += Entity_A->P;
 			}
 
-#if HANDMADE_INTERNAL
-      if(DEBUG_VisualiseCollisionBox)
-			{
-				v3 APSize = 0.08f*v3{1,1,1};
-				m44 T = ConstructTransform(Vertex, QuaternionIdentity(), APSize);
-				PushWireCube(RenderGroup, T, {0.7f,0,0,1});
-			}
-#endif
-
 			AddContact(Contacts, Entity_A, Entity_B, 
 								 Vertex, 
 								 Axis, 
@@ -281,14 +268,6 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 			B_EdgeEnds[0] += Entity_B->P;
 			B_EdgeEnds[1] += Entity_B->P;
 
-#if HANDMADE_INTERNAL
-      if(DEBUG_VisualiseCollisionBox)
-      {
-        PushVector(RenderGroup, M44Identity(), A_EdgeEnds[0], A_EdgeEnds[1], {1,1,0});
-        PushVector(RenderGroup, M44Identity(), B_EdgeEnds[0], B_EdgeEnds[1], {1,1,0});
-      }
-#endif
-
 			v3 ContactPoint;
 			{
 				v3 P0 = A_EdgeEnds[0];
@@ -328,15 +307,6 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 
 				ContactPoint = ((P0 + U*sc) + (Q0 + V*tc))*0.5f;
 			}
-
-#if HANDMADE_INTERNAL
-      if(DEBUG_VisualiseCollisionBox)
-			{
-				v3 APSize = 0.08f*v3{1,1,1};
-				m44 T = ConstructTransform(ContactPoint, QuaternionIdentity(), APSize);
-				PushWireCube(RenderGroup, T, {0.7f,0,0,1});
-			}
-#endif
 
 			AddContact(Contacts, Entity_A, Entity_B, 
 								 ContactPoint, 
@@ -392,11 +362,7 @@ GenerateContactsFromPrimitivePair(contact_result* Contacts,
 }
 
 	internal_function contact_result
-GenerateContacts(entity* A, entity* B
-#if HANDMADE_INTERNAL
-								 ,render_group* RenderGroup, b32 DEBUG_VisualiseCollisionBox
-#endif
-								)
+GenerateContacts(entity* A, entity* B)
 {
 	Assert(A->HasBody && B->HasBody);
 	contact_result Result = {};
@@ -437,16 +403,96 @@ GenerateContacts(entity* A, entity* B
 			{
 				body_primitive* Prim_B = B->Body.Primitives + PrimitiveIndex_B;
 				GenerateContactsFromPrimitivePair(&Result, A, B, 
-																					Prim_A, Prim_B
-#if HANDMADE_INTERNAL
-																					,RenderGroup, DEBUG_VisualiseCollisionBox
-#endif
-																					);
+																					Prim_A, Prim_B);
 			}
 		}
 	}
 
 	return Result;
+}
+
+inline void
+ResolveContacts(contact_result Contacts)
+{
+  for(u32 ContactIndex = 0;
+      ContactIndex < Contacts.Count;
+      ContactIndex++)
+  {
+    contact Contact = Contacts.E[ContactIndex];
+    entity* A = Contact.A;
+    entity* B = Contact.B;
+
+    f32 iM_iSum = SafeRatio0(1.0f, A->Body.iM + B->Body.iM);
+    //TODO(bjorn): Should I even generate contacts for massless entities.
+    if(iM_iSum == 0) { continue; }
+
+    v3 AP = Contact.P - A->P;
+    v3 BP = Contact.P - B->P;
+    v3 VelocityDelta = ((Cross(A->dO, AP) + A->dP) - (Cross(B->dO, BP) + B->dP));
+
+    //TODO (bjorn): Use coordinates local to the collision point and
+    //treat both the velocity and the impulse as a 3d vector.
+    //TODO IMPORTANT(bjorn): Friction is working but due to only
+    //one contact at a time getting generated boxes slightly
+    //displace and spin around when not being acted upon.
+    f32 SeparatingVelocity = Dot(Contact.N, VelocityDelta);
+    v3 PlanarVelocity = VelocityDelta - (Contact.N * SeparatingVelocity);
+    v3 T = Normalize(PlanarVelocity);
+
+    f32 Restitution = Contact.Restitution;
+    f32 Friction = Contact.Friction;
+
+    v3 A_iI_Temp_N = {};
+    v3 B_iI_Temp_N = {};
+    v3 A_iI_Temp_T = {};
+    v3 B_iI_Temp_T = {};
+    {
+      m33 A_Rot = QuaternionToRotationMatrix(A->O);
+      m33 B_Rot = QuaternionToRotationMatrix(B->O);
+      m33 A_iI_world = A_Rot * (A->Body.iI * Transpose(A_Rot));
+      m33 B_iI_world = B_Rot * (B->Body.iI * Transpose(B_Rot));
+
+      A_iI_Temp_N = A_iI_world*Cross(AP, Contact.N);
+      B_iI_Temp_N = B_iI_world*Cross(BP, Contact.N);
+      A_iI_Temp_T = A_iI_world*Cross(AP, T);
+      B_iI_Temp_T = B_iI_world*Cross(BP, T);
+    }
+
+    f32 Divisor_N = 0;
+    {
+      Divisor_N = 
+        SafeRatio0(1.0f, 
+                   (A->Body.iM + B->Body.iM) +
+                   Dot(Contact.N, Cross(A_iI_Temp_N, AP) + Cross(B_iI_Temp_N, BP)));
+    }
+    Assert(Divisor_N);
+
+    f32 Divisor_T = 0;
+    {
+      Divisor_T = 
+        SafeRatio0(1.0f, 
+                   (A->Body.iM + B->Body.iM) +
+                   Dot(T, Cross(A_iI_Temp_T, AP) + Cross(B_iI_Temp_T, BP)));
+    }
+    Assert(Divisor_T);
+
+    f32 Impulse = -SeparatingVelocity * Divisor_N * (1+Restitution);
+    f32 PlanarImpulse = -Magnitude(PlanarVelocity) * Divisor_T * Friction;
+    PlanarImpulse = (Sign(PlanarImpulse) * 
+                     Clamp0(Absolute(PlanarImpulse), Absolute(Impulse)));
+
+    A->dP += Contact.N * (A->Body.iM * Impulse) + T * (A->Body.iM * PlanarImpulse);
+    B->dP -= Contact.N * (B->Body.iM * Impulse) + T * (B->Body.iM * PlanarImpulse);
+
+    A->dO += A_iI_Temp_N * Impulse + A_iI_Temp_T * PlanarImpulse;
+    B->dO -= B_iI_Temp_N * Impulse + B_iI_Temp_T * PlanarImpulse;
+
+    Assert(iM_iSum);
+    f32 A_MassRatio = (A->Body.iM * iM_iSum);
+    f32 B_MassRatio = (B->Body.iM * iM_iSum);
+    A->P -= (A_MassRatio * Contact.PenetrationDepth) * Contact.N;
+    B->P += (B_MassRatio * Contact.PenetrationDepth) * Contact.N;
+  }
 }
 
 #define COLLISION_H

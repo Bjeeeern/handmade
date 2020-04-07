@@ -324,88 +324,85 @@ DEBUG_VisualizeCollisionGrid(render_group* RenderGroup, rectangle3 CollisionRegi
 #endif
 
 internal_function void
-UpdateEntityDerivedMembers(entity* Entity, rectangle3 CollisionRegion)
+ComputeSecondOrderEntityState(entity* Entity, rectangle3 CollisionRegion)
 {
-	if(Entity->IsSpacial)
-	{
-		if(Entity->HasBody && Entity->Body.S != 1)
-		{
-			Entity->Tran = ConstructTransform(Entity->P, Entity->O, Entity->Body.S);
-			Entity->TranUnscaled = ConstructTransform(Entity->P, Entity->O);
-			Entity->iTran = InverseTransform(Entity->Tran);
-			Entity->iTranUnscaled = InverseUnscaledTransform(Entity->TranUnscaled);
-		}
-		else
-		{
-			Entity->Tran = ConstructTransform(Entity->P, Entity->O);
-			Entity->TranUnscaled = Entity->Tran;
-			Entity->iTran = InverseUnscaledTransform(Entity->Tran);
-			Entity->iTranUnscaled = Entity->iTran;
-		}
+  if(Entity->HasBody && Entity->Body.S != 1)
+  {
+    Entity->Tran = ConstructTransform(Entity->P, Entity->O, Entity->Body.S);
+    Entity->TranUnscaled = ConstructTransform(Entity->P, Entity->O);
+    Entity->iTran = InverseTransform(Entity->Tran);
+    Entity->iTranUnscaled = InverseUnscaledTransform(Entity->TranUnscaled);
+  }
+  else
+  {
+    Entity->Tran = ConstructTransform(Entity->P, Entity->O);
+    Entity->TranUnscaled = Entity->Tran;
+    Entity->iTran = InverseUnscaledTransform(Entity->Tran);
+    Entity->iTranUnscaled = Entity->iTran;
+  }
 
-		if(Entity->HasBody)
-		{
-			//TODO(bjorn): Maybe use AABB instead of bounding sphere? Or in addition.
-			//TODO(bjorn): Big objects like the big floor is checking way to many
-			//boxes even outside of their bounding sphere.
-			//TODO(bjorn):This code does not work for offset bounding sphere.
-			Assert(Entity->Body.Primitives[0].P == v3{0,0,0});
+  if(Entity->HasBody)
+  {
+    //TODO(bjorn): Maybe use AABB instead of bounding sphere? Or in addition.
+    //TODO(bjorn): Big objects like the big floor is checking way to many
+    //boxes even outside of their bounding sphere.
+    //TODO(bjorn):This code does not work for offset bounding sphere.
+    Assert(Entity->Body.Primitives[0].P == v3{0,0,0});
 
-			v3 Dim = (CollisionRegion.Max - CollisionRegion.Min) * (1.0f/8.0f);
-			v3 HalfDim = Dim * 0.5f;
-			v3 R = Entity->Body.S * Entity->Body.Primitives[0].S;
+    v3 Dim = (CollisionRegion.Max - CollisionRegion.Min) * (1.0f/8.0f);
+    v3 HalfDim = Dim * 0.5f;
+    v3 R = Entity->Body.S * Entity->Body.Primitives[0].S;
 
-			//TODO(bjorn): Its not sticking to the size of the entity perfectly. This
-			//code might need some revision and debugging.
-			v3s Min = (RoundV3ToV3S(HadamardDiv(Entity->P - R - HalfDim, Dim)) + 
-								 v3s{COLLISION_TAG_X>>1,COLLISION_TAG_Y>>1,COLLISION_TAG_Z>>1});
-			v3s Max = (RoundV3ToV3S(HadamardDiv(Entity->P + R - HalfDim, Dim)) +
-								 v3s{COLLISION_TAG_X>>1,COLLISION_TAG_Y>>1,COLLISION_TAG_Z>>1});
+    //TODO(bjorn): Its not sticking to the size of the entity perfectly. This
+    //code might need some revision and debugging.
+    v3s Min = (RoundV3ToV3S(HadamardDiv(Entity->P - R - HalfDim, Dim)) + 
+               v3s{COLLISION_TAG_X>>1,COLLISION_TAG_Y>>1,COLLISION_TAG_Z>>1});
+    v3s Max = (RoundV3ToV3S(HadamardDiv(Entity->P + R - HalfDim, Dim)) +
+               v3s{COLLISION_TAG_X>>1,COLLISION_TAG_Y>>1,COLLISION_TAG_Z>>1});
 
-			Assert(COLLISION_TAG_X == COLLISION_TAG_Y && COLLISION_TAG_Y == COLLISION_TAG_Z);
-			v3u uMin = Clamp0(Min, COLLISION_TAG_X-1);
-			v3u uMax = Clamp0(Max, COLLISION_TAG_X-1);
-			Assert(COLLISION_TAG_COUNT == 8);
+    Assert(COLLISION_TAG_X == COLLISION_TAG_Y && COLLISION_TAG_Y == COLLISION_TAG_Z);
+    v3u uMin = Clamp0(Min, COLLISION_TAG_X-1);
+    v3u uMax = Clamp0(Max, COLLISION_TAG_X-1);
+    Assert(COLLISION_TAG_COUNT == 8);
 
-			u64 XYMask = 0;
-			for(u32 Y = uMin.Y;
-					Y <= uMax.Y;
-					Y++)
-			{
-				for(u32 X = uMin.X;
-						X <= uMax.X;
-						X++)
-				{
-					XYMask = XYMask | (1ull << (Y*COLLISION_TAG_X + X));
-				}
-			}
-			u64* TagChunk = Entity->CollisionTag;
-			for(u32 TagChunkIndex = 0;
-					TagChunkIndex < COLLISION_TAG_COUNT;
-					TagChunkIndex++, TagChunk++)
-			{
-				u32 Z = TagChunkIndex;
-				if(uMin.Z <= Z && Z <= uMax.Z)
-				{
-					*TagChunk = XYMask;
-				}
-				else
-				{
-					*TagChunk = 0;
-				}
-			}
-		}
-		else
-		{
-			u64* TagChunk = Entity->CollisionTag;
-			for(u32 TagChunkIndex = 0;
-					TagChunkIndex < COLLISION_TAG_COUNT;
-					TagChunkIndex++, TagChunk++)
-			{
-				*TagChunk = 0;
-			}
-		}
-	}
+    u64 XYMask = 0;
+    for(u32 Y = uMin.Y;
+        Y <= uMax.Y;
+        Y++)
+    {
+      for(u32 X = uMin.X;
+          X <= uMax.X;
+          X++)
+      {
+        XYMask = XYMask | (1ull << (Y*COLLISION_TAG_X + X));
+      }
+    }
+    u64* TagChunk = Entity->CollisionTag;
+    for(u32 TagChunkIndex = 0;
+        TagChunkIndex < COLLISION_TAG_COUNT;
+        TagChunkIndex++, TagChunk++)
+    {
+      u32 Z = TagChunkIndex;
+      if(uMin.Z <= Z && Z <= uMax.Z)
+      {
+        *TagChunk = XYMask;
+      }
+      else
+      {
+        *TagChunk = 0;
+      }
+    }
+  }
+  else
+  {
+    u64* TagChunk = Entity->CollisionTag;
+    for(u32 TagChunkIndex = 0;
+        TagChunkIndex < COLLISION_TAG_COUNT;
+        TagChunkIndex++, TagChunk++)
+    {
+      *TagChunk = 0;
+    }
+  }
 }
 b32 inline
 CollisionFilterCheck(entity* A, entity* B)
@@ -448,6 +445,8 @@ AddBodyPrimitive(entity* Entity, v3 Offset, q Orientation, v3 Scale)
 	Result->iTranUnscaled = InverseUnscaledTransform(Result->TranUnscaled);
 
 	Entity->HasBody = true;
+
+  Assert(Entity->Body.PrimitiveCount > 1);
 	return Result;
 }
 	internal_function void

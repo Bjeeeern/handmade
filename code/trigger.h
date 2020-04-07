@@ -19,7 +19,7 @@ struct trigger_state
 #define TRIGGER_H_FIRST_PASS
 #else
 
-struct trigger_state_result
+struct trigger_result
 {
 	b32 OnEnter;
 	b32 OnLeave;
@@ -71,13 +71,13 @@ GetTriggerStateSlotForOverwrite(entity* Entity)
 	return Result;
 }
 
-	internal_function trigger_state_result
+	internal_function trigger_result
 UpdateAndGetCurrentTriggerState(entity* A, entity* B, 
 																f32 dT, b32 IsInside, f32 TimeUntilRetrigger = 0.0f)
 {
 	Assert(A);
 	Assert(B);
-	trigger_state_result Result = {};
+	trigger_result Result = {};
 
 	trigger_state* TrigStateA = GetTriggerStateRaw(A, B);
 	trigger_state* TrigStateB = GetTriggerStateRaw(B, A);

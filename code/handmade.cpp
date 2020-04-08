@@ -578,53 +578,167 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
     random_series Series = Seed(0);
 
     //TODO IMPORTANT Finish this!!
-    entity* LastGlyph = 0;
-    entity* LeftGlyph = 0;
-    entity* NextLeftGlyph = 0;
-    entity* BottomGlyphs[6] = {};
-    entity* NextBottomGlyphs[6] = {};
-    const char* CharSet = "sdfjkl";
-    for(u32 Y = 0;
-        Y < 3;
+    const u32 Rows = 3;
+    const u32 Columns = 6;
+    char CharSet[] = {'s','d','f','j','k','l'};
+    s32 SubSetCount = 0;
+    char SubSet[ArrayCount(CharSet)] = {};
+    u32 PickSetCount = 0;
+    char PickSet[ArrayCount(CharSet)] = {};
+    char Field[Columns * Rows] = {};
+
+    for(s32 Y = 0;
+        Y < Rows;
         Y++)
     {
-      for(u32 X = 0;
-          X < 6;
+      for(s32 X = 0;
+          X < Columns;
           X++)
       {
-        LeftGlyph = LastGlyph;
-        entity* BottomGlyph = BottomGlyphs[X];
-        u8 Pick = CharSet[RandomChoice(&Series, ArrayCount(CharSet)-2)];
+        s32 Li = (Y  ) * Columns + (X-1);
+        s32 Ri = (Y  ) * Columns + (X+1);
+        s32 Ti = (Y+1) * Columns + (X  );
+        s32 Bi = (Y-1) * Columns + (X  );
 
-        if(LeftGlyph && 
-           !BottomGlyph)
+        SubSetCount = 0;
+        if(X>0         && Field[Li]) 
+        { SubSet[SubSetCount++] = Field[Li]; }
+        if(X<Columns-1 && Field[Ri]) 
+        { SubSet[SubSetCount++] = Field[Ri]; }
+        if(Y>0         && Field[Bi]) 
+        { SubSet[SubSetCount++] = Field[Bi]; }
+        if(Y<Rows-1    && Field[Ti]) 
+        { SubSet[SubSetCount++] = Field[Ti]; }
+
+        PickSetCount = 0;
+        for(s32 CharSetIndex = 0;
+            CharSetIndex < ArrayCount(CharSet);
+            CharSetIndex++)
         {
-          while(Pick == LeftGlyph->Character) 
+          b32 InSubSet = false;
+          for(s32 SubSetIndex = 0;
+              SubSetIndex < SubSetCount;
+              SubSetIndex++)
           {
-            Pick = CharSet[RandomChoice(&Series, ArrayCount(CharSet)-2)];
+            if(SubSet[SubSetIndex] == CharSet[CharSetIndex])
+            {
+              InSubSet = true;
+            }
           }
-        }
-        if(!LeftGlyph && 
-           BottomGlyph)
-        {
-          while(Pick == BottomGlyph->Character) 
+
+          if(!InSubSet)
           {
-            Pick = CharSet[RandomChoice(&Series, ArrayCount(CharSet)-2)];
-          }
-        }
-        if(LeftGlyph &&
-           BottomGlyph)
-        {
-          while(Pick == LeftGlyph->Character ||
-                Pick == BottomGlyph->Character) 
-          {
-            Pick = CharSet[RandomChoice(&Series, ArrayCount(CharSet)-2)];
+            PickSet[PickSetCount++] = CharSet[CharSetIndex];
           }
         }
 
-        LastGlyph = AddGlyph(SimRegion, v3{-7.5f + 0.5f*X, -7.5f + 1.0f*Y, 0.0f}, Pick);
-        BottomGlyphs[X] = LastGlyph;
+        if(X>0         && Field[Li] == 0) 
+        { 
+          u32 DelIndex = RandomChoice(&Series, PickSetCount--);
+
+          Field[Li] = PickSet[DelIndex];
+
+          for(u32 PickSetIndex = 0;
+              PickSetIndex < PickSetCount;
+              PickSetIndex++)
+          {
+            if(PickSetIndex >= DelIndex)
+            {
+              PickSet[PickSetIndex] = PickSet[PickSetIndex+1];
+            }
+          }
+        }
+        if(X<Columns-1 && Field[Ri] == 0)
+        { 
+          u32 DelIndex = RandomChoice(&Series, PickSetCount--);
+
+          Field[Ri] = PickSet[DelIndex];
+
+          for(u32 PickSetIndex = 0;
+              PickSetIndex < PickSetCount;
+              PickSetIndex++)
+          {
+            if(PickSetIndex >= DelIndex)
+            {
+              PickSet[PickSetIndex] = PickSet[PickSetIndex+1];
+            }
+          }
+        }
+        if(Y>0         && Field[Bi] == 0)
+        { 
+          u32 DelIndex = RandomChoice(&Series, PickSetCount--);
+
+          Field[Bi] = PickSet[DelIndex];
+
+          for(u32 PickSetIndex = 0;
+              PickSetIndex < PickSetCount;
+              PickSetIndex++)
+          {
+            if(PickSetIndex >= DelIndex)
+            {
+              PickSet[PickSetIndex] = PickSet[PickSetIndex+1];
+            }
+          }
+        }
+        if(Y<Rows-1    && Field[Ti] == 0)
+        { 
+          u32 DelIndex = RandomChoice(&Series, PickSetCount--);
+
+          Field[Ti] = PickSet[DelIndex];
+
+          for(u32 PickSetIndex = 0;
+              PickSetIndex < PickSetCount;
+              PickSetIndex++)
+          {
+            if(PickSetIndex >= DelIndex)
+            {
+              PickSet[PickSetIndex] = PickSet[PickSetIndex+1];
+            }
+          }
+        }
       }
+    }
+
+#if 0//HANDMADE_INTERNAL
+    for(s32 Y = 0;
+        Y < Rows;
+        Y++)
+    {
+      for(s32 X = 0;
+          X < Columns;
+          X++)
+      {
+        s32 Li = (Y  ) * Columns + (X-1);
+        s32 Ri = (Y  ) * Columns + (X+1);
+        s32 Ti = (Y+1) * Columns + (X  );
+        s32 Bi = (Y-1) * Columns + (X  );
+
+        s32 VerifySetCount = 0;
+        char VerifySet[ArrayCount(CharSet)] = {};
+        if(X>0        ) { VerifySet[VerifySetCount++] = Field[Li]; }
+        if(X<Columns-1) { VerifySet[VerifySetCount++] = Field[Ri]; }
+        if(Y>0        ) { VerifySet[VerifySetCount++] = Field[Bi]; }
+        if(Y<Rows-1   ) { VerifySet[VerifySetCount++] = Field[Ti]; }
+
+        for(s32 VerifySetIndex = 0;
+            VerifySetIndex < VerifySetCount-1;
+            VerifySetIndex++)
+        {
+          Assert(VerifySet[VerifySetIndex] && 
+                 VerifySet[VerifySetIndex] != VerifySet[VerifySetIndex+1]);
+        }
+      }
+    }
+#endif
+
+    entity* LastGlyph = 0;
+    for(s32 CharIndex = 0;
+        CharIndex < ArrayCount(Field);
+        CharIndex++)
+    {
+      s32 X = CharIndex % Columns;
+      s32 Y = CharIndex / Columns;
+      LastGlyph = AddGlyph(SimRegion, v3{-7.5f + 0.5f*X, -7.5f + 1.0f*Y, 0.0f}, Field[CharIndex]);
     }
 
     MainCamera->FreeMover = AddInvisibleControllable(SimRegion);
@@ -940,9 +1054,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 																										GameState->MainCameraStorageIndex);
 	Assert(MainCamera);
 
-  //TODO IMPORTANT(Bjorn) Try cleaning up the game loop by factoring out clear
-  //events relegated to the entity.h file so that the loop logic is separate
-  //from the game implementation.
 	u32 FirstStep = 1;
 	u32 LastStep = Steps;
 	for(u32 Step = FirstStep;

@@ -577,38 +577,37 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
 
     random_series Series = Seed(0);
 
-    //TODO IMPORTANT Finish this!!
-    const u32 Rows = 3;
-    const u32 Columns = 6;
-    char CharSet[] = {'s','d','f','j','k','l'};
+    const u32 Row = 9;
+    const u32 Col = 18;
+    char CharSet[] = {'s','d','f',/*'g','b','h',*/'j','k','l'};
     s32 SubSetCount = 0;
     char SubSet[ArrayCount(CharSet)] = {};
     u32 PickSetCount = 0;
     char PickSet[ArrayCount(CharSet)] = {};
-    char Field[Columns * Rows] = {};
+    char Field[Col * Row] = {};
 
     for(s32 Y = 0;
-        Y < Rows;
+        Y < Row;
         Y++)
     {
       for(s32 X = 0;
-          X < Columns;
+          X < Col;
           X++)
       {
-        s32 Li = (Y  ) * Columns + (X-1);
-        s32 Ri = (Y  ) * Columns + (X+1);
-        s32 Ti = (Y+1) * Columns + (X  );
-        s32 Bi = (Y-1) * Columns + (X  );
-
+        v2s Offsets[] = {{-2,0}, {-1,1}, {0,2}, {1,1}, {2,0}, {1,-1}, {0,-2}, {-1,-1}};
         SubSetCount = 0;
-        if(X>0         && Field[Li]) 
-        { SubSet[SubSetCount++] = Field[Li]; }
-        if(X<Columns-1 && Field[Ri]) 
-        { SubSet[SubSetCount++] = Field[Ri]; }
-        if(Y>0         && Field[Bi]) 
-        { SubSet[SubSetCount++] = Field[Bi]; }
-        if(Y<Rows-1    && Field[Ti]) 
-        { SubSet[SubSetCount++] = Field[Ti]; }
+        for(s32 OffsetIndex = 0;
+            OffsetIndex < ArrayCount(Offsets);
+            OffsetIndex++)
+        {
+          v2s Offset = Offsets[OffsetIndex];
+          s32 FieldIndex = (Y + Offset.Y) * Col + (X + Offset.X);
+          if(FieldIndex >= 0 &&
+             FieldIndex < ArrayCount(Field))
+          {
+            SubSet[SubSetCount++] = Field[FieldIndex];
+          }
+        }
 
         PickSetCount = 0;
         for(s32 CharSetIndex = 0;
@@ -632,93 +631,30 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
           }
         }
 
-        if(X>0         && Field[Li] == 0) 
-        { 
-          u32 DelIndex = RandomChoice(&Series, PickSetCount--);
-
-          Field[Li] = PickSet[DelIndex];
-
-          for(u32 PickSetIndex = 0;
-              PickSetIndex < PickSetCount;
-              PickSetIndex++)
-          {
-            if(PickSetIndex >= DelIndex)
-            {
-              PickSet[PickSetIndex] = PickSet[PickSetIndex+1];
-            }
-          }
-        }
-        if(X<Columns-1 && Field[Ri] == 0)
-        { 
-          u32 DelIndex = RandomChoice(&Series, PickSetCount--);
-
-          Field[Ri] = PickSet[DelIndex];
-
-          for(u32 PickSetIndex = 0;
-              PickSetIndex < PickSetCount;
-              PickSetIndex++)
-          {
-            if(PickSetIndex >= DelIndex)
-            {
-              PickSet[PickSetIndex] = PickSet[PickSetIndex+1];
-            }
-          }
-        }
-        if(Y>0         && Field[Bi] == 0)
-        { 
-          u32 DelIndex = RandomChoice(&Series, PickSetCount--);
-
-          Field[Bi] = PickSet[DelIndex];
-
-          for(u32 PickSetIndex = 0;
-              PickSetIndex < PickSetCount;
-              PickSetIndex++)
-          {
-            if(PickSetIndex >= DelIndex)
-            {
-              PickSet[PickSetIndex] = PickSet[PickSetIndex+1];
-            }
-          }
-        }
-        if(Y<Rows-1    && Field[Ti] == 0)
-        { 
-          u32 DelIndex = RandomChoice(&Series, PickSetCount--);
-
-          Field[Ti] = PickSet[DelIndex];
-
-          for(u32 PickSetIndex = 0;
-              PickSetIndex < PickSetCount;
-              PickSetIndex++)
-          {
-            if(PickSetIndex >= DelIndex)
-            {
-              PickSet[PickSetIndex] = PickSet[PickSetIndex+1];
-            }
-          }
-        }
+        Field[Y * Col + X] = PickSet[RandomChoice(&Series, PickSetCount)];
       }
     }
 
-#if 0//HANDMADE_INTERNAL
+#if HANDMADE_INTERNAL
     for(s32 Y = 0;
-        Y < Rows;
+        Y < Row;
         Y++)
     {
       for(s32 X = 0;
-          X < Columns;
+          X < Col;
           X++)
       {
-        s32 Li = (Y  ) * Columns + (X-1);
-        s32 Ri = (Y  ) * Columns + (X+1);
-        s32 Ti = (Y+1) * Columns + (X  );
-        s32 Bi = (Y-1) * Columns + (X  );
+        s32 Li = (Y  ) * Col + (X-1);
+        s32 Ri = (Y  ) * Col + (X+1);
+        s32 Ti = (Y+1) * Col + (X  );
+        s32 Bi = (Y-1) * Col + (X  );
 
         s32 VerifySetCount = 0;
         char VerifySet[ArrayCount(CharSet)] = {};
-        if(X>0        ) { VerifySet[VerifySetCount++] = Field[Li]; }
-        if(X<Columns-1) { VerifySet[VerifySetCount++] = Field[Ri]; }
-        if(Y>0        ) { VerifySet[VerifySetCount++] = Field[Bi]; }
-        if(Y<Rows-1   ) { VerifySet[VerifySetCount++] = Field[Ti]; }
+        if(X>0    ) { VerifySet[VerifySetCount++] = Field[Li]; }
+        if(X<Col-1) { VerifySet[VerifySetCount++] = Field[Ri]; }
+        if(Y>0    ) { VerifySet[VerifySetCount++] = Field[Bi]; }
+        if(Y<Row-1) { VerifySet[VerifySetCount++] = Field[Ti]; }
 
         for(s32 VerifySetIndex = 0;
             VerifySetIndex < VerifySetCount-1;
@@ -731,21 +667,26 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input)
     }
 #endif
 
-    entity* LastGlyph = 0;
+    entity* StartGlyph = 0;
     for(s32 CharIndex = 0;
         CharIndex < ArrayCount(Field);
         CharIndex++)
     {
-      s32 X = CharIndex % Columns;
-      s32 Y = CharIndex / Columns;
-      LastGlyph = AddGlyph(SimRegion, v3{-7.5f + 0.5f*X, -7.5f + 1.0f*Y, 0.0f}, Field[CharIndex]);
+      s32 X = CharIndex % Col;
+      s32 Y = CharIndex / Col;
+      entity* Entity = 
+        AddGlyph(SimRegion, v3{-7.5f + 0.5f*X, -7.5f + 1.0f*Y, 0.0f}, Field[CharIndex]);
+      if(X == Col/2 && Y == Row/2)
+      {
+        StartGlyph = Entity;
+      }
     }
 
     MainCamera->FreeMover = AddInvisibleControllable(SimRegion);
     MainCamera->FreeMover->Keyboard = GetKeyboard(Input, 1);
 
-    MainCamera->CurrentGlyph = LastGlyph;
-    AddOneWaySpringAttachment(MainCamera, LastGlyph, 10.0f, 0.0f);
+    MainCamera->CurrentGlyph = StartGlyph;
+    AddOneWaySpringAttachment(MainCamera, StartGlyph, 10.0f, 0.0f);
 
     EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
   }

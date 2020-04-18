@@ -223,7 +223,8 @@ PostPhysicsStepEntityUpdate(entity* Entity, entity* OldEntity, f32 dT)
 }
 
   inline void
-RenderEntity(render_group* RenderGroup, game_state* GameState, entity* Entity, entity* MainCamera)
+RenderEntity(render_group* RenderGroup, transient_state* TransientState, 
+             entity* Entity, entity* MainCamera)
 {
   m44 T = Entity->Tran; 
 
@@ -265,44 +266,44 @@ RenderEntity(render_group* RenderGroup, game_state* GameState, entity* Entity, e
       Character = '?';
     }
     rectangle2 SubRect = CharacterToFontMapLocation(Character);
-    PushQuad(RenderGroup, T*QuadTran, &GameState->GenFontMap, SubRect, Color);
+    PushQuad(RenderGroup, T*QuadTran, &TransientState->GenFontMap, SubRect, Color);
   }
   if(Entity->VisualType == EntityVisualType_Wall)
   {
     m44 QuadTran = ConstructTransform({0,0,0}, 
                                       AngleAxisToQuaternion(tau32 * 0.25f, {1,0,0}), 
                                       Entity->Body.Primitives[1].S);
-    PushQuad(RenderGroup, T*QuadTran, &GameState->RockWall);
+    PushQuad(RenderGroup, T*QuadTran, &TransientState->RockWall);
   }
   if(Entity->VisualType == EntityVisualType_Player)
   {
-    hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
+    hero_bitmaps *Hero = &(TransientState->HeroBitmaps[Entity->FacingDirection]);
 
     f32 ZAlpha = Clamp01(1.0f - (Entity->P.Z / 2.0f));
-    PushQuad(RenderGroup, T, &GameState->Shadow, RectMinDim({0,0},{1,1}), {1, 1, 1, ZAlpha});
+    PushQuad(RenderGroup, T, &TransientState->Shadow, RectMinDim({0,0},{1,1}), {1, 1, 1, ZAlpha});
     PushQuad(RenderGroup, T, &Hero->Torso);
     PushQuad(RenderGroup, T, &Hero->Cape);
     PushQuad(RenderGroup, T, &Hero->Head);
   }
   if(Entity->VisualType == EntityVisualType_Monstar)
   {
-    hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
+    hero_bitmaps *Hero = &(TransientState->HeroBitmaps[Entity->FacingDirection]);
 
     f32 ZAlpha = Clamp01(1.0f - (Entity->P.Z / 2.0f));
-    PushQuad(RenderGroup, T, &GameState->Shadow, RectMinDim({0,0},{1,1}), {1, 1, 1, ZAlpha});
+    PushQuad(RenderGroup, T, &TransientState->Shadow, RectMinDim({0,0},{1,1}), {1, 1, 1, ZAlpha});
     PushQuad(RenderGroup, T, &Hero->Torso);
   }
   if(Entity->VisualType == EntityVisualType_Familiar)
   {
-    hero_bitmaps *Hero = &(GameState->HeroBitmaps[Entity->FacingDirection]);
+    hero_bitmaps *Hero = &(TransientState->HeroBitmaps[Entity->FacingDirection]);
 
     f32 ZAlpha = Clamp01(1.0f - ((Entity->P.Z + 1.4f) / 2.0f));
-    PushQuad(RenderGroup, T, &GameState->Shadow, RectMinDim({0,0},{1,1}), {1, 1, 1, ZAlpha});
+    PushQuad(RenderGroup, T, &TransientState->Shadow, RectMinDim({0,0},{1,1}), {1, 1, 1, ZAlpha});
     PushQuad(RenderGroup, T, &Hero->Head);
   }
   if(Entity->VisualType == EntityVisualType_Sword)
   {
-    PushQuad(RenderGroup, T, &GameState->Sword);
+    PushQuad(RenderGroup, T, &TransientState->Sword);
   }
 
   if(Entity->VisualType == EntityVisualType_Monstar ||
@@ -347,7 +348,7 @@ RenderEntity(render_group* RenderGroup, game_state* GameState, entity* Entity, e
 
 #if HANDMADE_INTERNAL
   //TODO(bjorn): Do I need to always push these just to enable toggling when paused?
-  if(GameState->DEBUG_VisualiseCollisionBox)
+  if(DEBUG_GameState->DEBUG_VisualiseCollisionBox)
   {
     for(u32 PrimitiveIndex = 0;
         PrimitiveIndex < Entity->Body.PrimitiveCount;

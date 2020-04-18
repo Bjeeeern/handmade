@@ -1773,13 +1773,11 @@ WinMain(HINSTANCE Instance,
 		LARGE_INTEGER LastCounter = Win32GetWallClock();
 		u64 LastCycleCount = __rdtsc();
 
-		while(GameIsRunning)
+    while(GameIsRunning)
 		{
 			game_input NewGameInput = {};
 
 #if HANDMADE_INTERNAL
-      NewGameInput.ExecutableReloaded = false;
-
 			FILETIME LastWriteTime = Win32GetLastWriteTime(Game->DLLFullPath);
 			if(CompareFileTime(&Game->Code.DLLLastWriteTime, &LastWriteTime) != 0) 
 			{

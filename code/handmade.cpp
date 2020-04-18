@@ -363,16 +363,12 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input,
   GameState->WorldMap = PushStruct(&GameState->WorldArena, world_map);
   world_map *WorldMap = GameState->WorldMap;
   WorldMap->ChunkSafetyMargin = 256;
-  WorldMap->TileSideInMeters = 1.4f;
-  WorldMap->ChunkSideInMeters = WorldMap->TileSideInMeters * TILES_PER_CHUNK;
+  WorldMap->ChunkSideInMeters = 1.6f * 16;
 
   temporary_memory TempMem = BeginTemporaryMemory(FrameBoundedTransientArena);
 
-	u32 RoomWidthInTiles = 17;
-	u32 RoomHeightInTiles = 9;
-
-	v3s RoomOrigin = (v3s)RoundV2ToV2S((v2)v2u{RoomWidthInTiles, RoomHeightInTiles} / 2.0f);
-	world_map_position RoomOriginWorldPos = GetChunkPosFromAbsTile(WorldMap, RoomOrigin);
+	world_map_position RoomOriginWorldPos = {};
+  Assert(IsValid(RoomOriginWorldPos));
 #if HANDMADE_INTERNAL
 	GameState->DEBUG_VisualiseCollisionBox = false;
 	for(s32 Index = 0;
@@ -384,8 +380,8 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input,
 		WorldP->ChunkP = RoomOriginWorldPos.ChunkP + v3s{Index * 4, 0, 0};
 	}
 #endif
-	GameState->CameraUpdateBounds = RectCenterDim(v3{0, 0, 0}, 
-																								v3{2, 2, 2} * WorldMap->ChunkSideInMeters);
+	GameState->CameraUpdateBounds = 
+    RectCenterDim(v3{0, 0, 0}, v3{2, 2, 2} * WorldMap->ChunkSideInMeters);
 
 	{ //NOTE(bjorn): Test location 0 setup
 		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, 

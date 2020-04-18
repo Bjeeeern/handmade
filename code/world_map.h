@@ -23,7 +23,6 @@ struct world_map
 {
 	s32 ChunkSafetyMargin;
 
-  f32 TileSideInMeters;
   f32 ChunkSideInMeters;
 
   world_chunk HashMap[4096];
@@ -158,36 +157,6 @@ RecanonilizePosition(world_map *WorldMap, world_map_position NewDeltaPosition)
 	Result.ChunkP += ChunkOffset;
 
 	Assert(IsCanonical(WorldMap, Result.Offset_));
-	return Result;
-}
-
-#define TILES_PER_CHUNK 16
-
-inline world_map_position 
-GetChunkPosFromAbsTile(world_map *WorldMap, v3s AbsTile)
-{
-	world_map_position Result = {};
-
-	Result.ChunkP = (AbsTile + v3s{1,1,1}*(TILES_PER_CHUNK/2)) / TILES_PER_CHUNK;
-
-	Result.Offset_ = (AbsTile - Result.ChunkP * TILES_PER_CHUNK) * WorldMap->TileSideInMeters;
-
-	Assert(IsCanonical(WorldMap, Result.Offset_));
-
-	return Result;
-}
-
-inline v3s 
-GetAbsTileFromChunkPos(world_map *WorldMap, world_map_position P)
-{
-	v3s Result = {};
-
-	Result.X = (P.ChunkP.X * TILES_PER_CHUNK + 
-							FloorF32ToS32(P.Offset_.X / WorldMap->TileSideInMeters));
-	Result.Y = (P.ChunkP.Y * TILES_PER_CHUNK + 
-								FloorF32ToS32(P.Offset_.Y / WorldMap->TileSideInMeters));
-	Result.Z = P.ChunkP.Z;
-
 	return Result;
 }
 

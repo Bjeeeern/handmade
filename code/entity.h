@@ -709,7 +709,7 @@ AddSword(sim_region* SimRegion)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Sword);
 
 	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, 
-												v3{1.5f, 0.4f, 0.1f}*SimRegion->WorldMap->TileSideInMeters);
+												v3{1.5f, 0.4f, 0.1f});
 	CalibratePhysicalBody(Entity, 8.0f, 0.5f, 0.9f);
 
 	Entity->TriggerDamage = 1;
@@ -733,7 +733,7 @@ AddPlayer(sim_region* SimRegion, v3 InitP)
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Player, InitP);
 
 	//TODO(bjorn): Why does weight differences matter so much in the collision system.
-	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{0.5f,0.3f,1.0f}*SimRegion->WorldMap->TileSideInMeters);
+	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{0.5f,0.3f,1.0f});
 	CalibratePhysicalBody(Entity, 70.0f, 1.0f, 1.0f);
 
 	Entity->Collides = true;
@@ -754,7 +754,7 @@ AddMonstar(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Monstar, InitP);
 
-	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{0.5f,0.3f,1.0f}*SimRegion->WorldMap->TileSideInMeters);
+	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{0.5f,0.3f,1.0f});
 	CalibratePhysicalBody(Entity, 40.0f, 1.0f, 0.9f);
 
 	Entity->Collides = true;
@@ -780,7 +780,7 @@ AddFamiliar(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Familiar, InitP);
 
-	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{0.5f,0.3f,1.0f}*SimRegion->WorldMap->TileSideInMeters);
+	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{0.5f,0.3f,1.0f});
 	CalibratePhysicalBody(Entity, 5.0f, 0.2f, 0.9f);
 
 	Entity->Collides = true;
@@ -814,7 +814,7 @@ AddFixture(sim_region* SimRegion, v3 InitP)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Sword, InitP);
 
-	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{1,1,1}*SimRegion->WorldMap->TileSideInMeters);
+	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{1,1,1});
 	CalibratePhysicalBody(Entity, 0.0f, 0.0f, 0.0f);
 
 	Entity->Collides = true;
@@ -827,7 +827,7 @@ AddWall(sim_region* SimRegion, v3 InitP, f32 Mass = 1000.0f)
 {
 	entity* Entity = AddEntity(SimRegion, EntityVisualType_Wall, InitP);
 
-	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{1,1,1}*SimRegion->WorldMap->TileSideInMeters);
+	AddAABBToPhysicalBody(Entity, {0,0,0}, q{1,0,0,0}, v3{1,1,1});
 	CalibratePhysicalBody(Entity, Mass, 0.5f, 0.5f);
 
 	Entity->Collides = true;

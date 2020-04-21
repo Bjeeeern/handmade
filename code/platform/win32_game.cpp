@@ -6,7 +6,10 @@
 #include <xinput.h>
 #include <dsound.h>
 
-//IMPORTANT TODO(bjorn): This is for the swprintf function. Remove this in the future.
+#include <tobii/tobii.h>
+#include <tobii/tobii_streams.h>
+
+//IMPORTANT TODO(bjorn): This is for the wsprintfA and sprintf_s functions. Remove this in the future.
 #include <stdio.h>
 
 //NOTE(bjorn): 1080p display mode is 1920x1080 -> Half of that is 960x540.
@@ -1366,6 +1369,18 @@ WORK_QUEUE_CALLBACK(PrintStringJob)
 
 work_queue_entry TestQueueEntries[20];
 #endif
+internal_function void 
+Win32UrlIteratorCallback(char const* Url, void* UserData)
+{
+  char* Buffer = (char*)UserData;
+  if( *Buffer == '\0' )
+  { 
+    if(StringLength((char*)Url) < 256 )
+    {
+      while(*Url != '\0') { *Buffer++ = *Url++; }
+    }
+  }
+}
 
 	s32 CALLBACK 
 WinMain(HINSTANCE Instance,
@@ -1770,34 +1785,83 @@ WinMain(HINSTANCE Instance,
 
 		win32_game *Game = &Handmade;
 
-		LARGE_INTEGER LastCounter = Win32GetWallClock();
-		u64 LastCycleCount = __rdtsc();
+    tobii_api_t* TobiiApi = 0;
+    tobii_device_t* TobiiDevice = 0;
+    LARGE_INTEGER TobiiLastSync = Win32GetWallClock();
+    if(tobii_api_create(&TobiiApi, 0, 0) == TOBII_ERROR_NO_ERROR)
+    {
+      Assert(TobiiApi);
+
+      char Url[256] = {};
+      if(tobii_enumerate_local_device_urls(TobiiApi, Win32UrlIteratorCallback, Url) 
+         == TOBII_ERROR_NO_ERROR)
+      {
+        Assert(*Url != '\0');
+        if(tobii_device_create(TobiiApi, Url, TOBII_FIELD_OF_USE_INTERACTIVE, &TobiiDevice)
+           == TOBII_ERROR_NO_ERROR)
+        {
+          Assert(TobiiDevice);
+        }
+      }
+    }
+    if(TobiiDevice)
+    {
+      tobii_device_clear_callback_buffers(TobiiDevice);
+    }
+
+    LARGE_INTEGER LastCounter = Win32GetWallClock();
+    u64 LastCycleCount = __rdtsc();
 
     while(GameIsRunning)
-		{
-			game_input NewGameInput = {};
+    {
+      game_input NewGameInput = {};
+
+      if(TobiiApi && TobiiDevice)
+      {
+        tobii_error_t Error;
+
+        f32 SecondsElapsedFromTobiiSync = 
+          Win32GetSecondsElapsed(TobiiLastSync, Win32GetWallClock(), PerformanceCountFrequency); 
+        if(SecondsElapsedFromTobiiSync >= 30.0f)
+        {
+          Error = tobii_update_timesync(TobiiDevice);
+          Assert(Error == TOBII_ERROR_NO_ERROR);
+          TobiiLastSync = Win32GetWallClock();
+        }
+
+        Error = tobii_device_process_callbacks(TobiiDevice);
+        Assert(Error != TOBII_ERROR_INVALID_PARAMETER);
+        Assert(Error != TOBII_ERROR_ALLOCATION_FAILED);
+        Assert(Error != TOBII_ERROR_INTERNAL);
+        Assert(Error != TOBII_ERROR_CALLBACK_IN_PROGRESS);
+        if(Error == TOBII_ERROR_CONNECTION_FAILED)
+        {
+          Error = tobii_device_reconnect(TobiiDevice);
+          Assert(Error == TOBII_ERROR_NO_ERROR);
+        }
+      }
 
 #if HANDMADE_INTERNAL
-			FILETIME LastWriteTime = Win32GetLastWriteTime(Game->DLLFullPath);
-			if(CompareFileTime(&Game->Code.DLLLastWriteTime, &LastWriteTime) != 0) 
-			{
-				Win32UnloadGameCode(&Game->Code);
-				Game->Code = Win32LoadGameCode(Game->DLLFullPath, Game->TempDLLFullPath);
-				Game->Code.DLLLastWriteTime = LastWriteTime;
+      FILETIME LastWriteTime = Win32GetLastWriteTime(Game->DLLFullPath);
+      if(CompareFileTime(&Game->Code.DLLLastWriteTime, &LastWriteTime) != 0) 
+      {
+        Win32UnloadGameCode(&Game->Code);
+        Game->Code = Win32LoadGameCode(Game->DLLFullPath, Game->TempDLLFullPath);
+        Game->Code.DLLLastWriteTime = LastWriteTime;
         NewGameInput.ExecutableReloaded = true;
-			}
+      }
 #endif
 
-			// TODO(bjorn): Should this be polled more often?
-			s32 MaxControllerCount = XUSER_MAX_COUNT;
-			if(MaxControllerCount > ArrayCount(NewGameInput.Controllers))
-			{
-				MaxControllerCount = ArrayCount(NewGameInput.Controllers);
-			}
-			for(s32 ControllerIndex = 1;
-					ControllerIndex <= MaxControllerCount;
-					ControllerIndex++)
-			{
+      // TODO(bjorn): Should this be polled more often?
+      s32 MaxControllerCount = XUSER_MAX_COUNT;
+      if(MaxControllerCount > ArrayCount(NewGameInput.Controllers))
+      {
+        MaxControllerCount = ArrayCount(NewGameInput.Controllers);
+      }
+      for(s32 ControllerIndex = 1;
+          ControllerIndex <= MaxControllerCount;
+          ControllerIndex++)
+      {
 				game_controller *OldController = GetController(&OldGameInput, ControllerIndex);
 				game_controller *NewController = GetController(&NewGameInput, ControllerIndex);
 

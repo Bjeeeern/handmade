@@ -239,6 +239,12 @@ struct game_keyboard
 	};
 };
 
+struct game_eye_tracker
+{
+  b32 IsConnected;
+  v2 P;
+};
+
 struct game_input
 {
 	game_controller Controllers[4];
@@ -247,6 +253,7 @@ struct game_input
 #if HANDMADE_INTERNAL
   b32 ExecutableReloaded;
 #endif
+  game_eye_tracker EyeTracker;
 };
 
 //NOTE Access to the input devices is in the 1-n range for freeing up 0 as a null index

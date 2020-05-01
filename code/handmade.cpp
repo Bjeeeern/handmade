@@ -1132,6 +1132,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
   DrawLine(Buffer, Buffer->Dim*0.5f, Hadamard(Buffer->Dim, Mouse->P), 
            v3{0,0,1}*0.8f, RectMinMax(v2s{0, 0}, Buffer->Dim));
 #endif
+  if(Input->EyeTracker.IsConnected)
+  {
+    Input->EyeTracker.P.Y = 1.0f - Input->EyeTracker.P.Y;
+    DrawCircle(Buffer, Hadamard(Input->EyeTracker.P, Buffer->Dim), 
+               20, {1,0,1,0.5f}, RectMinMax(v2s{0, 0}, Buffer->Dim));
+  }
 
 	EndTemporaryMemory(TempMem);
 	CheckMemoryArena(FrameBoundedTransientArena);

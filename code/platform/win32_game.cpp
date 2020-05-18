@@ -474,7 +474,7 @@ Win32ResizeDIBSection(win32_offscreen_buffer *Buffer, s32 Width, s32 Height)
 
 //TODO(bjorn): Make this function return where the actual gamewindow start and end.
   internal_function void
-Win32CopyBufferToWindow(win32_offscreen_buffer *Buffer, HDC DeviceContext, 
+Win32DisplayBufferInWindow(win32_offscreen_buffer *Buffer, HDC DeviceContext, 
                         s32 WindowWidth, s32 WindowHeight, 
                         s32 GameScreenLeft, s32 GameScreenTop, 
                         s32 GameScreenWidth, s32 GameScreenHeight)
@@ -501,9 +501,43 @@ Win32CopyBufferToWindow(win32_offscreen_buffer *Buffer, HDC DeviceContext,
                 &Buffer->Info,
                 DIB_RGB_COLORS, SRCCOPY);
 #else
-  glViewport(0, 0, WindowWidth, WindowHeight);
   glClearColor(1.0f, 0.0f, 1.0f, 0.0f);
   glClear(GL_COLOR_BUFFER_BIT);
+
+  glViewport(GameScreenLeft, WindowHeight - (GameScreenHeight+GameScreenTop), 
+             GameScreenWidth, GameScreenHeight);
+
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, Buffer->Width, Buffer->Height, 0,
+               GL_BGRA_EXT, GL_UNSIGNED_BYTE, Buffer->Memory);
+
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+
+  glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+  glEnable(GL_TEXTURE_2D);
+
+  glBegin(GL_TRIANGLES);
+
+  glTexCoord2f(0,0);
+  glVertex2f(-1.0f, -1.0f);
+  glTexCoord2f(0,1);
+  glVertex2f(-1.0f, 1.0f);
+  glTexCoord2f(1,1);
+  glVertex2f(1.0f, 1.0f);
+
+  glTexCoord2f(0,0);
+  glVertex2f(-1.0f, -1.0f);
+  glTexCoord2f(1,1);
+  glVertex2f(1.0f, 1.0f);
+  glTexCoord2f(1,0);
+  glVertex2f(1.0f, -1.0f);
+
+  glEnd();
+
   SwapBuffers(DeviceContext);
 #endif
 }
@@ -595,7 +629,7 @@ Win32MainWindowCallback(HWND WindowHandle, UINT Message, WPARAM WParam, LPARAM L
         HDC DeviceContext = BeginPaint(WindowHandle, &PaintStruct);
         win32_window_dimension Dimension = Win32GetWindowDimension(WindowHandle);
 
-        Win32CopyBufferToWindow(CallbackData->BackBuffer, DeviceContext, 
+        Win32DisplayBufferInWindow(CallbackData->BackBuffer, DeviceContext, 
                                 Dimension.Width, Dimension.Height,
                                 *(CallbackData->GameScreenLeft), 
                                 *(CallbackData->GameScreenTop),
@@ -2383,7 +2417,7 @@ WinMain(HINSTANCE Instance,
       win32_window_dimension WindowDimension = Win32GetWindowDimension(WindowHandle);
 
       HDC DeviceContext = GetDC(WindowHandle);
-      Win32CopyBufferToWindow(&BackBuffer, DeviceContext, 
+      Win32DisplayBufferInWindow(&BackBuffer, DeviceContext, 
                               WindowDimension.Width, WindowDimension.Height,
                               GameScreenLeft, GameScreenTop,
                               GameScreenWidth, GameScreenHeight);

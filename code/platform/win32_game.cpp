@@ -5,6 +5,7 @@
 #include <windows.h>
 #include <xinput.h>
 #include <dsound.h>
+#include <gl/gl.h>
 
 #include <tobii/tobii.h>
 #include <tobii/tobii_streams.h>
@@ -478,6 +479,7 @@ Win32CopyBufferToWindow(win32_offscreen_buffer *Buffer, HDC DeviceContext,
                         s32 GameScreenLeft, s32 GameScreenTop, 
                         s32 GameScreenWidth, s32 GameScreenHeight)
 {
+#if 0
   PatBlt(DeviceContext, 0, 0, WindowWidth, GameScreenTop, BLACKNESS);
   PatBlt(DeviceContext, 0, 0, GameScreenLeft, WindowHeight, BLACKNESS);
   PatBlt(DeviceContext, 
@@ -498,6 +500,12 @@ Win32CopyBufferToWindow(win32_offscreen_buffer *Buffer, HDC DeviceContext,
                 Buffer->Memory,
                 &Buffer->Info,
                 DIB_RGB_COLORS, SRCCOPY);
+#else
+  glViewport(0, 0, WindowWidth, WindowHeight);
+  glClearColor(1.0f, 0.0f, 1.0f, 0.0f);
+  glClear(GL_COLOR_BUFFER_BIT);
+  SwapBuffers(DeviceContext);
+#endif
 }
 
 struct win32_window_callback_data
@@ -1407,6 +1415,38 @@ Win32GazePointCallback(tobii_gaze_point_t const* GazePoint, void* UserData)
   }
 }
 
+internal_function void
+Win32InitOpenGL(HWND Window)
+{
+  HDC WindowDC = GetDC(Window);
+
+  PIXELFORMATDESCRIPTOR DesiredPixelFormat = {};
+  DesiredPixelFormat.nSize = sizeof(DesiredPixelFormat);
+  DesiredPixelFormat.nVersion = 1;
+  DesiredPixelFormat.iPixelType = PFD_TYPE_RGBA;
+  DesiredPixelFormat.dwFlags = PFD_SUPPORT_OPENGL|PFD_DRAW_TO_WINDOW|PFD_DOUBLEBUFFER;
+  DesiredPixelFormat.cColorBits = 32;
+  DesiredPixelFormat.cAlphaBits = 8;
+  DesiredPixelFormat.iLayerType = PFD_MAIN_PLANE;
+
+  s32 SuggestedPixelFormatIndex = ChoosePixelFormat(WindowDC, &DesiredPixelFormat);
+  PIXELFORMATDESCRIPTOR SuggestedPixelFormat;
+  DescribePixelFormat(WindowDC, SuggestedPixelFormatIndex, sizeof(SuggestedPixelFormat), 
+                      &SuggestedPixelFormat);
+  SetPixelFormat(WindowDC, SuggestedPixelFormatIndex, &SuggestedPixelFormat);
+
+  HGLRC OpenGLRC = wglCreateContext(WindowDC);
+  if(wglMakeCurrent(WindowDC, OpenGLRC))
+  {
+  }
+  else
+  {
+    InvalidCodePath;
+    //TODO(Bjorn): Diagnostic
+  }
+  ReleaseDC(Window, WindowDC);
+}
+
   s32 CALLBACK 
 WinMain(HINSTANCE Instance,
         HINSTANCE PrevInstance,
@@ -1533,6 +1573,8 @@ WinMain(HINSTANCE Instance,
                                       0, 0, Instance, 0);
   if(WindowHandle)
   {
+    Win32InitOpenGL(WindowHandle);
+
     b32 GameIsRunning = true;
     u8 WindowAlpha = 255;
 

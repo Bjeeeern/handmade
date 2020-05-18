@@ -13,7 +13,7 @@
 #include <stdio.h>
 
 //NOTE(bjorn): 1080p display mode is 1920x1080 -> Half of that is 960x540.
-#if 0
+#if 1
 #define GAME_RGB_BUFFER_WIDTH 1920
 #define GAME_RGB_BUFFER_HEIGHT 1080
 #else
@@ -1572,7 +1572,7 @@ WinMain(HINSTANCE Instance,
     {
       MonitorRefreshHz = Win32RefreshRate;
     }
-    f32 GameUpdateHz = ((f32)MonitorRefreshHz / 2.0f);
+    f32 GameUpdateHz = ((f32)MonitorRefreshHz / 1.0f);
     f32 TargetSecondsPerFrame = 1.0f / GameUpdateHz;
 
     win32_sound_output SoundOutput = {};

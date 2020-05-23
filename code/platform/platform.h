@@ -30,8 +30,8 @@ struct thread_context
  */
 struct debug_read_file_result
 {
-  s32 ContentSize;
-  void *Content;
+  memi ContentSize;
+  u8* Content;
 };
 #define DEBUG_PLATFORM_READ_ENTIRE_FILE(name) debug_read_file_result name(char *FileName)
 typedef DEBUG_PLATFORM_READ_ENTIRE_FILE(debug_platform_read_entire_file);

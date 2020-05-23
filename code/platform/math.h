@@ -27,6 +27,11 @@ struct v2s
 	{
 		struct
 		{
+			s32 Width;
+			s32 Height;
+		};
+		struct
+		{
 			s32 X;
 			s32 Y;
 		};
@@ -2584,6 +2589,32 @@ LinePlaneIntersection(v3 A, v3 B, v3 N, v3 P)
     Result.t = Dot(P-A, N) * InvDenom;
     Result.Hit = 0 <= Result.t && Result.t <= 1.0f;
   }
+
+  return Result;
+}
+
+inline v4 
+sRGB255ToLinear1(v4 sRGB)
+{
+  v4 Result;
+
+  f32 Inv255 = 1.0f/255.0f;
+  Result.R = Square(sRGB.R * Inv255);
+  Result.G = Square(sRGB.G * Inv255);
+  Result.B = Square(sRGB.B * Inv255);
+  Result.A = sRGB.A * Inv255;
+
+  return Result;
+}
+
+inline v4
+Linear1TosRGB255(v4 Linear)
+{
+  v4 Result;
+  Result.R = SquareRoot(Linear.R) * 255.0f;
+  Result.G = SquareRoot(Linear.G) * 255.0f;
+  Result.B = SquareRoot(Linear.B) * 255.0f;
+  Result.A = Linear.A * 255.0f;
 
   return Result;
 }

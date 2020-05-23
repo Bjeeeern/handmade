@@ -4,6 +4,7 @@
 #include "primitive_shapes.h"
 #include "math.h"
 #include "font.h"
+#include "asset.h"
 
 // NOTE(bjorn):
 //
@@ -22,32 +23,6 @@ struct output_target_screen_variables
     m22 PixelToMeter;
     v2 Center;
 };
-
-inline v4 
-sRGB255ToLinear1(v4 sRGB)
-{
-  v4 Result;
-
-  f32 Inv255 = 1.0f/255.0f;
-  Result.R = Square(sRGB.R * Inv255);
-  Result.G = Square(sRGB.G * Inv255);
-  Result.B = Square(sRGB.B * Inv255);
-  Result.A = sRGB.A * Inv255;
-
-  return Result;
-}
-
-inline v4
-Linear1TosRGB255(v4 Linear)
-{
-  v4 Result;
-  Result.R = SquareRoot(Linear.R) * 255.0f;
-  Result.G = SquareRoot(Linear.G) * 255.0f;
-  Result.B = SquareRoot(Linear.B) * 255.0f;
-  Result.A = Linear.A * 255.0f;
-
-  return Result;
-}
 
   internal_function void
 DrawRectangle(game_bitmap *Buffer, rectangle2s Rect, v3 RGB, rectangle2s ClipRect)
@@ -1014,10 +989,12 @@ struct render_group
   u32 MaxPushBufferSize;
   u32 PushBufferSize;
   u8* PushBufferBase;
+
+  game_assets* Assets;
 };
 
 internal_function render_group*
-AllocateRenderGroup(memory_arena* Arena, u32 MaxPushBufferSize)
+AllocateRenderGroup(memory_arena* Arena, u32 MaxPushBufferSize, game_assets* Assets)
 {
 	render_group* Result = PushStruct(Arena, render_group);
   *Result = {};
@@ -1025,6 +1002,8 @@ AllocateRenderGroup(memory_arena* Arena, u32 MaxPushBufferSize)
 	Result->PushBufferBase = PushArray(Arena, MaxPushBufferSize, u8);
   Result->PushBufferSize = 0;
   Result->MaxPushBufferSize = MaxPushBufferSize;
+
+  Result->Assets = Assets;
 
 	return Result;
 }
@@ -1081,6 +1060,17 @@ PushQuad(render_group* RenderGroup, m44 T, game_bitmap* Bitmap,
 	Entry->Bitmap = Bitmap;
 	Entry->Color = Color;
 	Entry->BitmapUVRect = BitmapUVRect;
+}
+
+internal_function void
+PushQuad(render_group* RenderGroup, m44 T, game_asset_id ID, 
+         rectangle2 BitmapUVRect = RectMinDim({0,0},{1,1}), v4 Color = {1,1,1,1})
+{
+  game_bitmap* Bitmap = GetBitmap(RenderGroup->Assets, ID);
+  if(Bitmap)
+  {
+    PushQuad(RenderGroup, T, Bitmap, BitmapUVRect, Color);
+  }
 }
 
 internal_function void

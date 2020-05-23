@@ -8,6 +8,14 @@
 extern "C" f32 _handmade_intrinsic_sin(f32);
 #endif
 
+#define INTRIN_ERROR_BLURB WARNING!! THIS FEATURE NOT ADDED FOR THIS COMPILER!
+
+#if COMPILER_MSVC
+#define CompileTimeWriteBarrier _WriteBarrier()
+#else
+#define CompileTimeWriteBarrier INTRIN_ERROR_BLURB
+#endif
+
 inline void
 ActivateSignalingNaNs()
 {

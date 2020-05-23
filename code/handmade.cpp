@@ -3,9 +3,8 @@ multi_thread_push_work* PushWork;
 multi_thread_complete_work* CompleteWork;
 #include "memory.h"
 #include "world_map.h"
-#include "random.h"
 #include "render_group.h"
-#include "resource.h"
+#include "random.h"
 #include "sim_region.h"
 #include "entity.h"
 #include "collision.h"
@@ -43,36 +42,12 @@ multi_thread_complete_work* CompleteWork;
 //3 Calculate the constraint velocities based on the behavior functions.
 //4 Apply the constraint velocities and simulate the resulting motion.
 
-struct hero_bitmaps
-{
-	game_bitmap Head;
-	game_bitmap Cape;
-	game_bitmap Torso;
-};
-
 struct transient_state
 {
 	memory_arena TransientArena;
 	memory_arena FrameBoundedTransientArena;
 
-  game_bitmap GenTile;
-  game_bitmap GenFontMap;
-
-  font* Font;
-
-	game_bitmap Backdrop;
-	game_bitmap RockWall;
-	game_bitmap Dirt;
-	game_bitmap Shadow;
-	game_bitmap Sword;
-
-	hero_bitmaps HeroBitmaps[4];
-
-  game_bitmap Grass[2];
-  game_bitmap Ground[4];
-  game_bitmap Rock[4];
-  game_bitmap Tuft[3];
-  game_bitmap Tree[3];
+  game_assets Assets;
 };
 
 struct game_state
@@ -239,6 +214,7 @@ struct font_gen_work
   game_bitmap* Buffer; 
   s8 Character;
   font* Font;
+  game_assets* Assets;
 };
 WORK_QUEUE_CALLBACK(DoFontGenWork)
 {
@@ -250,22 +226,23 @@ WORK_QUEUE_CALLBACK(DoFontGenWork)
   game_bitmap* Buffer = FontGenWork->Buffer;
   s8 Character        = FontGenWork->Character;
   font* Font          = FontGenWork->Font;
+  game_assets* Assets = FontGenWork->Assets;
 
   memory_arena Arena = InitializeArena(Size, Memory);
 
-  game_bitmap Glyph = EmptyBitmap(&Arena, 512, 1024);
-  Glyph.Alignment = {256, 512};
+  game_bitmap* Glyph = ClearBitmap(&Arena, 512, 1024);
+  Glyph->Alignment = {256, 512};
 
-  render_group* RenderGroup = AllocateRenderGroup(&Arena, Megabytes(1));
+  render_group* RenderGroup = AllocateRenderGroup(&Arena, Megabytes(1), Assets);
 
-  GenerateGlyph(RenderGroup, Font, &Glyph, Character);
+  GenerateGlyph(RenderGroup, Font, Glyph, Character);
   ClearRenderGroup(RenderGroup);
 
   rectangle2 TargetLoc = CharacterToFontMapLocation(Character);
   m44 GlyphPos = ConstructTransform(GetRectCenter(TargetLoc) * Buffer->Width, 
                                     GetRectDim(TargetLoc) * Buffer->Width);
 
-  PushQuad(RenderGroup, GlyphPos, &Glyph);
+  PushQuad(RenderGroup, GlyphPos, Glyph);
 
   SetCamera(RenderGroup, ConstructTransform(v2{-(Buffer->Width*0.5f), -(Buffer->Height*0.5f)}), 
             positive_infinity32, 0.5f);
@@ -274,7 +251,7 @@ WORK_QUEUE_CALLBACK(DoFontGenWork)
 
   internal_function void
 GenerateFontMap(work_queue* WorkQueue, memory_arena* TransientArena, font* Font, 
-                game_bitmap* Buffer)
+                game_bitmap* Buffer, game_assets* Assets)
 {
   //TODO(bjorn): What to do about this memory, since it is so small.
   // Maybe this should be like a 'per queue' memoryblock that automatically
@@ -288,67 +265,11 @@ GenerateFontMap(work_queue* WorkQueue, memory_arena* TransientArena, font* Font,
     FontGenWork[Index].Buffer           = Buffer;
     FontGenWork[Index].Character        = Character;
     FontGenWork[Index].Font             = Font;
+    FontGenWork[Index].Assets           = Assets;
 
     PushWork(WorkQueue, DoFontGenWork, FontGenWork + Index);
     Index += 1;
   }
-}
-
-  internal_function void
-GenerateTile(transient_state* TransientState, work_queue* RenderQueue, game_bitmap* Buffer)
-{
-  temporary_memory TempMem = BeginTemporaryMemory(&TransientState->TransientArena);
-  render_group* RenderGroup = AllocateRenderGroup(&TransientState->TransientArena, Megabytes(4));
-
-  random_series Series = Seed(0);
-
-#if 1
-  u32 Count = 200;
-#else
-  u32 Count = 0;
-#endif
-  for(u32 Index = 0; Index < Count; Index++)
-  {
-    v2 Offset = Hadamard(RandomBilateralV2(&Series) * 0.5f, Buffer->Dim);
-
-    game_bitmap* Bitmap = 0;
-    switch(RandomChoice(&Series, 2))
-    {
-      case 0: {
-                Bitmap = TransientState->Grass  + RandomChoice(&Series, 2);
-              } break;
-      case 1: {
-                Bitmap = TransientState->Ground + RandomChoice(&Series, 4);
-              } break;
-    }
-
-    PushQuad(RenderGroup, ConstructTransform(Offset, Bitmap->Dim), Bitmap);
-  }
-
-  for(u32 Index = 0; Index < Count/2; Index++)
-  {
-    v2 Offset = Hadamard(RandomBilateralV2(&Series) * 0.5f, Buffer->Dim);
-
-    game_bitmap* Bitmap = 0;
-    if(RandomUnilateral(&Series) > 0.8f)
-    {
-      Bitmap = TransientState->Rock + RandomChoice(&Series, 4);
-    }
-    else
-    {
-      Bitmap = TransientState->Tuft + RandomChoice(&Series, 3);
-    }
-
-    PushQuad(RenderGroup, ConstructTransform(Offset, Bitmap->Dim), Bitmap);
-  }
-
-  SetCamera(RenderGroup, M44Identity(), positive_infinity32, 0.5f);
-  TiledRenderGroupToOutput(RenderQueue, RenderGroup, Buffer, (f32)Buffer->Height);
-
-	EndTemporaryMemory(TempMem);
-	CheckMemoryArena(&TransientState->TransientArena);
-
-  ClearEdgeXPix(Buffer, 1);
 }
 
 	internal_function void
@@ -387,6 +308,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input,
 		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, 
 																		 FrameBoundedTransientArena, WorldMap,
 																		 RoomOriginWorldPos, GameState->CameraUpdateBounds, 0);
+		AddWall(SimRegion, v3{0, 0, 0});
 
 		entity* MainCamera = AddCamera(SimRegion, v3{0, 0, 0});
 		MainCamera->Keyboard = GetKeyboard(Input, 1);
@@ -525,129 +447,109 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input,
 internal_function void
 InitializeTransientState(game_memory* Memory, transient_state* TransientState)
 {
-	InitializeArena(&TransientState->TransientArena, 
+	memory_arena* TransientArena = &TransientState->TransientArena;
+	InitializeArena(TransientArena, 
                   Memory->TransientStorageSize - sizeof(transient_state), 
                   Memory->TransientStorage + sizeof(transient_state));
 
-	memory_arena* TransientArena = &TransientState->TransientArena;
 	memory_arena* FrameBoundedTransientArena = &TransientState->FrameBoundedTransientArena;
   SubArena(FrameBoundedTransientArena, TransientArena, Memory->TransientStorageSize/4);
 
-  TransientState->Grass[0] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  game_assets* Assets = &TransientState->Assets;
+  SubArena(&Assets->Arena, TransientArena, Memory->TransientStorageSize/4);
+  Assets->DEBUGPlatformReadEntireFile = Memory->DEBUGPlatformReadEntireFile;
+  Assets->DEBUGPlatformFreeFileMemory = Memory->DEBUGPlatformFreeFileMemory;
+
+  debug_read_file_result FontFile = Memory->DEBUGPlatformReadEntireFile("data/MSMINCHO.font");
+  Assets->Font = (font *)FontFile.Content;
+
+  Assets->GenFontMap = *ClearBitmap(TransientArena, 1024, 1024);
+  Assets->GenFontMap.Alignment = {512, 512};
+
+  GenerateFontMap(&Memory->LowPriorityQueue, TransientArena, Assets->Font, 
+                  &Assets->GenFontMap, Assets);
+
+#if 0
+  Assets->Grass[0] = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      "data/test2/grass00.bmp");
-  TransientState->Grass[1] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Assets->Grass[1] = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      "data/test2/grass01.bmp");
 
-  TransientState->Ground[0] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Assets->Ground[0] = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      "data/test2/ground00.bmp");
-  TransientState->Ground[1] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Assets->Ground[1] = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      "data/test2/ground01.bmp");
-  TransientState->Ground[2] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Assets->Ground[2] = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      "data/test2/ground02.bmp");
-  TransientState->Ground[3] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Assets->Ground[3] = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      "data/test2/ground03.bmp");
 
-  TransientState->Rock[0] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Assets->Rock[0] = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      "data/test2/rock00.bmp");
-  TransientState->Rock[1] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Assets->Rock[1] = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      "data/test2/rock01.bmp");
-  TransientState->Rock[2] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Assets->Rock[2] = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      "data/test2/rock02.bmp");
-  TransientState->Rock[3] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Assets->Rock[3] = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      "data/test2/rock03.bmp");
 
-  TransientState->Tuft[0] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Assets->Tuft[0] = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      "data/test2/tuft00.bmp");
-  TransientState->Tuft[1] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Assets->Tuft[1] = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      "data/test2/tuft01.bmp");
-  TransientState->Tuft[2] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Assets->Tuft[2] = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      "data/test2/tuft02.bmp");
 
-  TransientState->Tree[0] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Assets->Tree[0] = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      "data/test2/tree00.bmp");
-  TransientState->Tree[1] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Assets->Tree[1] = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      "data/test2/tree01.bmp");
-  TransientState->Tree[2] = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Assets->Tree[2] = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      "data/test2/tree02.bmp");
-
-	TransientState->Backdrop = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
-                                     Memory->DEBUGPlatformReadEntireFile, 
-                                     TransientArena,
-                                     
-																		 "data/test/test_background.bmp");
-
-	TransientState->RockWall = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
-                                     Memory->DEBUGPlatformReadEntireFile, 
-                                     TransientArena,
-                                     
-																 "data/test2/rock00.bmp");
-	TransientState->RockWall.Alignment = {35, 41};
-
-	TransientState->Dirt = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
-                                     Memory->DEBUGPlatformReadEntireFile, 
-                                     TransientArena,
-                                     
-																 "data/test2/ground00.bmp");
-	TransientState->Dirt.Alignment = {133, 56};
-
-	TransientState->Shadow = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
-                                     Memory->DEBUGPlatformReadEntireFile, 
-                                     TransientArena,
-                                     
-																	 "data/test/test_hero_shadow.bmp");
-	TransientState->Shadow.Alignment = {72, 182};
-
-	TransientState->Sword = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
-                                     Memory->DEBUGPlatformReadEntireFile, 
-                                     TransientArena,
-                                     
-																	"data/test2/ground01.bmp");
-	TransientState->Sword.Alignment = {256/2, 116/2};
-
 	hero_bitmaps Hero = {};
-	Hero.Head = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+	Hero.Head = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      
 													 "data/test/test_hero_front_head.bmp");
-	Hero.Cape = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+	Hero.Cape = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      
 													 "data/test/test_hero_front_cape.bmp");
-	Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+	Hero.Torso = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      
@@ -655,19 +557,19 @@ InitializeTransientState(game_memory* Memory, transient_state* TransientState)
 	Hero.Head.Alignment = {72, 182};
 	Hero.Cape.Alignment = {72, 182};
 	Hero.Torso.Alignment = {72, 182};
-	TransientState->HeroBitmaps[0] = Hero;
+	Assets->HeroBitmaps[0] = Hero;
 
-	Hero.Head = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+	Hero.Head = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      
 													 "data/test/test_hero_left_head.bmp");
-	Hero.Cape = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+	Hero.Cape = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      
 													 "data/test/test_hero_left_cape.bmp");
-	Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+	Hero.Torso = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
                                      
@@ -675,58 +577,42 @@ InitializeTransientState(game_memory* Memory, transient_state* TransientState)
 	Hero.Head.Alignment = {72, 182};
 	Hero.Cape.Alignment = {72, 182};
 	Hero.Torso.Alignment = {72, 182};
-	TransientState->HeroBitmaps[1] = Hero;
+	Assets->HeroBitmaps[1] = Hero;
 
-  Hero.Head = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Hero.Head = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                            Memory->DEBUGPlatformReadEntireFile, 
                            TransientArena,
                            "data/test/test_hero_back_head.bmp");
-  Hero.Cape = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Hero.Cape = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                            Memory->DEBUGPlatformReadEntireFile, 
                            TransientArena, 
                            "data/test/test_hero_back_cape.bmp");
-  Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Hero.Torso = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                             Memory->DEBUGPlatformReadEntireFile, 
                             TransientArena, 
                             "data/test/test_hero_back_torso.bmp");
   Hero.Head.Alignment = {72, 182};
   Hero.Cape.Alignment = {72, 182};
   Hero.Torso.Alignment = {72, 182};
-  TransientState->HeroBitmaps[2] = Hero;
+  Assets->HeroBitmaps[2] = Hero;
 
-  Hero.Head = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Hero.Head = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                            Memory->DEBUGPlatformReadEntireFile, 
                            TransientArena,
                            "data/test/test_hero_right_head.bmp");
-  Hero.Cape = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Hero.Cape = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                            Memory->DEBUGPlatformReadEntireFile, 
                            TransientArena,
                            "data/test/test_hero_right_cape.bmp");
-  Hero.Torso = DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
+  Hero.Torso = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                             Memory->DEBUGPlatformReadEntireFile, 
                             TransientArena, 
                             "data/test/test_hero_right_torso.bmp");
   Hero.Head.Alignment = {72, 182};
   Hero.Cape.Alignment = {72, 182};
   Hero.Torso.Alignment = {72, 182};
-  TransientState->HeroBitmaps[3] = Hero;
-
-  debug_read_file_result FontFile = Memory->DEBUGPlatformReadEntireFile("data/MSMINCHO.font");
-  TransientState->Font = (font *)FontFile.Content;
-#if 0
-  TransientState->GenTile = EmptyBitmap(TransientArena, 3, 3);
-  TransientState->GenTile.Alignment = {1, 1};
-#else
-  TransientState->GenTile = EmptyBitmap(TransientArena, 512, 512);
-  TransientState->GenTile.Alignment = {256, 256};
+  Assets->HeroBitmaps[3] = Hero;
 #endif
-  GenerateTile(TransientState, &Memory->HighPriorityQueue, &TransientState->GenTile);
-
-  TransientState->GenFontMap = EmptyBitmap(TransientArena, 1024, 1024);
-  TransientState->GenFontMap.Alignment = {512, 512};
-
-  GenerateFontMap(&Memory->LowPriorityQueue, &TransientState->TransientArena, TransientState->Font, 
-                  &TransientState->GenFontMap);
 }
 
 #include "game_loop_logic.h"
@@ -797,6 +683,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
   stored_entities* Entities = &GameState->Entities;
   memory_arena* FrameBoundedTransientArena = &TransientState->FrameBoundedTransientArena;
   memory_arena* TransientArena = &TransientState->TransientArena;
+  game_assets* Assets = &TransientState->Assets;
 
   temporary_memory TempMem = BeginTemporaryMemory(FrameBoundedTransientArena);
 
@@ -897,7 +784,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				EndTemporaryMemory(GameState->DEBUG_RenderGroupTempMem);
 				CheckMemoryArena(TransientArena);
 				GameState->DEBUG_RenderGroupTempMem = BeginTemporaryMemory(TransientArena);
-				GameState->DEBUG_OldRenderGroup = AllocateRenderGroup(TransientArena, Megabytes(4));
+				GameState->DEBUG_OldRenderGroup = AllocateRenderGroup(TransientArena, Megabytes(4), Assets);
 				GameState->DEBUG_PauseStep = Modulate(GameState->DEBUG_PauseStep+1, 1, 9);
 
 				GameState->DEBUG_SkipXSteps = 
@@ -968,7 +855,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		}
 	}
 
-	render_group* RenderGroup = AllocateRenderGroup(FrameBoundedTransientArena, Megabytes(4));
+	render_group* RenderGroup = AllocateRenderGroup(FrameBoundedTransientArena, Megabytes(4), Assets);
 
 	//
 	// NOTE(bjorn): Moving and Rendering

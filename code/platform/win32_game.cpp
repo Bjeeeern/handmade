@@ -10,7 +10,8 @@
 #include <tobii/tobii.h>
 #include <tobii/tobii_streams.h>
 
-//IMPORTANT TODO(bjorn): This is for the wsprintfA and sprintf_s functions. Remove this in the future.
+//IMPORTANT TODO(bjorn): This is for the wsprintfA and sprintf_s functions.
+//Remove this in the future.
 #include <stdio.h>
 
 //NOTE(bjorn): 1080p display mode is 1920x1080 -> Half of that is 960x540.
@@ -174,7 +175,7 @@ DEBUG_PLATFORM_READ_ENTIRE_FILE(DEBUGPlatformReadEntireFile)
     if(GetFileSizeEx(FileHandle, &FileSize))
     {
       u32 FileSize32 = SafeTruncateU64(FileSize.QuadPart);
-      Result.Content = VirtualAlloc(0, FileSize32, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+      Result.Content = (u8*)VirtualAlloc(0, FileSize32, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
       if(Result.Content)
       {
         DWORD BytesRead;

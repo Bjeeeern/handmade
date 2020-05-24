@@ -2,6 +2,30 @@
 
 #include "file_format_BMP.h"
 
+//STUDY(bjorn):
+//
+// As far as I see it, to get asset eviction working safely multithreaded I have two options:
+//
+// * Every asset has a LockCounter that gets atomically inc/decremented. Evict at zero. 
+//   ** This could be optimized by having worker threads not being able to cause loads.
+//      (Load on main thread and only start the work when all is present and locked)
+//      NOTE E.G. ONLY MAINTHREAD LOAD/EVICT
+// * Every thread has it's own Assets object. 
+
+// TODO(bjorn) ONLY MAINTHREAD LOAD/EVICT
+#if 0 //Example code
+DoRenderWork()
+{
+  // Work
+  UnlockAssetGroup(Assets, ID);
+}
+if(AssetGroupIsLoaded(Assets, ID))
+{
+  LockAssetGroup(Assets, ID);
+  DoRenderWork();
+}
+#endif
+
 internal_function game_bitmap*
 ClearBitmap(memory_arena* Arena, u32 Width, u32 Height)
 {
@@ -84,8 +108,8 @@ enum game_asset_id
 
 enum game_asset_state
 {
-  AssetState_NeedFetch,
-  AssetState_Loading,
+  AssetState_Unloaded,
+  AssetState_Queued,
   AssetState_Loaded,
 };
 
@@ -133,7 +157,7 @@ GetBitmap(game_assets* Assets, game_asset_id ID)
   //NOTE(bjorn): Multi-pass so we must assert before doing the load.
   if(Assets->BitmapsMeta[ID].State == AssetState_Loaded) { Assert(Result); }
 
-  if(Assets->BitmapsMeta[ID].State == AssetState_NeedFetch)
+  if(Assets->BitmapsMeta[ID].State == AssetState_Unloaded)
   {
     LoadAsset(Assets, ID);
   }
@@ -144,7 +168,7 @@ GetBitmap(game_assets* Assets, game_asset_id ID)
 internal_function void
 LoadAsset(game_assets* Assets, game_asset_id ID)
 {
-  Assets->BitmapsMeta[ID].State = AssetState_Loading;
+  Assets->BitmapsMeta[ID].State = AssetState_Queued;
 
   char* Path = 0;
   switch(ID)
@@ -187,7 +211,7 @@ LoadAsset(game_assets* Assets, game_asset_id ID)
 
     CompileTimeWriteBarrier;
     Assets->BitmapsMeta[ID].RezKnown = true;
-    Assets->BitmapsMeta[ID].State = AssetState_NeedFetch;
+    Assets->BitmapsMeta[ID].State = AssetState_Unloaded;
 
     Assets->DEBUGPlatformFreeFileMemory(File.Content);
   }

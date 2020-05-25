@@ -503,7 +503,7 @@ Win32DisplayBufferInWindow(win32_offscreen_buffer *Buffer, HDC DeviceContext,
                 Buffer->Memory,
                 &Buffer->Info,
                 DIB_RGB_COLORS, SRCCOPY);
-#else
+#elif 0
   glClearColor(1.0f, 0.0f, 1.0f, 0.0f);
   glClear(GL_COLOR_BUFFER_BIT);
 
@@ -540,6 +540,11 @@ Win32DisplayBufferInWindow(win32_offscreen_buffer *Buffer, HDC DeviceContext,
   glVertex2f(1.0f, -1.0f);
 
   glEnd();
+
+  SwapBuffers(DeviceContext);
+#else
+  glViewport(GameScreenLeft, WindowHeight - (GameScreenHeight+GameScreenTop), 
+             GameScreenWidth, GameScreenHeight);
 
   SwapBuffers(DeviceContext);
 #endif
@@ -1876,7 +1881,7 @@ WinMain(HINSTANCE Instance,
     }
     Handmade.Memory.PushWork = Win32PushWork;
     Handmade.Memory.CompleteWork = Win32CompleteWork;
-    //Handmade.Memory.RenderGroupToOutput = OpenGLRenderGroupToOutput;
+    Handmade.Memory.RenderGroupToOutput = OpenGLRenderGroupToOutput;
 
     game_input OldGameInput = {};
 

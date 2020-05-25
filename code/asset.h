@@ -36,6 +36,7 @@ ClearBitmap(memory_arena* Arena, u32 Width, u32 Height)
   Result->Height = Height;
   Result->Pitch = Align4(Result->Width);
   Result->WidthOverHeight = SafeRatio0((f32)Result->Width, (f32)Result->Height);
+  Result->GPUHandle = 0;
 
   u32* BitmapMemory = PushArray(Arena, Result->Pitch*Result->Height + 4, u32);
   Result->Memory = (u32*)Align16((memi)BitmapMemory);
@@ -53,6 +54,7 @@ JunkBitmap(memory_arena* Arena, u32 Width, u32 Height)
   Result->Height = Height;
   Result->Pitch = Align4(Result->Width);
   Result->WidthOverHeight = SafeRatio0((f32)Result->Width, (f32)Result->Height);
+  Result->GPUHandle = 0;
 
   u32* BitmapMemory = PushArray(Arena, Result->Pitch*Result->Height + 4, u32);
   Result->Memory = (u32*)Align16((memi)BitmapMemory);
@@ -180,7 +182,7 @@ LoadAsset(game_assets* Assets, game_asset_id ID)
       } break;
     case GAI_RockWall:
       {
-        Path = "data/test2/rock00.bmp";
+        Path = "data/test2/tuft00.bmp";
         //GetBitmap(Assets, GAI_RockWall)->Alignment = {35, 41};
       } break;
     case GAI_Dirt:
@@ -224,6 +226,8 @@ LoadAsset(game_assets* Assets, game_asset_id ID)
     //TODO(bjorn): Multi-thread.
     debug_read_file_result File = Assets->DEBUGPlatformReadEntireFile(Path); 
     LoadBMPIntoBitmap(File.Content, File.ContentSize, Assets->Bitmaps[ID]);
+
+    ClearEdgeXPix(Assets->Bitmaps[ID], 1);
 
     CompileTimeWriteBarrier;
     Assets->BitmapsMeta[ID].State = AssetState_Loaded;

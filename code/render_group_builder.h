@@ -138,15 +138,18 @@ PushSphere(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.8f,1})
 
 //TODO(Bjorn): SetCamera(f32 HeightOfScreenInGameMeters, f32 YFoV)
 internal_function void
-SetCamera(render_group* RenderGroup, m44 WorldToCamera, f32 LensChamberSize, f32 NearClipPoint = 0)
+SetCamera(render_group* RenderGroup, m44 WorldToCamera, f32 LensChamberSize, 
+          f32 NearClipPoint = 0, f32 FarClipPoint = 100.0f)
 {
   RenderGroup->WorldToCamera = WorldToCamera;
 
   camera_parameters* CamParam = &RenderGroup->CamParam;
 
   Assert(NearClipPoint <= LensChamberSize);
+  Assert(NearClipPoint <= FarClipPoint);
   CamParam->LensChamberSize = LensChamberSize;
   CamParam->NearClipPoint = NearClipPoint;
+  CamParam->FarClipPoint = FarClipPoint;
 }
 
 internal_function void

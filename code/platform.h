@@ -43,6 +43,8 @@ struct game_bitmap
   v2s Alignment;
 
   f32 WidthOverHeight;
+
+  s32 GPUHandle; //TODO(bjorn): Think about this.
 };
 
 #if HANDMADE_INTERNAL

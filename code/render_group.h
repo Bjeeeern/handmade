@@ -12,6 +12,7 @@ struct camera_parameters
 {
   f32 LensChamberSize;
   f32 NearClipPoint;
+  f32 FarClipPoint;
 };
 
 enum render_group_entry_type

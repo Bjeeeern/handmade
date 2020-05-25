@@ -324,7 +324,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input,
 		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, 
 																		 FrameBoundedTransientArena, WorldMap,
 																		 RoomOriginWorldPos, GameState->CameraUpdateBounds, 0);
-		AddWall(SimRegion, v3{0, 0, 0});
+		AddWall(SimRegion, v3{0, 0, 0})->MoveSpec.Gravity = {};
 
 		entity* MainCamera = AddCamera(SimRegion, v3{0, 0, 0});
 		MainCamera->Keyboard = GetKeyboard(Input, 1);

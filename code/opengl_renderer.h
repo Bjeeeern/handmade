@@ -4,26 +4,48 @@
 #include "render_group.h"
 #include <gl/gl.h>
 
+internal_function void
+OGLDrawQuad(v3* Verts)
+{
+  glTexCoord2f(0,0);
+    glVertex3f(Verts[0].X, Verts[0].Y, Verts[0].Z);
+  glTexCoord2f(0,1);
+    glVertex3f(Verts[1].X, Verts[1].Y, Verts[1].Z);
+  glTexCoord2f(1,1);
+    glVertex3f(Verts[2].X, Verts[2].Y, Verts[2].Z);
+
+  glTexCoord2f(0,0);
+    glVertex3f(Verts[0].X, Verts[0].Y, Verts[0].Z);
+  glTexCoord2f(1,1);
+    glVertex3f(Verts[2].X, Verts[2].Y, Verts[2].Z);
+  glTexCoord2f(1,0);
+    glVertex3f(Verts[3].X, Verts[3].Y, Verts[3].Z);
+}
+
+global_variable s32 GLOBAL_NextTextureHandle = 0;
 RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
 {
-#if 0
-  output_target_screen_variables ScreenVars = {};
-  {
-    Assert(ScreenHeightInMeters > 0);
-    f32 PixelsPerMeter = (f32)OutputTarget->Height / ScreenHeightInMeters;
-    ScreenVars.MeterToPixel = 
-    { PixelsPerMeter,              0,
-      0,              PixelsPerMeter};
-    ScreenVars.PixelToMeter = 
-    { 1.0f/PixelsPerMeter,                   0,
-      0,                  1.0f/PixelsPerMeter};
-    ScreenVars.Center = OutputTarget->Dim * 0.5f;
-  }
+  f32 ClipSize = (RenderGroup->CamParam.FarClipPoint - RenderGroup->CamParam.NearClipPoint);
+
+  f32 a = SafeRatio0(1.0f, OutputTarget->WidthOverHeight * ScreenHeightInMeters * 0.5f);
+  f32 b = SafeRatio0(1.0f, ScreenHeightInMeters * 0.5f);
+  f32 c = SafeRatio0(1.0f, ClipSize * 0.5f);
+  f32 d = 1.0f + SafeRatio0(RenderGroup->CamParam.NearClipPoint, ClipSize * 0.5f);
+  f32 f = SafeRatio0(1.0f, RenderGroup->CamParam.LensChamberSize);
+
+  f32 ProjMat[16] = { a, 0, 0, 0,
+                      0, b, 0, 0,
+                      0, 0, c,-f,
+                      0, 0, d, 1, };
+
+  glMatrixMode(GL_PROJECTION);
+  glLoadMatrixf((const GLfloat*)(&ProjMat));
 
   if(RenderGroup->ClearScreen)
   {
-    DrawRectangle(OutputTarget, RectMinMax(v2s{0, 0}, OutputTarget->Dim), 
-                  RenderGroup->ClearScreenColor.RGB, ClipRect);
+    v4 Color = RenderGroup->ClearScreenColor;
+    glClearColor(Color.R, Color.G, Color.B, Color.A);
+    glClear(GL_COLOR_BUFFER_BIT);
   }
 
   for(u32 PushBufferByteOffset = 0;
@@ -41,25 +63,65 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_vector);
 
-          DrawVector(RenderGroup, &ScreenVars, OutputTarget,
-                     Entry->A, Entry->B, Entry->Color.RGB, ClipRect);
+          glBegin(GL_LINES);
+
+          v3 V0 = RenderGroup->WorldToCamera * Entry->A;
+          v3 V1 = RenderGroup->WorldToCamera * Entry->B;
+
+          glColor3f(Entry->Color.R, Entry->Color.G, Entry->Color.B);
+
+          glVertex3f(V0.X, V0.Y, V0.Z);
+          glVertex3f(V1.X, V1.Y, V1.Z);
+
+          glEnd();
         } break;
       case RenderGroupEntryType_render_entry_coordinate_system
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_coordinate_system);
 
-          DrawVector(RenderGroup, &ScreenVars, OutputTarget,
-                     Entry->Tran*v3{0,0,0}, Entry->Tran*v3{1,0,0}, v3{1,0,0}, ClipRect);
-          DrawVector(RenderGroup, &ScreenVars, OutputTarget,
-                     Entry->Tran*v3{0,0,0}, Entry->Tran*v3{0,1,0}, v3{0,1,0}, ClipRect);
-          DrawVector(RenderGroup, &ScreenVars, OutputTarget,
-                     Entry->Tran*v3{0,0,0}, Entry->Tran*v3{0,0,1}, v3{0,0,1}, ClipRect);
+          glBegin(GL_LINES);
+
+          m44 Tran = RenderGroup->WorldToCamera * Entry->Tran;
+          {
+            v3 V0 = Tran*v3{0,0,0};
+            v3 V1 = Tran*v3{1,0,0};
+
+            glColor3f(1,0,0);
+
+            glVertex3f(V0.X, V0.Y, V0.Z);
+            glVertex3f(V1.X, V1.Y, V1.Z);
+          }
+
+          {
+            v3 V0 = Tran*v3{0,0,0};
+            v3 V1 = Tran*v3{0,1,0};
+
+            glColor3f(0,1,0);
+
+            glVertex3f(V0.X, V0.Y, V0.Z);
+            glVertex3f(V1.X, V1.Y, V1.Z);
+          }
+
+          {
+            v3 V0 = Tran*v3{0,0,0};
+            v3 V1 = Tran*v3{0,0,1};
+
+            glColor3f(0,0,1);
+
+            glVertex3f(V0.X, V0.Y, V0.Z);
+            glVertex3f(V1.X, V1.Y, V1.Z);
+          }
+
+          glEnd();
         } break;
       case RenderGroupEntryType_render_entry_wire_cube
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_wire_cube);
 
-          aabb_verts_result AABB = GetAABBVertices(&Entry->Tran);
+          m44 Tran = RenderGroup->WorldToCamera * Entry->Tran;
+          aabb_verts_result AABB = GetAABBVertices(&Tran);
+
+          glBegin(GL_LINES);
 
           for(u32 VertIndex = 0; 
               VertIndex < 4; 
@@ -67,158 +129,54 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
           {
             v3 V0 = AABB.Verts[(VertIndex+0)%4];
             v3 V1 = AABB.Verts[(VertIndex+1)%4];
-            pixel_line_segment_result LineSegment = 
-              ProjectSegmentToScreen(RenderGroup->WorldToCamera, &RenderGroup->CamParam, 
-                                     &ScreenVars, V0, V1);
-            if(LineSegment.PartOfSegmentInView)
-            {
-              DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Entry->Color.RGB, ClipRect);
-            }
+
+            glColor3f(Entry->Color.R, Entry->Color.G, Entry->Color.B);
+
+            glVertex3f(V0.X, V0.Y, V0.Z);
+            glVertex3f(V1.X, V1.Y, V1.Z);
           }
+
           for(u32 VertIndex = 0; 
               VertIndex < 4; 
               VertIndex++)
           {
             v3 V0 = AABB.Verts[(VertIndex+0)%4 + 4];
             v3 V1 = AABB.Verts[(VertIndex+1)%4 + 4];
-            pixel_line_segment_result LineSegment = 
-              ProjectSegmentToScreen(RenderGroup->WorldToCamera, &RenderGroup->CamParam, 
-                                     &ScreenVars, V0, V1);
-            if(LineSegment.PartOfSegmentInView)
-            {
-              DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Entry->Color.RGB, ClipRect);
-            }
+
+            glColor3f(Entry->Color.R, Entry->Color.G, Entry->Color.B);
+
+            glVertex3f(V0.X, V0.Y, V0.Z);
+            glVertex3f(V1.X, V1.Y, V1.Z);
           }
+
           for(u32 VertIndex = 0; 
               VertIndex < 4; 
               VertIndex++)
           {
             v3 V0 = AABB.Verts[VertIndex];
             v3 V1 = AABB.Verts[VertIndex + 4];
-            pixel_line_segment_result LineSegment = 
-              ProjectSegmentToScreen(RenderGroup->WorldToCamera, &RenderGroup->CamParam, 
-                                     &ScreenVars, V0, V1);
-            if(LineSegment.PartOfSegmentInView)
-            {
-              DrawLine(OutputTarget, LineSegment.A, LineSegment.B, Entry->Color.RGB, ClipRect);
-            }
+
+            glColor3f(Entry->Color.R, Entry->Color.G, Entry->Color.B);
+
+            glVertex3f(V0.X, V0.Y, V0.Z);
+            glVertex3f(V1.X, V1.Y, V1.Z);
           }
+
+          glEnd();
         } break;
-      //TODO(bjorn): Quad seam problems are still there.
       case RenderGroupEntryType_render_entry_blank_quad
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_blank_quad);
 
-          //TODO(bjorn): Think about how and when in the pipeline to render the hit-points.
           quad_verts_result Quad = GetQuadVertices(RenderGroup->WorldToCamera * Entry->Tran);
 
-          {
-            uv_triangle_clip_result ClipResult = 
-              ClipUVTriangleByZPlane(RenderGroup->CamParam.NearClipPoint, 
-                                     Quad.Verts[0], Quad.Verts[1], Quad.Verts[2], 
-                                     {0,0}, {0,1}, {1,1});
-            if(ClipResult.TriCount > 0)
-            {
-              DrawTriangle(OutputTarget, 
-                           &RenderGroup->CamParam, &ScreenVars, 
-                           ClipResult.Verts[0], 
-                           ClipResult.Verts[1], 
-                           ClipResult.Verts[2], 
-                           ClipResult.UV[0],
-                           ClipResult.UV[1],
-                           ClipResult.UV[2],
-                           0,
-                           Entry->Color,
-                           ClipRect,
-                           PlainFillShader);
-            }
-            if(ClipResult.TriCount > 1)
-            {
-              DrawTriangle(OutputTarget, 
-                           &RenderGroup->CamParam, &ScreenVars, 
-                           ClipResult.Verts[0], 
-                           ClipResult.Verts[2], 
-                           ClipResult.Verts[3], 
-                           ClipResult.UV[0],
-                           ClipResult.UV[2],
-                           ClipResult.UV[3],
-                           0,
-                           Entry->Color,
-                           ClipRect,
-                           PlainFillShader);
-            }
-          }
+          glBegin(GL_TRIANGLES);
 
-          {
-            uv_triangle_clip_result ClipResult = 
-              ClipUVTriangleByZPlane(RenderGroup->CamParam.NearClipPoint, 
-                                     Quad.Verts[0], Quad.Verts[2], Quad.Verts[3], 
-                                     {0,0}, {1,1}, {1,0});
-            if(ClipResult.TriCount > 0)
-            {
-              DrawTriangle(OutputTarget, 
-                           &RenderGroup->CamParam, &ScreenVars, 
-                           ClipResult.Verts[0], 
-                           ClipResult.Verts[1], 
-                           ClipResult.Verts[2], 
-                           ClipResult.UV[0],
-                           ClipResult.UV[1],
-                           ClipResult.UV[2],
-                           0,
-                           Entry->Color,
-                           ClipRect,
-                           PlainFillShader);
-            }
-            if(ClipResult.TriCount > 1)
-            {
-              DrawTriangle(OutputTarget, 
-                           &RenderGroup->CamParam, &ScreenVars, 
-                           ClipResult.Verts[0], 
-                           ClipResult.Verts[2], 
-                           ClipResult.Verts[3], 
-                           ClipResult.UV[0],
-                           ClipResult.UV[2],
-                           ClipResult.UV[3],
-                           0,
-                           Entry->Color,
-                           ClipRect,
-                           PlainFillShader);
-            }
-          }
+          glColor3f(Entry->Color.R, Entry->Color.G, Entry->Color.B);
 
-#if 0
-          {
-            u32 TriCount = 1;
-            v3 Verts[4] = {Quad.Verts[0], Quad.Verts[2], Quad.Verts[3], {}};
-            v3 UV[4] = {{0,0}, {1,1}, {1,0}, {}};
+          OGLDrawQuad(Quad.Verts);
 
-            DrawTriangle(OutputTarget, 
-                         &RenderGroup->CamParam, &ScreenVars, 
-                         Verts[0], 
-                         Verts[1], 
-                         Verts[2], 
-                         UV[0],
-                         UV[1],
-                         UV[2],
-                         0,
-                         Entry->Color,
-                         ClipRect);
-            if(TriCount == 2)
-            {
-              DrawTriangle(OutputTarget, 
-                           &RenderGroup->CamParam, &ScreenVars, 
-                           Verts[0], 
-                           Verts[2], 
-                           Verts[3], 
-                           UV[0],
-                           UV[2],
-                           UV[3],
-                           0,
-                           Entry->Color,
-                           ClipRect);
-            }
-          }
-#endif
+          glEnd();
         } break;
       case RenderGroupEntryType_render_entry_quad
         : {
@@ -226,124 +184,48 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
 
           quad_verts_result Quad = GetQuadVertices(RenderGroup->WorldToCamera * Entry->Tran);
 
-          //TODO(bjorn): Why cant this be the same as the exact lens chamber size?
+          glEnable(GL_TEXTURE_2D);
 
-          rect_corner_v2_result UVCorners = GetRectCorners(Entry->BitmapUVRect);
+          if(!Entry->Bitmap->GPUHandle)
           {
-            uv_triangle_clip_result ClipResult = 
-              ClipUVTriangleByZPlane(RenderGroup->CamParam.NearClipPoint, 
-                                     Quad.Verts[0], Quad.Verts[1], Quad.Verts[2], 
-                                     UVCorners.BL, UVCorners.TL, UVCorners.TR);
-            if(ClipResult.TriCount > 0)
-            {
-              DrawTriangle(OutputTarget, 
-                           &RenderGroup->CamParam, &ScreenVars, 
-                           ClipResult.Verts[0], 
-                           ClipResult.Verts[1], 
-                           ClipResult.Verts[2], 
-                           ClipResult.UV[0],
-                           ClipResult.UV[1],
-                           ClipResult.UV[2],
-                           Entry->Bitmap,
-                           Entry->Color,
-                           ClipRect,
-                           BitmapShader);
-            }
-            if(ClipResult.TriCount > 1)
-            {
-              DrawTriangle(OutputTarget, 
-                           &RenderGroup->CamParam, &ScreenVars, 
-                           ClipResult.Verts[0], 
-                           ClipResult.Verts[2], 
-                           ClipResult.Verts[3], 
-                           ClipResult.UV[0],
-                           ClipResult.UV[2],
-                           ClipResult.UV[3],
-                           Entry->Bitmap,
-                           Entry->Color,
-                           ClipRect,
-                           BitmapShader);
-            }
+            Entry->Bitmap->GPUHandle = GLOBAL_NextTextureHandle++;
+            glBindTexture(GL_TEXTURE_2D, Entry->Bitmap->GPUHandle);
+
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, Entry->Bitmap->Pitch);
+
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+
+            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, Entry->Bitmap->Width, Entry->Bitmap->Height, 0,
+                         GL_BGRA_EXT, GL_UNSIGNED_BYTE, Entry->Bitmap->Memory);
+          }
+          else
+          {
+            glBindTexture(GL_TEXTURE_2D, Entry->Bitmap->GPUHandle);
           }
 
-          {
-            uv_triangle_clip_result ClipResult = 
-              ClipUVTriangleByZPlane(RenderGroup->CamParam.NearClipPoint, 
-                                     Quad.Verts[0], Quad.Verts[2], Quad.Verts[3], 
-                                     UVCorners.BL, UVCorners.TR, UVCorners.BR);
-            if(ClipResult.TriCount > 0)
-            {
-              DrawTriangle(OutputTarget, 
-                           &RenderGroup->CamParam, &ScreenVars, 
-                           ClipResult.Verts[0], 
-                           ClipResult.Verts[1], 
-                           ClipResult.Verts[2], 
-                           ClipResult.UV[0],
-                           ClipResult.UV[1],
-                           ClipResult.UV[2],
-                           Entry->Bitmap,
-                           Entry->Color,
-                           ClipRect,
-                           BitmapShader);
-            }
-            if(ClipResult.TriCount > 1)
-            {
-              DrawTriangle(OutputTarget, 
-                           &RenderGroup->CamParam, &ScreenVars, 
-                           ClipResult.Verts[0], 
-                           ClipResult.Verts[2], 
-                           ClipResult.Verts[3], 
-                           ClipResult.UV[0],
-                           ClipResult.UV[2],
-                           ClipResult.UV[3],
-                           Entry->Bitmap,
-                           Entry->Color,
-                           ClipRect,
-                           BitmapShader);
-            }
-          }
+          glEnable(GL_BLEND);
+          glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
-#if 0
-          v2 PixVerts[4] = {};
-          for(u32 VertIndex = 0; 
-              VertIndex < 4; 
-              VertIndex++)
-          {
-            v3 V0 = Quad.Verts[VertIndex];
-            v3 V1 = Quad.Verts[(VertIndex + 1)%4];
+          glBegin(GL_TRIANGLES);
 
-            pixel_line_segment_result LineSegment = 
-              ProjectSegmentToScreen(RenderGroup->WorldToCamera, &RenderGroup->CamParam, 
-                                     &ScreenVars, V0, V1);
-            if(LineSegment.PartOfSegmentInView)
-            {
-              PixVerts[VertIndex] = LineSegment.A;
-            }
-          }
+          glColor3f(Entry->Color.R, Entry->Color.G, Entry->Color.B);
 
-          DrawLine(OutputTarget, PixVerts[0], PixVerts[2], {1.0f, 0.25f, 1.0f});
-          DrawCircle(OutputTarget, (PixVerts[0] + PixVerts[2]) * 0.5f, 3.0f, {1.0f, 1.0f, 0.0f, 1.0f});
+          OGLDrawQuad(Quad.Verts);
 
-          pixel_pos_result PixPos = 
-            ProjectPointToScreen(RenderGroup->WorldToCamera, &RenderGroup->CamParam, 
-                                 &ScreenVars, (Quad.Verts[0]+Quad.Verts[2])*0.5f);
-          if(PixPos.PointIsInView)
-          {
-            DrawCircle(OutputTarget, PixPos.P, 3.0f, {0.0f, 1.0f, 1.0f, 1.0f});
-          }
-          for(u32 VertIndex = 0; 
-              VertIndex < 4; 
-              VertIndex++)
-          {
-            DrawLine(OutputTarget, PixVerts[VertIndex], PixVerts[(VertIndex + 1)%4], 
-                     {1.0f, VertIndex*0.25f, 1.0f});
-          }
-#endif
+          glEnd();
+          glDisable(GL_TEXTURE_2D);
         } break;
       case RenderGroupEntryType_render_entry_triangle_fill_flip
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_triangle_fill_flip);
 
+          //TODO(Bjorn): Shaders
+#if 0
           DrawTriangle(OutputTarget, 
                        &RenderGroup->CamParam, &ScreenVars, 
                        Entry->Sta, 
@@ -356,11 +238,14 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
                        {},
                        ClipRect,
                        PlainFillFlipShader);
+#endif
         } break;
       case RenderGroupEntryType_render_entry_quad_bezier_fill_flip
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_quad_bezier_fill_flip);
 
+          //TODO(Bjorn): Shaders
+#if 0
           DrawTriangle(OutputTarget, 
                        &RenderGroup->CamParam, &ScreenVars, 
                        Entry->Sta, 
@@ -373,11 +258,14 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
                        {},
                        ClipRect,
                        QuadBezierFlipShader);
+#endif
         } break;
       case RenderGroupEntryType_render_entry_sphere
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_sphere);
 
+          //TODO(Bjorn): Shaders
+#if 0
           v3 P0 = Entry->Tran * v3{0,0,0};
           v3 P1 = Entry->Tran * v3{0.5f,0,0};
 
@@ -392,11 +280,11 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
 
             DrawCircle(OutputTarget, PixPos.P, PixR, Entry->Color, ClipRect);
           }
+#endif
         } break;
       InvalidDefaultCase;
     }
   }
-#endif
 }
 
 #define OPENGL_RENDERER_H

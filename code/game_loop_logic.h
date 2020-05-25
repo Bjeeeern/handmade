@@ -223,7 +223,7 @@ PostPhysicsStepEntityUpdate(entity* Entity, entity* OldEntity, f32 dT)
 }
 
   inline void
-RenderEntity(render_group* RenderGroup, transient_state* TransientState, 
+RenderEntity(render_group* RenderGroup, transient_state* TransientState, game_assets* Assets,
              entity* Entity, entity* MainCamera)
 {
   m44 T = Entity->Tran; 
@@ -273,14 +273,14 @@ RenderEntity(render_group* RenderGroup, transient_state* TransientState,
     m44 QuadTran = ConstructTransform({0,0,0}, 
                                       AngleAxisToQuaternion(tau32 * 0.25f, {1,0,0}), 
                                       Entity->Body.Primitives[1].S);
-    PushQuad(RenderGroup, T*QuadTran, GAI_RockWall);
+    PushQuad(RenderGroup, T*QuadTran, Assets, GAI_RockWall);
   }
   if(Entity->VisualType == EntityVisualType_Player)
   {
     hero_bitmaps *Hero = &(TransientState->Assets.HeroBitmaps[Entity->FacingDirection]);
 
     f32 ZAlpha = Clamp01(1.0f - (Entity->P.Z / 2.0f));
-    PushQuad(RenderGroup, T, GAI_Shadow, RectMinDim({0,0},{1,1}), {1, 1, 1, ZAlpha});
+    PushQuad(RenderGroup, T, Assets, GAI_Shadow, RectMinDim({0,0},{1,1}), {1, 1, 1, ZAlpha});
     PushQuad(RenderGroup, T, &Hero->Torso);
     PushQuad(RenderGroup, T, &Hero->Cape);
     PushQuad(RenderGroup, T, &Hero->Head);
@@ -290,7 +290,7 @@ RenderEntity(render_group* RenderGroup, transient_state* TransientState,
     hero_bitmaps *Hero = &(TransientState->Assets.HeroBitmaps[Entity->FacingDirection]);
 
     f32 ZAlpha = Clamp01(1.0f - (Entity->P.Z / 2.0f));
-    PushQuad(RenderGroup, T, GAI_Shadow, RectMinDim({0,0},{1,1}), {1, 1, 1, ZAlpha});
+    PushQuad(RenderGroup, T, Assets, GAI_Shadow, RectMinDim({0,0},{1,1}), {1, 1, 1, ZAlpha});
     PushQuad(RenderGroup, T, &Hero->Torso);
   }
   if(Entity->VisualType == EntityVisualType_Familiar)
@@ -298,12 +298,12 @@ RenderEntity(render_group* RenderGroup, transient_state* TransientState,
     hero_bitmaps *Hero = &(TransientState->Assets.HeroBitmaps[Entity->FacingDirection]);
 
     f32 ZAlpha = Clamp01(1.0f - ((Entity->P.Z + 1.4f) / 2.0f));
-    PushQuad(RenderGroup, T, GAI_Shadow, RectMinDim({0,0},{1,1}), {1, 1, 1, ZAlpha});
+    PushQuad(RenderGroup, T, Assets, GAI_Shadow, RectMinDim({0,0},{1,1}), {1, 1, 1, ZAlpha});
     PushQuad(RenderGroup, T, &Hero->Head);
   }
   if(Entity->VisualType == EntityVisualType_Sword)
   {
-    PushQuad(RenderGroup, T, GAI_Sword);
+    PushQuad(RenderGroup, T, Assets, GAI_Sword);
   }
 
   if(Entity->VisualType == EntityVisualType_Monstar ||

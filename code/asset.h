@@ -1,6 +1,7 @@
 #if !defined(ASSET_H)
 
 #include "file_format_BMP.h"
+#include "font.h"
 
 //STUDY(bjorn):
 //

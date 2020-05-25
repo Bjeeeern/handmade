@@ -1,7 +1,6 @@
 #if !defined(FILE_FORMAT_BMP_H)
 
 #include "types_and_defines.h"
-#include "platform.h"
 #include "memory.h"
 
 #pragma pack(push, 1)

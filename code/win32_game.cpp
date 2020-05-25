@@ -7,6 +7,8 @@
 #include <dsound.h>
 #include <gl/gl.h>
 
+#include "opengl_renderer.h"
+
 #include <tobii/tobii.h>
 #include <tobii/tobii_streams.h>
 
@@ -1874,6 +1876,7 @@ WinMain(HINSTANCE Instance,
     }
     Handmade.Memory.PushWork = Win32PushWork;
     Handmade.Memory.CompleteWork = Win32CompleteWork;
+    //Handmade.Memory.RenderGroupToOutput = OpenGLRenderGroupToOutput;
 
     game_input OldGameInput = {};
 
@@ -2171,8 +2174,6 @@ WinMain(HINSTANCE Instance,
       }
 #endif
 
-      thread_context Thread = {};
-
       game_bitmap GameBuffer = {};
       GameBuffer.Memory = (u32*)BackBuffer.Memory;
       GameBuffer.Width = BackBuffer.Width;
@@ -2193,8 +2194,7 @@ WinMain(HINSTANCE Instance,
       if(Game->Code.UpdateAndRender)
       {
         HandleDebugCycleCounters(&Game->Memory);
-        Game->Code.UpdateAndRender(TargetSecondsPerFrame, &Thread, &Game->Memory, 
-                                   &NewGameInput, &GameBuffer);
+        Game->Code.UpdateAndRender(TargetSecondsPerFrame, &Game->Memory, &NewGameInput, &GameBuffer);
       }
 
       DWORD PlayCursor;
@@ -2311,7 +2311,7 @@ WinMain(HINSTANCE Instance,
 
         if(Game->Code.GetSoundSamples)
         {
-          Game->Code.GetSoundSamples(&Thread, &GameSoundBuffer, &Game->Memory);
+          Game->Code.GetSoundSamples(&GameSoundBuffer, &Game->Memory);
         }
         Win32FillSoundBuffer(&SoundOutput, ByteToLock, BytesToWrite, &GameSoundBuffer,
                              SecondarySoundBuffer);

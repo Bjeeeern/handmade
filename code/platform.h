@@ -3,6 +3,11 @@
 #include "types_and_defines.h"
 #include "math.h"
 
+//TODO Temp dependency fix.
+#if HANDMADE_INTERNAL
+#endif
+
+
 /* NOTE(bjorn):
 
    :HANDMADE_INTERNAL:
@@ -18,9 +23,26 @@
 // NOTE(bjorn): Stuff the platform provides to the game.
 //
 
-struct thread_context
+//                                                              high     low
+// NOTE(bjorn): Expected pixel layout in memory is top to bottom AA RR GG BB.
+//              Pixels are laid out in a bottom-up, left-right order.
+#define GAME_BITMAP_BYTES_PER_PIXEL 4
+struct game_bitmap
 {
-  s32 PlaceHolder;
+  u32 *Memory;
+	union
+	{
+		v2u Dim;
+		struct
+		{
+			u32 Width;
+			u32 Height;
+		};
+	};
+  s32 Pitch;
+  v2s Alignment;
+
+  f32 WidthOverHeight;
 };
 
 #if HANDMADE_INTERNAL
@@ -78,28 +100,6 @@ extern struct game_memory* DebugGlobalMemory;
 //
 // NOTE(bjorn): Stuff the game provides to the platform.
 //
-
-//                                                              high     low
-// NOTE(bjorn): Expected pixel layout in memory is top to bottom AA RR GG BB.
-//              Pixels are laid out in a bottom-up, left-right order.
-#define GAME_BITMAP_BYTES_PER_PIXEL 4
-struct game_bitmap
-{
-  u32 *Memory;
-	union
-	{
-		v2u Dim;
-		struct
-		{
-			u32 Width;
-			u32 Height;
-		};
-	};
-  s32 Pitch;
-  v2s Alignment;
-
-  f32 WidthOverHeight;
-};
 
 struct game_sound_output_buffer
 {
@@ -363,6 +363,11 @@ struct work_queue
 typedef void multi_thread_push_work(work_queue* Queue, work_queue_callback* Callback, void* Data);
 typedef void multi_thread_complete_work(work_queue* Queue);
 
+struct render_group;
+#define RENDER_GROUP_TO_OUTPUT(name) void name(render_group* RenderGroup, game_bitmap* OutputTarget, \
+                                               f32 ScreenHeightInMeters)
+typedef RENDER_GROUP_TO_OUTPUT(render_group_to_output);
+
 // NOTE(bjorn): Memory REQUIRED to be initialized to 0 on startup.
 struct game_memory
 {
@@ -376,6 +381,8 @@ struct game_memory
 
   multi_thread_push_work* PushWork;
   multi_thread_complete_work* CompleteWork;
+
+  render_group_to_output* RenderGroupToOutput;
 
   //TODO(bjorn): Put this in transient or permanent.
   work_queue_entry HighPriorityQueueEntries[256];
@@ -395,7 +402,7 @@ struct game_memory
 #endif
 };
 
-#define GAME_UPDATE_AND_RENDER(name) void name(f32 SecondsToUpdate, thread_context *Thread,\
+#define GAME_UPDATE_AND_RENDER(name) void name(f32 SecondsToUpdate,\
 																							 game_memory *Memory, game_input *Input,\
 																							 game_bitmap *Buffer)
 typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
@@ -407,7 +414,7 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRenderStub)
 // NOTE(bjorn): This has to be a fast function. A millisecond or so.
 // TODO(bjorn): Reduce the pressure on this function's performance by 
 //              measuring it etc.
-#define GAME_GET_SOUND_SAMPLES(name) void name(thread_context *Thread,\
+#define GAME_GET_SOUND_SAMPLES(name) void name(\
 																							 game_sound_output_buffer *SoundBuffer,\
 																							 game_memory *Memory)
 typedef GAME_GET_SOUND_SAMPLES(game_get_sound_samples);

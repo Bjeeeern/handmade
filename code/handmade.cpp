@@ -1,14 +1,16 @@
 #include "platform.h"
 multi_thread_push_work* PushWork;
 multi_thread_complete_work* CompleteWork;
+render_group_to_output* GPURenderGroupToOutput;
 #include "memory.h"
 #include "world_map.h"
-#include "render_group.h"
+#include "render_group_builder.h"
 #include "random.h"
 #include "sim_region.h"
 #include "entity.h"
 #include "collision.h"
 #include "trigger.h"
+#include "software_renderer.h"
 
 // @IMPORTANT @IDEA
 // Maybe sort the order of entity execution while creating the sim regions so
@@ -155,7 +157,14 @@ GenerateGlyph(render_group* RenderGroup, font* Font,
 #endif
 
   SetCamera(RenderGroup, M44Identity(), positive_infinity32, 0.5f);
-  RenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
+  if(GPURenderGroupToOutput)
+  {
+    GPURenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
+  }
+  else
+  {
+    SingleTileRenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
+  }
 
   for(u32 Y = 1;
       Y < (Buffer->Height-1);
@@ -233,7 +242,7 @@ WORK_QUEUE_CALLBACK(DoFontGenWork)
   game_bitmap* Glyph = ClearBitmap(&Arena, 512, 1024);
   Glyph->Alignment = {256, 512};
 
-  render_group* RenderGroup = AllocateRenderGroup(&Arena, Megabytes(1), Assets);
+  render_group* RenderGroup = AllocateRenderGroup(&Arena, Megabytes(1));
 
   GenerateGlyph(RenderGroup, Font, Glyph, Character);
   ClearRenderGroup(RenderGroup);
@@ -246,7 +255,14 @@ WORK_QUEUE_CALLBACK(DoFontGenWork)
 
   SetCamera(RenderGroup, ConstructTransform(v2{-(Buffer->Width*0.5f), -(Buffer->Height*0.5f)}), 
             positive_infinity32, 0.5f);
-  RenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
+  if(GPURenderGroupToOutput)
+  {
+    GPURenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
+  }
+  else
+  {
+    SingleTileRenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
+  }
 }
 
   internal_function void
@@ -667,6 +683,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
   {
     PushWork = Memory->PushWork;
     CompleteWork = Memory->CompleteWork;
+    GPURenderGroupToOutput = Memory->RenderGroupToOutput;
 
     InitializeTransientState(Memory, TransientState);
   }
@@ -784,7 +801,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				EndTemporaryMemory(GameState->DEBUG_RenderGroupTempMem);
 				CheckMemoryArena(TransientArena);
 				GameState->DEBUG_RenderGroupTempMem = BeginTemporaryMemory(TransientArena);
-				GameState->DEBUG_OldRenderGroup = AllocateRenderGroup(TransientArena, Megabytes(4), Assets);
+				GameState->DEBUG_OldRenderGroup = AllocateRenderGroup(TransientArena, Megabytes(4));
 				GameState->DEBUG_PauseStep = Modulate(GameState->DEBUG_PauseStep+1, 1, 9);
 
 				GameState->DEBUG_SkipXSteps = 
@@ -855,7 +872,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		}
 	}
 
-	render_group* RenderGroup = AllocateRenderGroup(FrameBoundedTransientArena, Megabytes(4), Assets);
+	render_group* RenderGroup = AllocateRenderGroup(FrameBoundedTransientArena, Megabytes(4));
 
 	//
 	// NOTE(bjorn): Moving and Rendering
@@ -979,7 +996,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 			if(Step == LastStep)
 			{
-        RenderEntity(RenderGroup, TransientState, Entity, MainCamera);
+        RenderEntity(RenderGroup, TransientState, Assets, Entity, MainCamera);
 			}
 		}
 	}
@@ -1003,27 +1020,31 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
   EndSim(Input, Entities, WorldArena, SimRegion);
 
+//TODO(bjorn): Add a UI render step.
+#if 0
+  if(Input->EyeTracker.IsConnected)
+  {
+    //TODO(bjorn): Fix eye-tracker coordinates.
+    Input->EyeTracker.P.Y = 1.0f - Input->EyeTracker.P.Y;
+    PushSphere(RenderGroup);
+    DrawCircle(Buffer, Hadamard(Input->EyeTracker.P, Buffer->Dim), 
+               20, {1,0,1,0.5f}, RectMinMax(v2s{0, 0}, Buffer->Dim));
+  }
+#endif
+
   ClearScreen(RenderGroup, {0.5f, 0.5f, 0.5f});
 
   //
   // NOTE(bjorn): Rendering
   //
-#if 1
-  TiledRenderGroupToOutput(&Memory->HighPriorityQueue, RenderGroup, Buffer, 
-                           MainCamera->CamScreenHeight);
-#else
-  DrawRectangle(Buffer, RectMinMax(v2s{0, 0}, Buffer->Dim), 
-                v3{1,1,0}*0.8f, RectMinMax(v2s{0, 0}, Buffer->Dim));
-
-  game_mouse* Mouse = GetMouse(Input, 1);
-  DrawLine(Buffer, Buffer->Dim*0.5f, Hadamard(Buffer->Dim, Mouse->P), 
-           v3{0,0,1}*0.8f, RectMinMax(v2s{0, 0}, Buffer->Dim));
-#endif
-  if(Input->EyeTracker.IsConnected)
+  if(GPURenderGroupToOutput)
   {
-    Input->EyeTracker.P.Y = 1.0f - Input->EyeTracker.P.Y;
-    DrawCircle(Buffer, Hadamard(Input->EyeTracker.P, Buffer->Dim), 
-               20, {1,0,1,0.5f}, RectMinMax(v2s{0, 0}, Buffer->Dim));
+    GPURenderGroupToOutput(RenderGroup, Buffer, MainCamera->CamScreenHeight);
+  }
+  else
+  {
+    TiledRenderGroupToOutput(&Memory->HighPriorityQueue, RenderGroup, Buffer, 
+                             MainCamera->CamScreenHeight);
   }
 
 	EndTemporaryMemory(TempMem);

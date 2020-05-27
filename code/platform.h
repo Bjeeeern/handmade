@@ -73,6 +73,10 @@ typedef DEBUG_PLATFORM_GET_FILE_EDIT_TIMESTAMP(debug_platform_get_file_edit_time
 enum
 {
   DebugCycleCounter_GameUpdateAndRender,
+  DebugCycleCounter_SimRegion,
+  DebugCycleCounter_BeginSimRegion,
+  DebugCycleCounter_EndSimRegion,
+  DebugCycleCounter_BuildRenderQueue,
   DebugCycleCounter_RenderGroupToOutput,
   DebugCycleCounter_DrawTriangle,
   DebugCycleCounter_ProcessPixel,
@@ -83,21 +87,22 @@ struct debug_cycle_counter
 {
   u64 CycleCount;
   u64 HitCount;
+  const char* String;
 };
 
 extern struct game_memory* DebugGlobalMemory; 
 
 #if COMPILER_MSVC
 #define BEGIN_TIMED_BLOCK(ID) u64 StartCycleCount##ID = __rdtsc();
-#define END_TIMED_BLOCK(ID) DebugGlobalMemory->Counters[DebugCycleCounter_##ID].CycleCount += __rdtsc() - StartCycleCount##ID; DebugGlobalMemory->Counters[DebugCycleCounter_##ID].HitCount++;
+#define END_TIMED_BLOCK(ID) DebugGlobalMemory->Counters[DebugCycleCounter_##ID].CycleCount += __rdtsc() - StartCycleCount##ID; DebugGlobalMemory->Counters[DebugCycleCounter_##ID].HitCount++; DebugGlobalMemory->Counters[DebugCycleCounter_##ID].String = #ID;
 #define END_TIMED_BLOCK_COUNTED(ID, Count) DebugGlobalMemory->Counters[DebugCycleCounter_##ID].CycleCount += __rdtsc() - StartCycleCount##ID; DebugGlobalMemory->Counters[DebugCycleCounter_##ID].HitCount += (Count);
-#else
+#else // Other Compiler
 #define BEGIN_TIMED_BLOCK(ID)
 #define END_TIMED_BLOCK(ID)
 #define END_TIMED_BLOCK_COUNTED(ID, Count)
-#endif
+#endif //COMPILER_MSVC
 
-#endif
+#endif //HANDMADE_INTERNAL
 
 //
 // NOTE(bjorn): Stuff the game provides to the platform.

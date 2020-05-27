@@ -1285,7 +1285,7 @@ Win32GetEXEFileName(win32_state *State)
   internal_function void
 HandleDebugCycleCounters(game_memory* Memory)
 {
-#if 0
+#if HANDMADE_INTERNAL
   OutputDebugStringA("DEBUG CYCLE COUNTS:\n");
   for(s32 CounterIndex = 0;
       CounterIndex < ArrayCount(Memory->Counters);
@@ -1297,8 +1297,8 @@ HandleDebugCycleCounters(game_memory* Memory)
     {
       char TextBuffer[256];
       sprintf_s(TextBuffer, 
-                "%d: %I64ucy %I64uh %I64ucy/h\n",
-                CounterIndex, Counter->CycleCount, Counter->HitCount, 
+                "%20.20s: %I64ucy %I64uh %I64ucy/h\n",
+                Counter->String, Counter->CycleCount, Counter->HitCount, 
                 Counter->CycleCount / Counter->HitCount);
       OutputDebugStringA(TextBuffer);
 
@@ -1489,6 +1489,10 @@ Win32InitOpenGL(HWND Window)
   ReleaseDC(Window, WindowDC);
 }
 
+#if HANDMADE_INTERNAL
+game_memory* DebugGlobalMemory; 
+#endif
+
   s32 CALLBACK 
 WinMain(HINSTANCE Instance,
         HINSTANCE PrevInstance,
@@ -1553,6 +1557,7 @@ WinMain(HINSTANCE Instance,
   Win32GetEXEFileName(&Win32State);
 
   win32_game Handmade = {};
+  DebugGlobalMemory = &Handmade.Memory;
   Win32BuildPathToFileInEXEPath(&Win32State, "game.dll", 
                                 sizeof(Handmade.DLLFullPath), Handmade.DLLFullPath);
   Win32BuildPathToFileInEXEPath(&Win32State, "game_temp.dll", 

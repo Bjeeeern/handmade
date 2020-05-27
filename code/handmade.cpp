@@ -878,14 +878,17 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	// NOTE(bjorn): Moving and Rendering
 	//
 
+  BEGIN_TIMED_BLOCK(SimRegion);
 	// NOTE(bjorn): Create sim region by camera
 	sim_region* SimRegion = 0;
 	{
 		stored_entity* StoredMainCamera = 
 			GetStoredEntityByIndex(Entities, GameState->MainCameraStorageIndex);
-		SimRegion = BeginSim(Input, Entities, FrameBoundedTransientArena, WorldMap, 
+    BEGIN_TIMED_BLOCK(BeginSimRegion);
+    SimRegion = BeginSim(Input, Entities, FrameBoundedTransientArena, WorldMap, 
 												 StoredMainCamera->Sim.WorldP, GameState->CameraUpdateBounds, 
 												 SecondsToUpdate);
+    END_TIMED_BLOCK(BeginSimRegion);
 	}
 	Assert(SimRegion);
 
@@ -996,7 +999,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
 			if(Step == LastStep)
 			{
+        BEGIN_TIMED_BLOCK(BuildRenderQueue);
         RenderEntity(RenderGroup, TransientState, Assets, Entity, MainCamera);
+        END_TIMED_BLOCK(BuildRenderQueue)
 			}
 		}
 	}
@@ -1017,8 +1022,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     }
   }
 
-
+  BEGIN_TIMED_BLOCK(EndSimRegion);
   EndSim(Input, Entities, WorldArena, SimRegion);
+  END_TIMED_BLOCK(EndSimRegion);
+
+  END_TIMED_BLOCK(SimRegion);
 
 //TODO(bjorn): Add a UI render step.
 #if 0

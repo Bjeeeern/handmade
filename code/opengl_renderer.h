@@ -25,6 +25,8 @@ OGLDrawQuad(v3* Verts)
 global_variable s32 GLOBAL_NextTextureHandle = 0;
 RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
 {
+  BEGIN_TIMED_BLOCK(RenderGroupToOutput);
+
   f32 ClipSize = (RenderGroup->CamParam.FarClipPoint - RenderGroup->CamParam.NearClipPoint);
 
   f32 a = SafeRatio0(1.0f, OutputTarget->WidthOverHeight * ScreenHeightInMeters * 0.5f);
@@ -285,6 +287,8 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
       InvalidDefaultCase;
     }
   }
+
+  END_TIMED_BLOCK(RenderGroupToOutput);
 }
 
 #define OPENGL_RENDERER_H

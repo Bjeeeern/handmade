@@ -2,6 +2,8 @@
 
 #include "render_group.h"
 
+//TODO(bjorn): Revive in the future?
+#if 0
 struct output_target_screen_variables
 {
     m22 MeterToPixel;
@@ -1607,6 +1609,7 @@ TiledRenderGroupToOutput(work_queue* RenderQueue, render_group* RenderGroup,
   }
   CompleteWork(RenderQueue);
 }
+#endif
 
 #define SOFTWARE_RENDERER_H
 #endif

@@ -86,208 +86,6 @@ global_variable	game_state* DEBUG_GameState = 0;
 global_variable	transient_state* DEBUG_TransientState = 0;
 #endif
 
-internal_function void
-GenerateGlyph(render_group* RenderGroup, font* Font,
-              game_bitmap* Buffer, u8 Character)
-{
-  unicode_to_glyph_data *Entries = (unicode_to_glyph_data *)(Font + 1);
-
-  s32 CharEntryIndex = 0;
-  for(s32 EntryIndex = 0;
-      EntryIndex < Font->UnicodeCodePointCount;
-      EntryIndex++)
-  {
-    if(Character == Entries[EntryIndex].UnicodeCodePoint)
-    {
-      CharEntryIndex = EntryIndex;
-      break;
-    }
-	}
-
-	s32 Offset = Entries[CharEntryIndex].OffsetToGlyphData;
-	s32 CurveCount = Entries[CharEntryIndex].QuadraticCurveCount;
-	v2 GlyphDim = {(f32)Buffer->Width, Buffer->Height*(3.0f/4.0f)};
-	v2 GlyphOrigin = {-(Buffer->Width*(2.0f/4.0f)), -(Buffer->Height*(1.0f/4.0f))};
-
-	quadratic_curve *Curves = (quadratic_curve *)((u8 *)Font + Offset);
-	for(s32 CurveIndex = 0;
-			CurveIndex < CurveCount;
-			CurveIndex++)
-	{
-		quadratic_curve Curve = Curves[CurveIndex];
-
-		v2 Sta = Hadamard(Curve.Srt, GlyphDim) + GlyphOrigin;
-		v2 Mid = Hadamard(Curve.Con, GlyphDim) + GlyphOrigin;
-		v2 End = Hadamard(Curve.End, GlyphDim) + GlyphOrigin;
-
-    PushTriangleFillFlip(RenderGroup, Sta, {1.0f,0.5f}, End);
-  }
-
-	for(s32 CurveIndex = 0;
-			CurveIndex < CurveCount;
-			CurveIndex++)
-	{
-		quadratic_curve Curve = Curves[CurveIndex];
-
-		v2 Sta = Hadamard(Curve.Srt, GlyphDim) + GlyphOrigin;
-		v2 Mid = Hadamard(Curve.Con, GlyphDim) + GlyphOrigin;
-		v2 End = Hadamard(Curve.End, GlyphDim) + GlyphOrigin;
-
-    PushQuadBezierFlip(RenderGroup, Sta, Mid, End);
-  }
-
-#if 0
-	for(s32 CurveIndex = 0;
-			CurveIndex < CurveCount;
-			CurveIndex++)
-	{
-		quadratic_curve Curve = Curves[CurveIndex];
-
-		v2 Sta = Hadamard(Curve.Srt, GlyphDim) + GlyphOrigin;
-		v2 Mid = Hadamard(Curve.Con, GlyphDim) + GlyphOrigin;
-		v2 End = Hadamard(Curve.End, GlyphDim) + GlyphOrigin;
-
-    PushVector(RenderGroup, M44Identity(), Sta, End, {0,0,1});
-    PushVector(RenderGroup, M44Identity(), Sta, Mid, {0,1,0});
-    PushVector(RenderGroup, M44Identity(), End, Mid, {0,1,0});
-  }
-
-  PushQuadBezierFlip(RenderGroup, Hadamard({-0.5f,0.5f}, GlyphDim), {0,0}, Hadamard({0.5f,0.5f}, GlyphDim));
-  PushQuadBezierFlip(RenderGroup, Hadamard({-0.3f,0.4f}, GlyphDim), {0,0}, Hadamard({0.3f,0.4f}, GlyphDim));
-#endif
-
-  SetCamera(RenderGroup, M44Identity(), positive_infinity32, 0.5f);
-  if(GPURenderGroupToOutput)
-  {
-    GPURenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
-  }
-  else
-  {
-    SingleTileRenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
-  }
-
-  for(u32 Y = 1;
-      Y < (Buffer->Height-1);
-      Y++)
-  {
-    for(u32 X = 1;
-        X < (Buffer->Width);
-        X++)
-    {
-      u32* Mid = Buffer->Memory + Y * Buffer->Pitch + X;
-      u32 Lef = Buffer->Memory[Y * Buffer->Pitch + (X-1)];
-      u32 Rig = Buffer->Memory[Y * Buffer->Pitch + (X+1)];
-      u32 Bot = Buffer->Memory[(Y-1) * Buffer->Pitch + X];
-      u32 Top = Buffer->Memory[(Y+1) * Buffer->Pitch + X];
-
-      b32 DoFlip = (Lef == Rig && Top == Bot && Lef == Top && Top != *Mid);
-      if(DoFlip)
-      {
-        *Mid = (*Mid == 0) ? 0xFFFFFFFF : 0;
-      }
-    }
-  }
-
-#if 0
-  for(u32 Y = 1;
-      Y < (Buffer->Height-1);
-      Y++)
-  {
-    for(u32 X = 1;
-        X < (Buffer->Width);
-        X++)
-    {
-      u32* Mid = Buffer->Memory + Y * Buffer->Pitch + X;
-      *Mid = (*Mid == 0) ? ((Character%2)==0 ? 0x0200FF00 : 0x020000FF) : *Mid;
-    }
-  }
-#endif
-}
-
-internal_function rectangle2 
-CharacterToFontMapLocation(u8 Character)
-{
-  rectangle2 Result;
-
-  Assert(Character <= 126); 
-
-  u32 CharPerRow = 16;
-  v2 Dim = {1.0f/(f32)CharPerRow, 1.0f/(CharPerRow * 0.5f) };
-  v2 BottomLeft = {Dim.X * (Character%CharPerRow), Dim.Y * (Character/CharPerRow)};
-
-  return RectMinDim(BottomLeft, Dim);
-}
-
-struct font_gen_work
-{
-  game_bitmap* Buffer; 
-  s8 Character;
-  font* Font;
-  game_assets* Assets;
-};
-WORK_QUEUE_CALLBACK(DoFontGenWork)
-{
-  Assert(Memory);
-  Assert(Size > 0);
-
-  font_gen_work* FontGenWork = (font_gen_work*)Data;
-
-  game_bitmap* Buffer = FontGenWork->Buffer;
-  s8 Character        = FontGenWork->Character;
-  font* Font          = FontGenWork->Font;
-  game_assets* Assets = FontGenWork->Assets;
-
-  memory_arena Arena = InitializeArena(Size, Memory);
-
-  game_bitmap* Glyph = ClearBitmap(&Arena, 512, 1024);
-  Glyph->Alignment = {256, 512};
-
-  render_group* RenderGroup = AllocateRenderGroup(&Arena, Megabytes(1));
-
-  GenerateGlyph(RenderGroup, Font, Glyph, Character);
-  ClearRenderGroup(RenderGroup);
-
-  rectangle2 TargetLoc = CharacterToFontMapLocation(Character);
-  m44 GlyphPos = ConstructTransform(GetRectCenter(TargetLoc) * Buffer->Width, 
-                                    GetRectDim(TargetLoc) * Buffer->Width);
-
-  PushQuad(RenderGroup, GlyphPos, Glyph);
-
-  SetCamera(RenderGroup, ConstructTransform(v2{-(Buffer->Width*0.5f), -(Buffer->Height*0.5f)}), 
-            positive_infinity32, 0.5f);
-  if(GPURenderGroupToOutput)
-  {
-    GPURenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
-  }
-  else
-  {
-    SingleTileRenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
-  }
-}
-
-  internal_function void
-GenerateFontMap(work_queue* WorkQueue, memory_arena* TransientArena, font* Font, 
-                game_bitmap* Buffer, game_assets* Assets)
-{
-  //TODO(bjorn): What to do about this memory, since it is so small.
-  // Maybe this should be like a 'per queue' memoryblock that automatically
-  // clears when the queue empties.
-  font_gen_work* FontGenWork = PushArray(TransientArena, 127, font_gen_work);
-  s32 Index = 0;
-  for(s8 Character = 0;
-      Character < 127;
-      Character++)
-  {
-    FontGenWork[Index].Buffer           = Buffer;
-    FontGenWork[Index].Character        = Character;
-    FontGenWork[Index].Font             = Font;
-    FontGenWork[Index].Assets           = Assets;
-
-    PushWork(WorkQueue, DoFontGenWork, FontGenWork + Index);
-    Index += 1;
-  }
-}
-
 	internal_function void
 InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input, 
                memory_arena* FrameBoundedTransientArena)
@@ -476,6 +274,13 @@ InitializeTransientState(game_memory* Memory, transient_state* TransientState)
   Assets->DEBUGPlatformReadEntireFile = Memory->DEBUGPlatformReadEntireFile;
   Assets->DEBUGPlatformFreeFileMemory = Memory->DEBUGPlatformFreeFileMemory;
 
+  //TODO(bjorn): Should this be updated on the fly by the platform layer?
+  game_bitmap* MainScreen = PushStruct(&Assets->Arena, game_bitmap);
+  Assets->Bitmaps[GAI_MainScreen] = MainScreen;
+  MainScreen->WidthOverHeight = 1920.0f/1080.0f;
+  Assets->BitmapsMeta[GAI_MainScreen].State = AssetState_Locked;
+
+#if 0
   debug_read_file_result FontFile = Memory->DEBUGPlatformReadEntireFile("data/MSMINCHO.font");
   Assets->Font = (font *)FontFile.Content;
 
@@ -485,7 +290,6 @@ InitializeTransientState(game_memory* Memory, transient_state* TransientState)
   GenerateFontMap(&Memory->LowPriorityQueue, TransientArena, Assets->Font, 
                   &Assets->GenFontMap, Assets);
 
-#if 0
   Assets->Grass[0] = *DEBUGLoadBMP(Memory->DEBUGPlatformFreeFileMemory, 
                                      Memory->DEBUGPlatformReadEntireFile, 
                                      TransientArena,
@@ -636,7 +440,7 @@ InitializeTransientState(game_memory* Memory, transient_state* TransientState)
 #if HANDMADE_INTERNAL
 game_memory* DebugGlobalMemory; 
 #endif
-extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
+extern "C" GAME_UPDATE(GameUpdate)
 {
 #if HANDMADE_INTERNAL
   DebugGlobalMemory = Memory;
@@ -683,7 +487,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
   {
     PushWork = Memory->PushWork;
     CompleteWork = Memory->CompleteWork;
-    GPURenderGroupToOutput = Memory->RenderGroupToOutput;
 
     InitializeTransientState(Memory, TransientState);
   }
@@ -801,7 +604,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 				EndTemporaryMemory(GameState->DEBUG_RenderGroupTempMem);
 				CheckMemoryArena(TransientArena);
 				GameState->DEBUG_RenderGroupTempMem = BeginTemporaryMemory(TransientArena);
-				GameState->DEBUG_OldRenderGroup = AllocateRenderGroup(TransientArena, Megabytes(4));
+				//GameState->DEBUG_OldRenderGroup = AllocateRenderGroup(TransientArena, Megabytes(4));
 				GameState->DEBUG_PauseStep = Modulate(GameState->DEBUG_PauseStep+1, 1, 9);
 
 				GameState->DEBUG_SkipXSteps = 
@@ -872,11 +675,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 		}
 	}
 
-	render_group* RenderGroup = AllocateRenderGroup(FrameBoundedTransientArena, Megabytes(4));
-
 	//
 	// NOTE(bjorn): Moving and Rendering
 	//
+  ClearScreen(RenderGroup, {0.5f, 0.5f, 0.5f});
 
   BEGIN_TIMED_BLOCK(SimRegion);
 	// NOTE(bjorn): Create sim region by camera
@@ -892,11 +694,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	}
 	Assert(SimRegion);
 
-	{
-		PushWireCube(RenderGroup, SimRegion->UpdateBounds, v4{0,1,1,1});
-		PushWireCube(RenderGroup, SimRegion->OuterBounds, v4{1,1,0,1});
-	}
-
 	//TODO(bjorn): Implement step 2 in J.Blows framerate independence video.
 	// https://www.youtube.com/watch?v=fdAOPHgW7qM
 	//TODO(bjorn): Add some asserts and some limits to velocities related to the
@@ -906,6 +703,25 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 	entity* MainCamera = AddEntityToSimRegionManually(Input, Entities, SimRegion, 
 																										GameState->MainCameraStorageIndex);
 	Assert(MainCamera);
+
+  if(MainCamera)
+  {
+    v3 Offset = {0, 0, MainCamera->CamZoom};
+    m33 XRot = XRotationMatrix(MainCamera->CamRot.Y);
+    m33 RotMat = AxisRotationMatrix(MainCamera->CamRot.X, GetMatCol(XRot, 2)) * XRot;
+    m44 CamTrans = ConstructTransform(Offset, RotMat);
+
+#if 1
+    PushCamera(RenderGroup, Assets, GAI_MainScreen, 
+               MainCamera->CamScreenHeight, CamTrans, MainCamera->CamObserverToScreenDistance);
+#else
+    SetCamera(RenderGroup, Assets, GAI_MainScreen, 
+              MainCamera->CamScreenHeight, CamTrans, positive_infinity32);
+#endif
+  }
+
+  PushWireCube(RenderGroup, SimRegion->UpdateBounds, v4{0,1,1,1});
+  PushWireCube(RenderGroup, SimRegion->OuterBounds, v4{1,1,0,1});
 
 	u32 FirstStep = 1;
 	u32 LastStep = Steps;
@@ -1039,21 +855,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                20, {1,0,1,0.5f}, RectMinMax(v2s{0, 0}, Buffer->Dim));
   }
 #endif
-
-  ClearScreen(RenderGroup, {0.5f, 0.5f, 0.5f});
-
-  //
-  // NOTE(bjorn): Rendering
-  //
-  if(GPURenderGroupToOutput)
-  {
-    GPURenderGroupToOutput(RenderGroup, Buffer, MainCamera->CamScreenHeight);
-  }
-  else
-  {
-    TiledRenderGroupToOutput(&Memory->HighPriorityQueue, RenderGroup, Buffer, 
-                             MainCamera->CamScreenHeight);
-  }
 
 	EndTemporaryMemory(TempMem);
 	CheckMemoryArena(FrameBoundedTransientArena);

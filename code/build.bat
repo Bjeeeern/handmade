@@ -26,7 +26,7 @@ ml64 /Fo handmade_intrinsics.obj %asmflags% "%source%\handmade_intrinsics.asm"
 
 cl %defines% %errors% %flags% -Fmwin32_game.map "%source%\win32_game.cpp" -link %linkflags% %links% -PDB:win32_game.pdb
 
-cl %defines% %errors% %flags% -Fm "%source%\%filename%.cpp" -LD -link %linkflags% handmade_intrinsics.obj -EXPORT:GameGetSoundSamples -EXPORT:GameUpdateAndRender -PDB:game_%random%.pdb -OUT:game.dll
+cl %defines% %errors% %flags% -Fm "%source%\%filename%.cpp" -LD -link %linkflags% handmade_intrinsics.obj -EXPORT:GameGetSoundSamples -EXPORT:GameUpdate -PDB:game_%random%.pdb -OUT:game.dll
 
 REM 32-bit build
 REM TODO(bjorn): compile for 32-bit, use vcvarsall?

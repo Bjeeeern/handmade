@@ -8,15 +8,10 @@
 // All Color variables passed to the renderer are in NON-premultiplied alpha.
 //
 
-struct camera_parameters
-{
-  f32 LensChamberSize;
-  f32 NearClipPoint;
-  f32 FarClipPoint;
-};
-
 enum render_group_entry_type
 {
+	RenderGroupEntryType_render_entry_camera,
+	RenderGroupEntryType_render_entry_clear_screen,
 	RenderGroupEntryType_render_entry_vector,
 	RenderGroupEntryType_render_entry_coordinate_system,
 	RenderGroupEntryType_render_entry_wire_cube,
@@ -30,6 +25,25 @@ enum render_group_entry_type
 struct render_entry_header
 {
   render_group_entry_type Type;
+};
+
+struct render_entry_clear_screen
+{
+  v4 Color;
+};
+
+struct render_entry_camera
+{
+  m44 WorldToCamera;
+
+  f32 LensChamberSize;
+  f32 NearClipPoint;
+  f32 FarClipPoint;
+
+	game_bitmap* RenderTarget;
+  //TODO(Bjorn): FoV?
+  f32 ScreenWidthInMeters;
+  f32 ScreenHeightInMeters;
 };
 
 struct render_entry_vector
@@ -79,21 +93,48 @@ struct render_entry_sphere
 
 struct render_group
 {
-  m44 WorldToCamera;
-
-  camera_parameters CamParam;
-
-  b32 ClearScreen;
-  v4 ClearScreenColor;
-
   u32 MaxPushBufferSize;
   u32 PushBufferSize;
   u8* PushBufferBase;
 };
 
+#define PushRenderElement(Group, type) (type*)PushRenderElement_(Group, sizeof(type), RenderGroupEntryType_##type)
+internal_function void*
+PushRenderElement_(render_group* RenderGroup, u32 Size, render_group_entry_type Type)
+{
+  void* Result = 0;
+
+  Size += sizeof(render_entry_header);
+
+  if(RenderGroup->PushBufferSize + Size < RenderGroup->MaxPushBufferSize)
+  {
+    render_entry_header* Header = 
+      (render_entry_header*)(RenderGroup->PushBufferBase + RenderGroup->PushBufferSize);
+    Header->Type = Type;
+
+    Result = (RenderGroup->PushBufferBase + 
+              RenderGroup->PushBufferSize + 
+              sizeof(render_entry_header));
+
+    RenderGroup->PushBufferSize += Size;
+  }
+  else
+  {
+    InvalidCodePath;
+  }
+
+  return Result;
+}
+
 #define RenderGroup_DefineEntryAndAdvanceByteOffset(type) \
   type * Entry = (type *)UnidentifiedEntry; \
   PushBufferByteOffset += sizeof(render_entry_header) + sizeof(type)
+
+internal_function void
+ClearRenderGroup(render_group* RenderGroup)
+{
+  RenderGroup->PushBufferSize = 0;
+}
 
 #define RENDER_GROUP_H
 #endif

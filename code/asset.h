@@ -27,6 +27,166 @@ if(AssetGroupIsLoaded(Assets, ID))
 }
 #endif
 
+//STUDY(bjorn): Font map generation sortof depends on the render group builder thingie but that sortof depends on assets. 
+#if 0
+internal_function void
+GenerateGlyph(render_group* RenderGroup, font* Font,
+              game_bitmap* Buffer, u8 Character)
+{
+  unicode_to_glyph_data *Entries = (unicode_to_glyph_data *)(Font + 1);
+
+  s32 CharEntryIndex = 0;
+  for(s32 EntryIndex = 0;
+      EntryIndex < Font->UnicodeCodePointCount;
+      EntryIndex++)
+  {
+    if(Character == Entries[EntryIndex].UnicodeCodePoint)
+    {
+      CharEntryIndex = EntryIndex;
+      break;
+    }
+	}
+
+  PushCamera(RenderGroup, Buffer, (f32)Buffer->Height, M44Identity(), positive_infinity32, 0.5f);
+
+	s32 Offset = Entries[CharEntryIndex].OffsetToGlyphData;
+	s32 CurveCount = Entries[CharEntryIndex].QuadraticCurveCount;
+	v2 GlyphDim = {(f32)Buffer->Width, Buffer->Height*(3.0f/4.0f)};
+	v2 GlyphOrigin = {-(Buffer->Width*(2.0f/4.0f)), -(Buffer->Height*(1.0f/4.0f))};
+
+	quadratic_curve *Curves = (quadratic_curve *)((u8 *)Font + Offset);
+	for(s32 CurveIndex = 0;
+			CurveIndex < CurveCount;
+			CurveIndex++)
+	{
+		quadratic_curve Curve = Curves[CurveIndex];
+
+		v2 Sta = Hadamard(Curve.Srt, GlyphDim) + GlyphOrigin;
+		v2 Mid = Hadamard(Curve.Con, GlyphDim) + GlyphOrigin;
+		v2 End = Hadamard(Curve.End, GlyphDim) + GlyphOrigin;
+
+    PushTriangleFillFlip(RenderGroup, Sta, {1.0f,0.5f}, End);
+  }
+
+	for(s32 CurveIndex = 0;
+			CurveIndex < CurveCount;
+			CurveIndex++)
+	{
+		quadratic_curve Curve = Curves[CurveIndex];
+
+		v2 Sta = Hadamard(Curve.Srt, GlyphDim) + GlyphOrigin;
+		v2 Mid = Hadamard(Curve.Con, GlyphDim) + GlyphOrigin;
+		v2 End = Hadamard(Curve.End, GlyphDim) + GlyphOrigin;
+
+    PushQuadBezierFlip(RenderGroup, Sta, Mid, End);
+  }
+
+#if 0
+	for(s32 CurveIndex = 0;
+			CurveIndex < CurveCount;
+			CurveIndex++)
+	{
+		quadratic_curve Curve = Curves[CurveIndex];
+
+		v2 Sta = Hadamard(Curve.Srt, GlyphDim) + GlyphOrigin;
+		v2 Mid = Hadamard(Curve.Con, GlyphDim) + GlyphOrigin;
+		v2 End = Hadamard(Curve.End, GlyphDim) + GlyphOrigin;
+
+    PushVector(RenderGroup, M44Identity(), Sta, End, {0,0,1});
+    PushVector(RenderGroup, M44Identity(), Sta, Mid, {0,1,0});
+    PushVector(RenderGroup, M44Identity(), End, Mid, {0,1,0});
+  }
+
+  PushQuadBezierFlip(RenderGroup, Hadamard({-0.5f,0.5f}, GlyphDim), {0,0}, Hadamard({0.5f,0.5f}, GlyphDim));
+  PushQuadBezierFlip(RenderGroup, Hadamard({-0.3f,0.4f}, GlyphDim), {0,0}, Hadamard({0.3f,0.4f}, GlyphDim));
+#endif
+}
+
+internal_function rectangle2 
+CharacterToFontMapLocation(u8 Character)
+{
+  rectangle2 Result;
+
+  Assert(Character <= 126); 
+
+  u32 CharPerRow = 16;
+  v2 Dim = {1.0f/(f32)CharPerRow, 1.0f/(CharPerRow * 0.5f) };
+  v2 BottomLeft = {Dim.X * (Character%CharPerRow), Dim.Y * (Character/CharPerRow)};
+
+  return RectMinDim(BottomLeft, Dim);
+}
+
+struct font_gen_work
+{
+  game_bitmap* Buffer; 
+  s8 Character;
+  font* Font;
+  game_assets* Assets;
+};
+WORK_QUEUE_CALLBACK(DoFontGenWork)
+{
+  Assert(Memory);
+  Assert(Size > 0);
+
+  font_gen_work* FontGenWork = (font_gen_work*)Data;
+
+  game_bitmap* Buffer = FontGenWork->Buffer;
+  s8 Character        = FontGenWork->Character;
+  font* Font          = FontGenWork->Font;
+  game_assets* Assets = FontGenWork->Assets;
+
+  memory_arena Arena = InitializeArena(Size, Memory);
+
+  game_bitmap* Glyph = ClearBitmap(&Arena, 512, 1024);
+  Glyph->Alignment = {256, 512};
+
+  render_group* RenderGroup = AllocateRenderGroup(&Arena, Megabytes(1));
+
+  GenerateGlyph(RenderGroup, Font, Glyph, Character);
+  ClearRenderGroup(RenderGroup);
+
+  rectangle2 TargetLoc = CharacterToFontMapLocation(Character);
+  m44 GlyphPos = ConstructTransform(GetRectCenter(TargetLoc) * Buffer->Width, 
+                                    GetRectDim(TargetLoc) * Buffer->Width);
+
+  PushQuad(RenderGroup, GlyphPos, Glyph);
+
+  SetCamera(RenderGroup, ConstructTransform(v2{-(Buffer->Width*0.5f), -(Buffer->Height*0.5f)}), 
+            positive_infinity32, 0.5f);
+  if(GPURenderGroupToOutput)
+  {
+    GPURenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
+  }
+  else
+  {
+    SingleTileRenderGroupToOutput(RenderGroup, Buffer, (f32)Buffer->Height);
+  }
+}
+
+  internal_function void
+GenerateFontMap(work_queue* WorkQueue, memory_arena* TransientArena, font* Font, 
+                game_bitmap* Buffer, game_assets* Assets)
+{
+  //TODO(bjorn): What to do about this memory, since it is so small.
+  // Maybe this should be like a 'per queue' memoryblock that automatically
+  // clears when the queue empties.
+  font_gen_work* FontGenWork = PushArray(TransientArena, 127, font_gen_work);
+  s32 Index = 0;
+  for(s8 Character = 0;
+      Character < 127;
+      Character++)
+  {
+    FontGenWork[Index].Buffer           = Buffer;
+    FontGenWork[Index].Character        = Character;
+    FontGenWork[Index].Font             = Font;
+    FontGenWork[Index].Assets           = Assets;
+
+    PushWork(WorkQueue, DoFontGenWork, FontGenWork + Index);
+    Index += 1;
+  }
+}
+#endif
+
 internal_function game_bitmap*
 ClearBitmap(memory_arena* Arena, u32 Width, u32 Height)
 {
@@ -100,6 +260,7 @@ struct hero_bitmaps
 
 enum game_asset_id
 {
+	GAI_MainScreen,
 	GAI_Backdrop,
 	GAI_RockWall,
 	GAI_Dirt,
@@ -114,6 +275,7 @@ enum game_asset_state
   AssetState_Unloaded,
   AssetState_Queued,
   AssetState_Loaded,
+  AssetState_Locked,
 };
 
 struct game_bitmap_meta
@@ -158,7 +320,11 @@ GetBitmap(game_assets* Assets, game_asset_id ID)
   Result = Assets->Bitmaps[ID];
 
   //NOTE(bjorn): Multi-pass so we must assert before doing the load.
-  if(Assets->BitmapsMeta[ID].State == AssetState_Loaded) { Assert(Result); }
+  if(Assets->BitmapsMeta[ID].State == AssetState_Loaded ||
+     Assets->BitmapsMeta[ID].State == AssetState_Locked) 
+  { 
+    Assert(Result); 
+  }
 
   if(Assets->BitmapsMeta[ID].State == AssetState_Unloaded)
   {
@@ -176,6 +342,10 @@ LoadAsset(game_assets* Assets, game_asset_id ID)
   char* Path = 0;
   switch(ID)
   {
+    case GAI_MainScreen:
+      {
+        InvalidCodePath;
+      } break;
     case GAI_Backdrop:
       {
         Path = "data/test/test_background.bmp";

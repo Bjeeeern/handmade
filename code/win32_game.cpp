@@ -28,8 +28,8 @@
 struct win32_game_code
 {
   HMODULE GameDLL;
-  game_update_and_render *UpdateAndRender;
-  game_get_sound_samples *GetSoundSamples;
+  game_update* Update;
+  game_get_sound_samples* GetSoundSamples;
   FILETIME DLLLastWriteTime;
   b32 IsValid;
 };
@@ -381,15 +381,15 @@ Win32LoadGameCode(char *SourceDLLName, char *TempDLLName)
   GameCode.GameDLL = LoadLibraryA(TempDLLName);
   if(FoundDLL && GameCode.GameDLL)
   {
-    GameCode.UpdateAndRender = ((game_update_and_render *)
-                                GetProcAddress(GameCode.GameDLL, "GameUpdateAndRender"));
+    GameCode.Update = ((game_update*)
+                       GetProcAddress(GameCode.GameDLL, "GameUpdate"));
     GameCode.GetSoundSamples = ((game_get_sound_samples *)
                                 GetProcAddress(GameCode.GameDLL, "GameGetSoundSamples"));
-    GameCode.IsValid = (GameCode.UpdateAndRender && GameCode.GetSoundSamples);
+    GameCode.IsValid = (GameCode.Update && GameCode.GetSoundSamples);
   }
   if(!GameCode.IsValid)
   {
-    GameCode.UpdateAndRender = GameUpdateAndRenderStub;
+    GameCode.Update = GameUpdateStub;
     GameCode.GetSoundSamples = GameGetSoundSamplesStub;
   }
   return GameCode;
@@ -404,7 +404,7 @@ Win32UnloadGameCode(win32_game_code *GameCode)
     GameCode->GameDLL = 0;
   }
   GameCode->IsValid = false;
-  GameCode->UpdateAndRender = GameUpdateAndRenderStub;
+  GameCode->Update = GameUpdateStub;
   GameCode->GetSoundSamples = GameGetSoundSamplesStub;
 }
 #endif
@@ -1489,6 +1489,24 @@ Win32InitOpenGL(HWND Window)
   ReleaseDC(Window, WindowDC);
 }
 
+#define SubAllocStruct(memory, sizeleft, type) (type*)SubAlloc_((u8**)(memory), \
+                                                                (sizeleft), sizeof(type))
+#define SubAlloc(memory, sizeleft, size) SubAlloc_((u8**)(memory), (sizeleft), (size))
+internal_function u8*
+SubAlloc_(u8** Memory, memi* SizeLeft, memi Size)
+{
+  Assert(Size < *SizeLeft);
+  Assert(*SizeLeft > 0 && Size > 0);
+
+	u8* Result = *Memory;
+
+  *Memory += Size;
+  *SizeLeft -= Size;
+
+	return Result;
+}
+
+
 #if HANDMADE_INTERNAL
 game_memory* DebugGlobalMemory; 
 #endif
@@ -1877,16 +1895,26 @@ WinMain(HINSTANCE Instance,
         HANDLE ThreadHandle = CreateThread(0, 0, ThreadProc, Queue, 0, &ThreadID);
         Queue->IdToMemory[ThreadIndex].Id = ThreadID;
         Queue->IdToMemory[ThreadIndex].Size = Megabytes(8);
-        Assert(Handmade.Memory.TransientStorageSize > Queue->IdToMemory[ThreadIndex].Size);
-        Handmade.Memory.TransientStorageSize -= Queue->IdToMemory[ThreadIndex].Size;
-        Queue->IdToMemory[ThreadIndex].Memory = Handmade.Memory.TransientStorage;
-        Handmade.Memory.TransientStorage += Queue->IdToMemory[ThreadIndex].Size;
+
+        Queue->IdToMemory[ThreadIndex].Memory = SubAlloc(&Handmade.Memory.TransientStorage, 
+                                                         &Handmade.Memory.TransientStorageSize,
+                                                         Queue->IdToMemory[ThreadIndex].Size);
+
         CloseHandle(ThreadHandle);
       }
     }
+
+    render_group* GameRenderGroup = SubAllocStruct(&Handmade.Memory.TransientStorage, 
+                                                   &Handmade.Memory.TransientStorageSize, 
+                                                   render_group);
+    GameRenderGroup->PushBufferSize = 0;
+    GameRenderGroup->MaxPushBufferSize = Megabytes(64);
+    GameRenderGroup->PushBufferBase = SubAlloc(&Handmade.Memory.TransientStorage, 
+                                               &Handmade.Memory.TransientStorageSize,
+                                               GameRenderGroup->MaxPushBufferSize);
+
     Handmade.Memory.PushWork = Win32PushWork;
     Handmade.Memory.CompleteWork = Win32CompleteWork;
-    Handmade.Memory.RenderGroupToOutput = OpenGLRenderGroupToOutput;
 
     game_input OldGameInput = {};
 
@@ -2184,12 +2212,7 @@ WinMain(HINSTANCE Instance,
       }
 #endif
 
-      game_bitmap GameBuffer = {};
-      GameBuffer.Memory = (u32*)BackBuffer.Memory;
-      GameBuffer.Width = BackBuffer.Width;
-      GameBuffer.Height = BackBuffer.Height;
-      GameBuffer.Pitch = BackBuffer.Pitch / BackBuffer.BytesPerPixel;
-      GameBuffer.WidthOverHeight = SafeRatio0((f32)GameBuffer.Width, (f32)GameBuffer.Height);
+      ClearRenderGroup(GameRenderGroup);
 
 #if HANDMADE_INTERNAL
       if(Win32State.RecordHandle)
@@ -2201,10 +2224,10 @@ WinMain(HINSTANCE Instance,
         Win32PlayBackInput(&Win32State, &NewGameInput);
       }
 #endif
-      if(Game->Code.UpdateAndRender)
+      if(Game->Code.Update)
       {
         HandleDebugCycleCounters(&Game->Memory);
-        Game->Code.UpdateAndRender(TargetSecondsPerFrame, &Game->Memory, &NewGameInput, &GameBuffer);
+        Game->Code.Update(TargetSecondsPerFrame, &Game->Memory, &NewGameInput, GameRenderGroup);
       }
 
       DWORD PlayCursor;
@@ -2425,6 +2448,8 @@ WinMain(HINSTANCE Instance,
       Win32DebugSyncDisplay(&BackBuffer, ArrayCount(DebugTimeMarker), 
                             DebugTimeMarker, &SoundOutput, TargetSecondsPerFrame);
 #endif
+      OpenGLRenderGroupToOutput(GameRenderGroup);
+
       win32_window_dimension WindowDimension = Win32GetWindowDimension(WindowHandle);
 
       HDC DeviceContext = GetDC(WindowHandle);

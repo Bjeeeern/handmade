@@ -240,23 +240,10 @@ RenderEntity(render_group* RenderGroup, transient_state* TransientState, game_as
     }
   }
 
-  if(Entity->IsCamera &&
-     Entity == MainCamera)
-  {
-    v3 Offset = {0, 0, MainCamera->CamZoom};
-    m33 XRot = XRotationMatrix(MainCamera->CamRot.Y);
-    m33 RotMat = AxisRotationMatrix(MainCamera->CamRot.X, GetMatCol(XRot, 2)) * XRot;
-    m44 CamTrans = ConstructTransform(Offset, RotMat);
-
-#if 1
-    SetCamera(RenderGroup, CamTrans, MainCamera->CamObserverToScreenDistance);
-#else
-    SetCamera(RenderGroup, CamTrans, positive_infinity32);
-#endif
-  }
-
   if(Entity->VisualType == EntityVisualType_Glyph)
   {
+    //TODO(bjorn): Adding and generating glyhps in the assets pipe-line.
+#if 0
     v4 Color = Entity == MainCamera->CurrentGlyph ? v4{1.0f,0.5f,0.5f,1.0f} : v4{1,1,1,1};
     m44 QuadTran = ConstructTransform({0,0,0}, 
                                       Entity->Body.Primitives[1].S);
@@ -266,7 +253,8 @@ RenderEntity(render_group* RenderGroup, transient_state* TransientState, game_as
       Character = '?';
     }
     rectangle2 SubRect = CharacterToFontMapLocation(Character);
-    //TODO PushQuad(RenderGroup, T*QuadTran, GAI_GenFontMap, SubRect, Color);
+    PushQuad(RenderGroup, T*QuadTran, GAI_GenFontMap, SubRect, Color);
+#endif
   }
   if(Entity->VisualType == EntityVisualType_Wall)
   {

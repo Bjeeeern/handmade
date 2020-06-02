@@ -371,8 +371,7 @@ typedef void multi_thread_push_work(work_queue* Queue, work_queue_callback* Call
 typedef void multi_thread_complete_work(work_queue* Queue);
 
 struct render_group;
-#define RENDER_GROUP_TO_OUTPUT(name) void name(render_group* RenderGroup, game_bitmap* OutputTarget, \
-                                               f32 ScreenHeightInMeters)
+#define RENDER_GROUP_TO_OUTPUT(name) void name(render_group* RenderGroup)
 typedef RENDER_GROUP_TO_OUTPUT(render_group_to_output);
 
 // NOTE(bjorn): Memory REQUIRED to be initialized to 0 on startup.
@@ -388,8 +387,6 @@ struct game_memory
 
   multi_thread_push_work* PushWork;
   multi_thread_complete_work* CompleteWork;
-
-  render_group_to_output* RenderGroupToOutput;
 
   //TODO(bjorn): Put this in transient or permanent.
   work_queue_entry HighPriorityQueueEntries[256];
@@ -409,11 +406,10 @@ struct game_memory
 #endif
 };
 
-#define GAME_UPDATE_AND_RENDER(name) void name(f32 SecondsToUpdate,\
-																							 game_memory *Memory, game_input *Input,\
-																							 game_bitmap *Buffer)
-typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
-GAME_UPDATE_AND_RENDER(GameUpdateAndRenderStub)
+#define GAME_UPDATE(name) void name(f32 SecondsToUpdate, game_memory* Memory, game_input* Input,\
+                                    render_group* RenderGroup)
+typedef GAME_UPDATE(game_update);
+GAME_UPDATE(GameUpdateStub)
 {
 	return;
 }

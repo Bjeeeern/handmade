@@ -27,28 +27,7 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
 {
   BEGIN_TIMED_BLOCK(RenderGroupToOutput);
 
-  f32 ClipSize = (RenderGroup->CamParam.FarClipPoint - RenderGroup->CamParam.NearClipPoint);
-
-  f32 a = SafeRatio0(1.0f, OutputTarget->WidthOverHeight * ScreenHeightInMeters * 0.5f);
-  f32 b = SafeRatio0(1.0f, ScreenHeightInMeters * 0.5f);
-  f32 c = SafeRatio0(1.0f, ClipSize * 0.5f);
-  f32 d = 1.0f + SafeRatio0(RenderGroup->CamParam.NearClipPoint, ClipSize * 0.5f);
-  f32 f = SafeRatio0(1.0f, RenderGroup->CamParam.LensChamberSize);
-
-  f32 ProjMat[16] = { a, 0, 0, 0,
-                      0, b, 0, 0,
-                      0, 0, c,-f,
-                      0, 0, d, 1, };
-
-  glMatrixMode(GL_PROJECTION);
-  glLoadMatrixf((const GLfloat*)(&ProjMat));
-
-  if(RenderGroup->ClearScreen)
-  {
-    v4 Color = RenderGroup->ClearScreenColor;
-    glClearColor(Color.R, Color.G, Color.B, Color.A);
-    glClear(GL_COLOR_BUFFER_BIT);
-  }
+  m44 WorldToCamera = {};
 
   for(u32 PushBufferByteOffset = 0;
       PushBufferByteOffset < RenderGroup->PushBufferSize;
@@ -61,14 +40,44 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
 
     switch(Header->Type)
     {
+      case RenderGroupEntryType_render_entry_camera
+        : {
+          RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_camera);
+
+          f32 ClipSize = (Entry->FarClipPoint - Entry->NearClipPoint);
+          f32 a = SafeRatio0(1.0f, Entry->ScreenWidthInMeters * 0.5f);
+          f32 b = SafeRatio0(1.0f, Entry->ScreenHeightInMeters * 0.5f);
+          f32 c = SafeRatio0(1.0f, ClipSize * 0.5f);
+          f32 d = 1.0f + SafeRatio0(Entry->NearClipPoint, ClipSize * 0.5f);
+          f32 f = SafeRatio0(1.0f, Entry->LensChamberSize);
+
+          f32 ProjMat[16] = { a, 0, 0, 0,
+                              0, b, 0, 0,
+                              0, 0, c,-f,
+                              0, 0, d, 1, };
+
+          glMatrixMode(GL_PROJECTION);
+          glLoadMatrixf((const GLfloat*)(&ProjMat));
+
+          //TODO(bjorn): Combine this with the projection matrix.
+          WorldToCamera = Entry->WorldToCamera;
+        } break;
+      case RenderGroupEntryType_render_entry_clear_screen
+        : {
+          RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_clear_screen);
+
+          v4 Color = Entry->Color;
+          glClearColor(Color.R, Color.G, Color.B, Color.A);
+          glClear(GL_COLOR_BUFFER_BIT);
+        } break;
       case RenderGroupEntryType_render_entry_vector
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_vector);
 
           glBegin(GL_LINES);
 
-          v3 V0 = RenderGroup->WorldToCamera * Entry->A;
-          v3 V1 = RenderGroup->WorldToCamera * Entry->B;
+          v3 V0 = WorldToCamera * Entry->A;
+          v3 V1 = WorldToCamera * Entry->B;
 
           glColor3f(Entry->Color.R, Entry->Color.G, Entry->Color.B);
 
@@ -83,7 +92,7 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
 
           glBegin(GL_LINES);
 
-          m44 Tran = RenderGroup->WorldToCamera * Entry->Tran;
+          m44 Tran = WorldToCamera * Entry->Tran;
           {
             v3 V0 = Tran*v3{0,0,0};
             v3 V1 = Tran*v3{1,0,0};
@@ -120,7 +129,7 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_wire_cube);
 
-          m44 Tran = RenderGroup->WorldToCamera * Entry->Tran;
+          m44 Tran = WorldToCamera * Entry->Tran;
           aabb_verts_result AABB = GetAABBVertices(&Tran);
 
           glBegin(GL_LINES);
@@ -170,7 +179,7 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_blank_quad);
 
-          quad_verts_result Quad = GetQuadVertices(RenderGroup->WorldToCamera * Entry->Tran);
+          quad_verts_result Quad = GetQuadVertices(WorldToCamera * Entry->Tran);
 
           glBegin(GL_TRIANGLES);
 
@@ -184,7 +193,7 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_quad);
 
-          quad_verts_result Quad = GetQuadVertices(RenderGroup->WorldToCamera * Entry->Tran);
+          quad_verts_result Quad = GetQuadVertices(WorldToCamera * Entry->Tran);
 
           glEnable(GL_TEXTURE_2D);
 
@@ -272,7 +281,7 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
           v3 P1 = Entry->Tran * v3{0.5f,0,0};
 
           pixel_pos_result PixPos = 
-            ProjectPointToScreen(RenderGroup->WorldToCamera, &RenderGroup->CamParam, 
+            ProjectPointToScreen(WorldToCamera, &RenderGroup->CamParam, 
                                  &ScreenVars, P0);
           if(PixPos.PointIsInView)
           {

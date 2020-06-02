@@ -1,49 +1,8 @@
 #if !defined(RENDER_GROUP_BUILDER_H)
 
 #include "render_group.h"
-#include "memory.h"
 #include "asset.h"
 
-internal_function render_group*
-AllocateRenderGroup(memory_arena* Arena, u32 MaxPushBufferSize)
-{
-	render_group* Result = PushStruct(Arena, render_group);
-  *Result = {};
-
-	Result->PushBufferBase = PushArray(Arena, MaxPushBufferSize, u8);
-  Result->PushBufferSize = 0;
-  Result->MaxPushBufferSize = MaxPushBufferSize;
-
-	return Result;
-}
-
-#define PushRenderElement(Group, type) (type*)PushRenderElement_(Group, sizeof(type), RenderGroupEntryType_##type)
-internal_function void*
-PushRenderElement_(render_group* RenderGroup, u32 Size, render_group_entry_type Type)
-{
-  void* Result = 0;
-
-  Size += sizeof(render_entry_header);
-
-  if(RenderGroup->PushBufferSize + Size < RenderGroup->MaxPushBufferSize)
-  {
-    render_entry_header* Header = 
-      (render_entry_header*)(RenderGroup->PushBufferBase + RenderGroup->PushBufferSize);
-    Header->Type = Type;
-
-    Result = (RenderGroup->PushBufferBase + 
-              RenderGroup->PushBufferSize + 
-              sizeof(render_entry_header));
-
-    RenderGroup->PushBufferSize += Size;
-  }
-  else
-  {
-    InvalidCodePath;
-  }
-
-  return Result;
-}
 
 internal_function void
 PushBlankQuad(render_group* RenderGroup, m44 T, v4 Color)
@@ -136,34 +95,44 @@ PushSphere(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.8f,1})
 	Entry->Color = Color;
 }
 
-//TODO(Bjorn): SetCamera(f32 HeightOfScreenInGameMeters, f32 YFoV)
 internal_function void
-SetCamera(render_group* RenderGroup, m44 WorldToCamera, f32 LensChamberSize, 
-          f32 NearClipPoint = 0, f32 FarClipPoint = 100.0f)
+PushCamera(render_group* RenderGroup, game_bitmap* Target, f32 ScreenHeightInMeters, 
+           m44 WorldToCamera, f32 LensChamberSize, 
+           f32 NearClipPoint = 0, f32 FarClipPoint = 100.0f)
 {
-  RenderGroup->WorldToCamera = WorldToCamera;
+	render_entry_camera* Entry = PushRenderElement(RenderGroup, render_entry_camera);
 
-  camera_parameters* CamParam = &RenderGroup->CamParam;
+  Entry->WorldToCamera = WorldToCamera;
 
   Assert(NearClipPoint <= LensChamberSize);
   Assert(NearClipPoint <= FarClipPoint);
-  CamParam->LensChamberSize = LensChamberSize;
-  CamParam->NearClipPoint = NearClipPoint;
-  CamParam->FarClipPoint = FarClipPoint;
+  Entry->LensChamberSize = LensChamberSize;
+  Entry->NearClipPoint = NearClipPoint;
+  Entry->FarClipPoint = FarClipPoint;
+
+  Entry->ScreenHeightInMeters = ScreenHeightInMeters;
+
+  Entry->RenderTarget = Target;
+  Entry->ScreenWidthInMeters = Target->WidthOverHeight * ScreenHeightInMeters;
+}
+
+internal_function void
+PushCamera(render_group* RenderGroup, game_assets* Assets, game_asset_id ID, f32 ScreenHeightInMeters, 
+           m44 WorldToCamera, f32 LensChamberSize, 
+           f32 NearClipPoint = 0, f32 FarClipPoint = 100.0f)
+{
+  game_bitmap* Target = GetBitmap(Assets, ID);
+  Assert(Target);
+  PushCamera(RenderGroup, Target, ScreenHeightInMeters, WorldToCamera, LensChamberSize, 
+             NearClipPoint, FarClipPoint);
 }
 
 internal_function void
 ClearScreen(render_group* RenderGroup, v4 Color)
 {
-  RenderGroup->ClearScreen = true;
-  RenderGroup->ClearScreenColor = Color;
-}
+	render_entry_clear_screen* Entry = PushRenderElement(RenderGroup, render_entry_clear_screen);
 
-internal_function void
-ClearRenderGroup(render_group* RenderGroup)
-{
-  RenderGroup->ClearScreen = false;
-  RenderGroup->PushBufferSize = 0;
+  Entry->Color = Color;
 }
 
 #define RENDER_GROUP_BUILDER_H

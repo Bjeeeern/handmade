@@ -64,16 +64,6 @@ struct win32_debug_time_marker
   DWORD RunningByteIndex;
 };
 
-struct win32_offscreen_buffer
-{
-  BITMAPINFO Info;
-  void *Memory; 
-  s32 Width;
-  s32 Height;
-  s32 Pitch;
-  s32 BytesPerPixel;
-};
-
 struct win32_window_dimension
 {
   s32 Width;
@@ -444,115 +434,21 @@ Win32GetWindowDimension(HWND WindowHandle)
   return Dimension;
 }
 
-  internal_function void 
-Win32ResizeDIBSection(win32_offscreen_buffer *Buffer, s32 Width, s32 Height)
-{
-  // TODO(bjorn): Bulletproof this.
-  // Maybe don't free first, free after, then free first if that fails.
-  if(Buffer->Memory)
-  {
-    VirtualFree(Buffer->Memory, 0, MEM_RELEASE);
-  }
-
-  Buffer->Width = Width;
-  Buffer->Height = Height;
-  Buffer->BytesPerPixel = 4;
-
-  // NOTE(bjorn): When the biHeight field is negative the pixels 
-  //              represent left-right top-to-bottom.
-  Buffer->Info.bmiHeader.biSize = sizeof(Buffer->Info.bmiHeader);
-  Buffer->Info.bmiHeader.biWidth = Width;
-  Buffer->Info.bmiHeader.biHeight = Height;
-  Buffer->Info.bmiHeader.biPlanes = 1;
-  Buffer->Info.bmiHeader.biBitCount = 32;
-  Buffer->Info.bmiHeader.biCompression = BI_RGB;
-
-  Buffer->Pitch = Align16(Buffer->BytesPerPixel * Buffer->Width);
-  s32 BitmapMemorySize = Buffer->Pitch * Buffer->Height;
-  Buffer->Memory = VirtualAlloc(0, BitmapMemorySize, MEM_RESERVE|MEM_COMMIT, 
-                                PAGE_READWRITE);
-}
-
-//TODO(bjorn): Make this function return where the actual gamewindow start and end.
   internal_function void
-Win32DisplayBufferInWindow(win32_offscreen_buffer *Buffer, HDC DeviceContext, 
-                        s32 WindowWidth, s32 WindowHeight, 
-                        s32 GameScreenLeft, s32 GameScreenTop, 
-                        s32 GameScreenWidth, s32 GameScreenHeight)
+Win32DisplayBufferInWindow(HDC DeviceContext, 
+                           s32 WindowWidth, s32 WindowHeight, 
+                           s32 GameScreenLeft, s32 GameScreenTop, 
+                           s32 GameScreenWidth, s32 GameScreenHeight)
 {
-#if 0
-  PatBlt(DeviceContext, 0, 0, WindowWidth, GameScreenTop, BLACKNESS);
-  PatBlt(DeviceContext, 0, 0, GameScreenLeft, WindowHeight, BLACKNESS);
-  PatBlt(DeviceContext, 
-         GameScreenLeft + GameScreenWidth, 0, 
-         WindowWidth, WindowHeight, BLACKNESS);
-  PatBlt(DeviceContext, 
-         0, GameScreenTop + GameScreenHeight,
-         WindowWidth, WindowHeight, BLACKNESS);
-
-  // TODO(bjorn): Centering.
-  // TODO(bjorn): Aspect-ratio correction.
-  // NOTE(bjorn): We skip stretching while working on rendering code so we don't mistake
-  //              stretching artifacts for bugs.
-  StretchDIBits(DeviceContext,
-                GameScreenLeft, GameScreenTop, 
-                GameScreenWidth, GameScreenHeight,
-                0, 0, Buffer->Width, Buffer->Height,
-                Buffer->Memory,
-                &Buffer->Info,
-                DIB_RGB_COLORS, SRCCOPY);
-#elif 0
-  glClearColor(1.0f, 0.0f, 1.0f, 0.0f);
-  glClear(GL_COLOR_BUFFER_BIT);
-
-  glViewport(GameScreenLeft, WindowHeight - (GameScreenHeight+GameScreenTop), 
-             GameScreenWidth, GameScreenHeight);
-
-  glBindTexture(GL_TEXTURE_2D, 0);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, Buffer->Width, Buffer->Height, 0,
-               GL_BGRA_EXT, GL_UNSIGNED_BYTE, Buffer->Memory);
-
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-
-  glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-
-  glEnable(GL_TEXTURE_2D);
-
-  glBegin(GL_TRIANGLES);
-
-  glTexCoord2f(0,0);
-  glVertex2f(-1.0f, -1.0f);
-  glTexCoord2f(0,1);
-  glVertex2f(-1.0f, 1.0f);
-  glTexCoord2f(1,1);
-  glVertex2f(1.0f, 1.0f);
-
-  glTexCoord2f(0,0);
-  glVertex2f(-1.0f, -1.0f);
-  glTexCoord2f(1,1);
-  glVertex2f(1.0f, 1.0f);
-  glTexCoord2f(1,0);
-  glVertex2f(1.0f, -1.0f);
-
-  glEnd();
-
-  SwapBuffers(DeviceContext);
-#else
   glViewport(GameScreenLeft, WindowHeight - (GameScreenHeight+GameScreenTop), 
              GameScreenWidth, GameScreenHeight);
 
   SwapBuffers(DeviceContext);
-#endif
 }
 
 struct win32_window_callback_data
 {
   b32 *GameIsRunning;
-
-  win32_offscreen_buffer *BackBuffer;
 
   u8 *WindowAlpha;
 
@@ -633,14 +529,14 @@ Win32MainWindowCallback(HWND WindowHandle, UINT Message, WPARAM WParam, LPARAM L
       {
         PAINTSTRUCT PaintStruct = {};
         HDC DeviceContext = BeginPaint(WindowHandle, &PaintStruct);
-        win32_window_dimension Dimension = Win32GetWindowDimension(WindowHandle);
 
-        Win32DisplayBufferInWindow(CallbackData->BackBuffer, DeviceContext, 
-                                Dimension.Width, Dimension.Height,
-                                *(CallbackData->GameScreenLeft), 
-                                *(CallbackData->GameScreenTop),
-                                *(CallbackData->GameScreenWidth),
-                                *(CallbackData->GameScreenHeight));
+        win32_window_dimension Dimension = Win32GetWindowDimension(WindowHandle);
+        Win32DisplayBufferInWindow(DeviceContext, 
+                                   Dimension.Width, Dimension.Height,
+                                   *(CallbackData->GameScreenLeft), 
+                                   *(CallbackData->GameScreenTop),
+                                   *(CallbackData->GameScreenWidth),
+                                   *(CallbackData->GameScreenHeight));
 
         EndPaint(WindowHandle, &PaintStruct);
       } break;
@@ -939,7 +835,7 @@ Win32PlayBackInput(win32_state *State, game_input *NewGameInput)
 // Source: https://blogs.msdn.microsoft.com/oldnewthing/20100412-00/?p=14353
 global_variable WINDOWPLACEMENT GlobalWindowPosition = {sizeof(GlobalWindowPosition)};
 
-void Win32ToggleFullscreen(HWND WindowHandle, win32_offscreen_buffer* Buffer, 
+void Win32ToggleFullscreen(HWND WindowHandle, 
                            s32* GameScreenLeft, s32* GameScreenTop, 
                            s32* GameScreenWidth, s32* GameScreenHeight) 
 {
@@ -966,7 +862,6 @@ void Win32ToggleFullscreen(HWND WindowHandle, win32_offscreen_buffer* Buffer,
       *GameScreenLeft = 0; 
       *GameScreenWidth = ScreenWidth;
       *GameScreenHeight = ScreenHeight; 
-      //Win32ResizeDIBSection(Buffer, *GameScreenWidth, *GameScreenHeight);
     }
   } 
   else 
@@ -981,7 +876,6 @@ void Win32ToggleFullscreen(HWND WindowHandle, win32_offscreen_buffer* Buffer,
     *GameScreenLeft = 10; 
     *GameScreenWidth = GAME_RGB_BUFFER_WIDTH;
     *GameScreenHeight = GAME_RGB_BUFFER_HEIGHT; 
-    //Win32ResizeDIBSection(Buffer, *GameScreenWidth, *GameScreenHeight);
   }
 }
 
@@ -990,8 +884,7 @@ Win32ProcessWindowMessages(HWND WindowHandle, b32 *GameIsRunning, u8 *WindowAlph
                            win32_state *Win32State, 
                            game_keyboard *NewKeyboard,
                            game_mouse *NewMouse,
-                           win32_window_callback_data* WindowCallbackData,
-                           win32_offscreen_buffer* Buffer)
+                           win32_window_callback_data* WindowCallbackData)
 {
   u32 UnicodeCodePointIndex = 0;
   u16 PrevChar = 0;
@@ -1128,7 +1021,7 @@ Win32ProcessWindowMessages(HWND WindowHandle, b32 *GameIsRunning, u8 *WindowAlph
                 {
                   if(IsDown && AltIsDown)
                   {
-                    Win32ToggleFullscreen(WindowHandle, Buffer, 
+                    Win32ToggleFullscreen(WindowHandle, 
                                           WindowCallbackData->GameScreenLeft, 
                                           WindowCallbackData->GameScreenTop,
                                           WindowCallbackData->GameScreenWidth,
@@ -1206,62 +1099,6 @@ Win32GetSecondsElapsed(LARGE_INTEGER Start, LARGE_INTEGER End, s64 Frequency)
 {
   return ((f32)(End.QuadPart - Start.QuadPart) / (f32)Frequency);
 }
-
-#if 0 //HANDMADE_INTERNAL
-  internal_function void
-Win32DebugDrawVerticalLine(win32_offscreen_buffer *BackBuffer, s32 X, 
-                           s32 Top, s32 Bottom, u32 Color)
-{
-  u32 *Pixel = (u32 *)((u8 *)BackBuffer->Memory 
-                       + X*BackBuffer->BytesPerPixel 
-                       + Top*BackBuffer->Pitch);
-  for(s32 Y = Top;
-      Y < Bottom;
-      ++Y)
-  {
-    *Pixel = Color;
-    *(Pixel+1) = Color;
-    Pixel = (u32 *)((u8 *)Pixel + BackBuffer->Pitch);
-  }
-}
-
-  internal_function void
-Win32DebugSyncDisplay(win32_offscreen_buffer *BackBuffer, s32 TimeMarkerCount, 
-                      win32_debug_time_marker *TimeMarker, win32_sound_output *SoundOutput, 
-                      f32 TargetSecondsPerFrame)
-{
-  s32 PadX = 32;
-  s32 PadY = 32;
-  f32 C = (f32)(BackBuffer->Width - 2*PadX) / (f32)SoundOutput->SecondaryBufferSize;
-  s32 Top = PadY;
-  s32 Bottom = BackBuffer->Height/6 - PadY;
-  for(s32 TimeMarkerIndex = 0;
-      TimeMarkerIndex < TimeMarkerCount;
-      ++TimeMarkerIndex)
-  {
-    u32 PlayCursorColor = 0x000000FF;
-    u32 WriteCursorColor = 0x0000FF44;
-    u32 TargetCursorColor = 0x004286F4;
-    u32 RunningByteIndexColor = 0x00000000;
-
-    s32 PlayCursorX = PadX + (s32)(C * (f32)TimeMarker[TimeMarkerIndex].PlayCursor);
-    s32 WriteCursorX = PadX + (s32)(C * (f32)TimeMarker[TimeMarkerIndex].WriteCursor);
-    s32 TargetCursorX = PadX + (s32)(C * (f32)TimeMarker[TimeMarkerIndex].TargetCursor);
-    s32 RunningByteIndexX = PadX + (s32)(C * 
-                                         (f32)TimeMarker[TimeMarkerIndex].RunningByteIndex);
-    // TODO(bjorn): Add lines for the expected FrameFlipByte with the variability 
-    //              included and compare it to the actual PlayCursor.
-    Win32DebugDrawVerticalLine(BackBuffer, PlayCursorX, Top, Bottom, PlayCursorColor);
-    Win32DebugDrawVerticalLine(BackBuffer, WriteCursorX, Top + 2*PadY, Bottom + 2*PadY,
-                               WriteCursorColor);
-    Win32DebugDrawVerticalLine(BackBuffer, TargetCursorX, Top + 1*PadY, Bottom + 4*PadY, 
-                               TargetCursorColor);
-    Win32DebugDrawVerticalLine(BackBuffer, RunningByteIndexX, 
-                               Top + 6*PadY, Bottom + 6*PadY, 
-                               RunningByteIndexColor);
-  }
-}
-#endif
 
   internal_function void
 Win32GetEXEFileName(win32_state *State)
@@ -1600,9 +1437,6 @@ WinMain(HINSTANCE Instance,
   WindowClass.hCursor = LoadCursor(0, IDC_ARROW);
   WindowClass.lpszClassName = L"HandmadeWindowClass";
 
-  win32_offscreen_buffer BackBuffer = {};
-  Win32ResizeDIBSection(&BackBuffer, GAME_RGB_BUFFER_WIDTH, GAME_RGB_BUFFER_HEIGHT);
-
   RegisterClassW(&WindowClass);
   HWND WindowHandle = CreateWindowExW(WS_EX_LAYERED|WS_EX_TOPMOST,
                                       WindowClass.lpszClassName,
@@ -1629,7 +1463,6 @@ WinMain(HINSTANCE Instance,
 
     win32_window_callback_data WindowCallbackData = {};
     WindowCallbackData.GameIsRunning = &GameIsRunning;
-    WindowCallbackData.BackBuffer = &BackBuffer;
     WindowCallbackData.WindowAlpha = &WindowAlpha;
     WindowCallbackData.GameScreenLeft = &GameScreenLeft;
     WindowCallbackData.GameScreenTop = &GameScreenTop; 
@@ -2169,7 +2002,7 @@ WinMain(HINSTANCE Instance,
                                  &Win32State, 
                                  &NewGameInput.Keyboards[0],
                                  &NewGameInput.Mice[0],
-                                 &WindowCallbackData, &BackBuffer);
+                                 &WindowCallbackData);
 
       {
         POINT MousePoint;
@@ -2450,20 +2283,19 @@ WinMain(HINSTANCE Instance,
       LastCycleCount = __rdtsc();
       LastCounter = Win32GetWallClock();
 
-#if 0//HANDMADE_INTERNAL
-      Win32DebugSyncDisplay(&BackBuffer, ArrayCount(DebugTimeMarker), 
-                            DebugTimeMarker, &SoundOutput, TargetSecondsPerFrame);
-#endif
       OpenGLRenderGroupToOutput(GameRenderGroup, GameAssets);
 
-      win32_window_dimension WindowDimension = Win32GetWindowDimension(WindowHandle);
+      {
+        HDC DeviceContext = GetDC(WindowHandle);
 
-      HDC DeviceContext = GetDC(WindowHandle);
-      Win32DisplayBufferInWindow(&BackBuffer, DeviceContext, 
-                                 WindowDimension.Width, WindowDimension.Height,
-                                 GameScreenLeft, GameScreenTop,
-                                 GameScreenWidth, GameScreenHeight);
-      ReleaseDC(WindowHandle, DeviceContext);
+        win32_window_dimension WindowDimension = Win32GetWindowDimension(WindowHandle);
+        Win32DisplayBufferInWindow(DeviceContext, 
+                                   WindowDimension.Width, WindowDimension.Height,
+                                   GameScreenLeft, GameScreenTop,
+                                   GameScreenWidth, GameScreenHeight);
+
+        ReleaseDC(WindowHandle, DeviceContext);
+      }
 
       for(s32 ControllerIndex = 1;
           ControllerIndex <= MaxControllerCount;

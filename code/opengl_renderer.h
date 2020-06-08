@@ -197,26 +197,30 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
 
           glEnable(GL_TEXTURE_2D);
 
-          if(!Entry->Bitmap->GPUHandle)
+          game_bitmap* Bitmap = GetBitmap(Assets, Entry->AssetID);
+          if(Bitmap)
           {
-            Entry->Bitmap->GPUHandle = GLOBAL_NextTextureHandle++;
-            glBindTexture(GL_TEXTURE_2D, Entry->Bitmap->GPUHandle);
+            if(!Bitmap->GPUHandle)
+            {
+              Bitmap->GPUHandle = GLOBAL_NextTextureHandle++;
+              glBindTexture(GL_TEXTURE_2D, Bitmap->GPUHandle);
 
-            glPixelStorei(GL_UNPACK_ROW_LENGTH, Entry->Bitmap->Pitch);
+              glPixelStorei(GL_UNPACK_ROW_LENGTH, Bitmap->Pitch);
 
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+              glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+              glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+              glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+              glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
 
-            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+              glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, Entry->Bitmap->Width, Entry->Bitmap->Height, 0,
-                         GL_BGRA_EXT, GL_UNSIGNED_BYTE, Entry->Bitmap->Memory);
-          }
-          else
-          {
-            glBindTexture(GL_TEXTURE_2D, Entry->Bitmap->GPUHandle);
+              glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, Bitmap->Width, Bitmap->Height, 0,
+                           GL_BGRA_EXT, GL_UNSIGNED_BYTE, Bitmap->Memory);
+            }
+            else
+            {
+              glBindTexture(GL_TEXTURE_2D, Bitmap->GPUHandle);
+            }
           }
 
           glEnable(GL_BLEND);

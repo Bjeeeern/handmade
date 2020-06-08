@@ -46,15 +46,13 @@ render_group_to_output* GPURenderGroupToOutput;
 
 struct transient_state
 {
-	memory_arena TransientArena;
 	memory_arena FrameBoundedTransientArena;
-
-  game_assets Assets;
 };
 
 struct game_state
 {
-	memory_arena WorldArena;
+	b32 IsInitialized;
+
 	world_map* WorldMap;
 
 	//TODO(bjorn): Should we allow split-screen?
@@ -90,12 +88,9 @@ global_variable	transient_state* DEBUG_TransientState = 0;
 InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input, 
                memory_arena* FrameBoundedTransientArena)
 {
-	InitializeArena(&GameState->WorldArena, Memory->PermanentStorageSize - sizeof(game_state),
-									(u8*)Memory->PermanentStorage + sizeof(game_state));
-
 	GameState->SimulationSpeedModifier = 1;
 
-  GameState->WorldMap = PushStruct(&GameState->WorldArena, world_map);
+  GameState->WorldMap = PushStruct(Memory->Permanent, world_map);
   world_map *WorldMap = GameState->WorldMap;
   WorldMap->ChunkSafetyMargin = 256;
   WorldMap->ChunkSideInMeters = 1.6f * 16;
@@ -241,7 +236,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input,
     MainCamera->CurrentGlyph = StartGlyph;
     AddOneWaySpringAttachment(MainCamera, StartGlyph, 10.0f, 0.0f);
 
-    EndSim(Input, &GameState->Entities, &GameState->WorldArena, SimRegion);
+    EndSim(Input, &GameState->Entities, Memory->Permanent, SimRegion);
   }
 
   EndTemporaryMemory(TempMem);
@@ -261,24 +256,9 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input,
 internal_function void
 InitializeTransientState(game_memory* Memory, transient_state* TransientState)
 {
-	memory_arena* TransientArena = &TransientState->TransientArena;
-	InitializeArena(TransientArena, 
-                  Memory->TransientStorageSize - sizeof(transient_state), 
-                  Memory->TransientStorage + sizeof(transient_state));
-
+  memory_arena* TransientArena = Memory->Transient;
 	memory_arena* FrameBoundedTransientArena = &TransientState->FrameBoundedTransientArena;
-  SubArena(FrameBoundedTransientArena, TransientArena, Memory->TransientStorageSize/4);
-
-  game_assets* Assets = &TransientState->Assets;
-  SubArena(&Assets->Arena, TransientArena, Memory->TransientStorageSize/4);
-  Assets->DEBUGPlatformReadEntireFile = Memory->DEBUGPlatformReadEntireFile;
-  Assets->DEBUGPlatformFreeFileMemory = Memory->DEBUGPlatformFreeFileMemory;
-
-  //TODO(bjorn): Should this be updated on the fly by the platform layer?
-  game_bitmap* MainScreen = PushStruct(&Assets->Arena, game_bitmap);
-  Assets->Bitmaps[GAI_MainScreen] = MainScreen;
-  MainScreen->WidthOverHeight = 1920.0f/1080.0f;
-  Assets->BitmapsMeta[GAI_MainScreen].State = AssetState_Locked;
+  SubArena(FrameBoundedTransientArena, TransientArena, Remaining(TransientArena)/4);
 
 #if 0
   debug_read_file_result FontFile = Memory->DEBUGPlatformReadEntireFile("data/MSMINCHO.font");
@@ -470,10 +450,8 @@ extern "C" GAME_UPDATE(GameUpdate)
 	}
 #endif
 
-	Assert(sizeof(game_state) <= Memory->PermanentStorageSize);
-	game_state *GameState = (game_state *)Memory->PermanentStorage;
-	Assert(sizeof(transient_state) <= Memory->TransientStorageSize);
-	transient_state *TransientState = (transient_state *)Memory->TransientStorage;
+	game_state *GameState = GetFirstStruct(Memory->Permanent, game_state);
+	transient_state *TransientState = GetFirstStruct(Memory->Transient, transient_state);
 
 #if HANDMADE_INTERNAL
   DEBUG_GameState = GameState;
@@ -483,7 +461,7 @@ extern "C" GAME_UPDATE(GameUpdate)
 #endif
 
   if(Input->ExecutableReloaded ||
-     !Memory->IsInitialized)
+     !GameState->IsInitialized)
   {
     PushWork = Memory->PushWork;
     CompleteWork = Memory->CompleteWork;
@@ -491,19 +469,17 @@ extern "C" GAME_UPDATE(GameUpdate)
     InitializeTransientState(Memory, TransientState);
   }
 
-	if(!Memory->IsInitialized)
+	if(!GameState->IsInitialized)
 	{
 		InitializeGame(Memory, GameState, Input, &TransientState->FrameBoundedTransientArena);
 
-		Memory->IsInitialized = true;
+		GameState->IsInitialized = true;
 	}
 
-  memory_arena* WorldArena = &GameState->WorldArena;
   world_map* WorldMap = GameState->WorldMap;
   stored_entities* Entities = &GameState->Entities;
   memory_arena* FrameBoundedTransientArena = &TransientState->FrameBoundedTransientArena;
-  memory_arena* TransientArena = &TransientState->TransientArena;
-  game_assets* Assets = &TransientState->Assets;
+  memory_arena* TransientArena = Memory->Transient;
 
   temporary_memory TempMem = BeginTemporaryMemory(FrameBoundedTransientArena);
 
@@ -558,7 +534,7 @@ extern "C" GAME_UPDATE(GameUpdate)
 				GameState->NoteSecondsPassed = 0.0f;
 
 				//TODO STUDY(bjorn): Just setting the flag is not working anymore.
-				//Memory->IsInitialized = false;
+				//GameState->IsInitialized = false;
 			}
 
 #if 0
@@ -667,7 +643,7 @@ extern "C" GAME_UPDATE(GameUpdate)
 						}
 					}
 
-					EndSim(Input, Entities, WorldArena, SimRegion);
+					EndSim(Input, Entities, Memory->Permanent, SimRegion);
 				}
 			}
 #endif
@@ -839,7 +815,7 @@ extern "C" GAME_UPDATE(GameUpdate)
   }
 
   BEGIN_TIMED_BLOCK(EndSimRegion);
-  EndSim(Input, Entities, WorldArena, SimRegion);
+  EndSim(Input, Entities, Memory->Permanent, SimRegion);
   END_TIMED_BLOCK(EndSimRegion);
 
   END_TIMED_BLOCK(SimRegion);
@@ -893,6 +869,6 @@ OutputSound(game_sound_output_buffer *SoundBuffer, game_state* GameState)
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)
 {
-	game_state *GameState = (game_state *)Memory->PermanentStorage;
+	game_state *GameState = GetFirstStruct(Memory->Permanent, game_state);
 	OutputSound(SoundBuffer, GameState);
 }

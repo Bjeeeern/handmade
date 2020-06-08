@@ -3,6 +3,14 @@
 #include "types_and_defines.h"
 #include "math.h"
 
+#ifdef COMPILER_MSVC
+#pragma warning(disable:4005)
+#endif
+#include "memory.h"
+#ifdef COMPILER_MSVC
+#pragma warning(default:4005)
+#endif
+
 //TODO Temp dependency fix.
 #if HANDMADE_INTERNAL
 #endif
@@ -22,30 +30,8 @@
 //
 // NOTE(bjorn): Stuff the platform provides to the game.
 //
-
-//                                                              high     low
-// NOTE(bjorn): Expected pixel layout in memory is top to bottom AA RR GG BB.
-//              Pixels are laid out in a bottom-up, left-right order.
-#define GAME_BITMAP_BYTES_PER_PIXEL 4
-struct game_bitmap
-{
-  u32 *Memory;
-	union
-	{
-		v2u Dim;
-		struct
-		{
-			u32 Width;
-			u32 Height;
-		};
-	};
-  s32 Pitch;
-  v2s Alignment;
-
-  f32 WidthOverHeight;
-
-  s32 GPUHandle; //TODO(bjorn): Think about this.
-};
+#include "asset.h"
+#include "render_group.h"
 
 #if HANDMADE_INTERNAL
 /* IMPORTANT(bjorn):
@@ -69,6 +55,11 @@ typedef DEBUG_PLATFORM_FREE_FILE_MEMORY(debug_platform_free_file_memory);
 
 #define DEBUG_PLATFORM_GET_FILE_EDIT_TIMESTAMP(name) u64 name(char *FileName)
 typedef DEBUG_PLATFORM_GET_FILE_EDIT_TIMESTAMP(debug_platform_get_file_edit_timestamp);
+
+#ifdef COMPILER_MSVC
+DEBUG_PLATFORM_FREE_FILE_MEMORY(DEBUGPlatformFreeFileMemory);
+DEBUG_PLATFORM_READ_ENTIRE_FILE(DEBUGPlatformReadEntireFile);
+#endif
 
 enum
 {
@@ -333,8 +324,8 @@ GetMouseIndex(game_input* Input, game_mouse* Mouse)
 	return Result;
 }
 
-#define WORK_QUEUE_CALLBACK(name) void name(void* Data, u8* Memory = 0, memi Size = 0)
-typedef void work_queue_callback(void* Data, u8* Memory, memi Size);
+#define WORK_QUEUE_CALLBACK(name) void name(void* Data, memory_arena* Arena = 0)
+typedef void work_queue_callback(void* Data, memory_arena* Arena);
 
 struct work_queue_entry
 {
@@ -345,8 +336,7 @@ struct work_queue_entry
 struct thread_id_memory_mapping
 {
   u32 Id;
-  u8* Memory;
-  memi Size;
+  memory_arena Arena;
 };
 
 struct work_queue
@@ -370,20 +360,11 @@ struct work_queue
 typedef void multi_thread_push_work(work_queue* Queue, work_queue_callback* Callback, void* Data);
 typedef void multi_thread_complete_work(work_queue* Queue);
 
-struct render_group;
-#define RENDER_GROUP_TO_OUTPUT(name) void name(render_group* RenderGroup)
-typedef RENDER_GROUP_TO_OUTPUT(render_group_to_output);
-
 // NOTE(bjorn): Memory REQUIRED to be initialized to 0 on startup.
 struct game_memory
 {
-	b32 IsInitialized;
-
-	memi PermanentStorageSize;
-	u8* PermanentStorage; 
-
-	memi TransientStorageSize;
-	u8* TransientStorage; 
+  memory_arena* Permanent;
+  memory_arena* Transient;
 
   multi_thread_push_work* PushWork;
   multi_thread_complete_work* CompleteWork;
@@ -407,7 +388,7 @@ struct game_memory
 };
 
 #define GAME_UPDATE(name) void name(f32 SecondsToUpdate, game_memory* Memory, game_input* Input,\
-                                    render_group* RenderGroup)
+                                    render_group* RenderGroup, game_assets* Assets)
 typedef GAME_UPDATE(game_update);
 GAME_UPDATE(GameUpdateStub)
 {

@@ -13,25 +13,14 @@ PushBlankQuad(render_group* RenderGroup, m44 T, v4 Color)
 }
 
 internal_function void
-PushQuad(render_group* RenderGroup, m44 T, game_bitmap* Bitmap, 
+PushQuad(render_group* RenderGroup, m44 T, game_assets* Assets, game_asset_id ID, 
          rectangle2 BitmapUVRect = RectMinDim({0,0},{1,1}), v4 Color = {1,1,1,1})
 {
 	render_entry_quad* Entry = PushRenderElement(RenderGroup, render_entry_quad);
 	Entry->Tran = T;
-	Entry->Bitmap = Bitmap;
+	Entry->AssetID = ID;
 	Entry->Color = Color;
 	Entry->BitmapUVRect = BitmapUVRect;
-}
-
-internal_function void
-PushQuad(render_group* RenderGroup, m44 T, game_assets* Assets, game_asset_id ID, 
-         rectangle2 BitmapUVRect = RectMinDim({0,0},{1,1}), v4 Color = {1,1,1,1})
-{
-  game_bitmap* Bitmap = GetBitmap(Assets, ID);
-  if(Bitmap)
-  {
-    PushQuad(RenderGroup, T, Bitmap, BitmapUVRect, Color);
-  }
 }
 
 internal_function void
@@ -96,10 +85,13 @@ PushSphere(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.8f,1})
 }
 
 internal_function void
-PushCamera(render_group* RenderGroup, game_bitmap* Target, f32 ScreenHeightInMeters, 
+PushCamera(render_group* RenderGroup, game_assets* Assets, game_asset_id ID, f32 ScreenHeightInMeters, 
            m44 WorldToCamera, f32 LensChamberSize, 
            f32 NearClipPoint = 0, f32 FarClipPoint = 100.0f)
 {
+  game_bitmap* Target = GetBitmap(Assets, ID);
+  Assert(Target);
+
 	render_entry_camera* Entry = PushRenderElement(RenderGroup, render_entry_camera);
 
   Entry->WorldToCamera = WorldToCamera;
@@ -111,20 +103,7 @@ PushCamera(render_group* RenderGroup, game_bitmap* Target, f32 ScreenHeightInMet
   Entry->FarClipPoint = FarClipPoint;
 
   Entry->ScreenHeightInMeters = ScreenHeightInMeters;
-
-  Entry->RenderTarget = Target;
   Entry->ScreenWidthInMeters = Target->WidthOverHeight * ScreenHeightInMeters;
-}
-
-internal_function void
-PushCamera(render_group* RenderGroup, game_assets* Assets, game_asset_id ID, f32 ScreenHeightInMeters, 
-           m44 WorldToCamera, f32 LensChamberSize, 
-           f32 NearClipPoint = 0, f32 FarClipPoint = 100.0f)
-{
-  game_bitmap* Target = GetBitmap(Assets, ID);
-  Assert(Target);
-  PushCamera(RenderGroup, Target, ScreenHeightInMeters, WorldToCamera, LensChamberSize, 
-             NearClipPoint, FarClipPoint);
 }
 
 internal_function void

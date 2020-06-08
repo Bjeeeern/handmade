@@ -1,16 +1,14 @@
-#include "platform.h"
-#include "intrinsics.h"
-
 #define UNICODE
 #include <windows.h>
 #include <xinput.h>
 #include <dsound.h>
 #include <gl/gl.h>
-
-#include "opengl_renderer.h"
-
 #include <tobii/tobii.h>
 #include <tobii/tobii_streams.h>
+
+#include "platform.h"
+#include "asset_streaming.h"
+#include "opengl_renderer.h"
 
 //IMPORTANT TODO(bjorn): This is for the wsprintfA and sprintf_s functions.
 //Remove this in the future.
@@ -1333,10 +1331,10 @@ struct memory_and_size
   u8* Memory;
   memi Size;
 };
-  internal_function memory_and_size
-Win32GetCurrentThreadMemoryAndSize(work_queue* Queue)
+  internal_function memory_arena*
+Win32GetCurrentThreadMemoryArena(work_queue* Queue)
 {
-  memory_and_size Result = {};
+  memory_arena* Result = 0;
 
   for(s32 Index = 0;
       Index < Queue->ThreadCount;
@@ -1345,8 +1343,7 @@ Win32GetCurrentThreadMemoryAndSize(work_queue* Queue)
     thread_id_memory_mapping* Mapping = Queue->IdToMemory + Index;
     if(Mapping->Id == GetCurrentThreadId())
     {
-      Result.Memory = Mapping->Memory;
-      Result.Size = Mapping->Size;
+      Result = &Mapping->Arena;
     }
   }
 
@@ -1373,8 +1370,8 @@ Win32DoMultithreadedWork(work_queue* Queue)
     if(Test == OriginalNextEntryToRead)
     {
       work_queue_entry* Entry = Queue->Entries + OriginalNextEntryToRead;
-      memory_and_size Usable = Win32GetCurrentThreadMemoryAndSize(Queue);
-      Entry->Callback(Entry->Data, Usable.Memory, Usable.Size);
+      memory_arena* Arena = Win32GetCurrentThreadMemoryArena(Queue);
+      Entry->Callback(Entry->Data, Arena);
 
       InterlockedIncrement((LONG volatile*)&Queue->CompletedWorkCount);
     }
@@ -1488,24 +1485,6 @@ Win32InitOpenGL(HWND Window)
   }
   ReleaseDC(Window, WindowDC);
 }
-
-#define SubAllocStruct(memory, sizeleft, type) (type*)SubAlloc_((u8**)(memory), \
-                                                                (sizeleft), sizeof(type))
-#define SubAlloc(memory, sizeleft, size) SubAlloc_((u8**)(memory), (sizeleft), (size))
-internal_function u8*
-SubAlloc_(u8** Memory, memi* SizeLeft, memi Size)
-{
-  Assert(Size < *SizeLeft);
-  Assert(*SizeLeft > 0 && Size > 0);
-
-	u8* Result = *Memory;
-
-  *Memory += Size;
-  *SizeLeft -= Size;
-
-	return Result;
-}
-
 
 #if HANDMADE_INTERNAL
 game_memory* DebugGlobalMemory; 
@@ -1713,10 +1692,8 @@ WinMain(HINSTANCE Instance,
     // TODO(bjorn): TransientStorage needs to be broken up into game transient
     // and cache transient. Only game transient needs to be stored for state
     // playback.
-    u64 CommonTransientStorageSize = Gigabytes(1);
+    u64 CommonTransientStorageSize = Gigabytes(2);
     u64 CommonStorageTotalSize = CommonPermanentStorageSize + CommonTransientStorageSize;
-    Handmade.Memory.PermanentStorageSize = CommonPermanentStorageSize; 
-    Handmade.Memory.TransientStorageSize = CommonTransientStorageSize;
 #if HANDMADE_INTERNAL
     Handmade.Memory.DEBUGPlatformFreeFileMemory = DEBUGPlatformFreeFileMemory;
     Handmade.Memory.DEBUGPlatformReadEntireFile = DEBUGPlatformReadEntireFile;
@@ -1728,7 +1705,7 @@ WinMain(HINSTANCE Instance,
         ++RecordIndex)
     {
       Win32State.MemoryRecords[RecordIndex] = VirtualAlloc(0, 
-                                                           CommonStorageTotalSize, 
+                                                           CommonPermanentStorageSize, 
                                                            MEM_RESERVE|MEM_COMMIT,
                                                            PAGE_READWRITE);
     }
@@ -1741,16 +1718,24 @@ WinMain(HINSTANCE Instance,
     void *HandmadeBaseAddress = 0;
     void *MyGameBaseAddress = 0;
 #endif
-    u64 HandmadeTotalStorageSize = (Handmade.Memory.PermanentStorageSize + 
-                                    Handmade.Memory.TransientStorageSize);
-    Handmade.Memory.PermanentStorage = (u8*)VirtualAlloc(HandmadeBaseAddress, 
-                                                         HandmadeTotalStorageSize, 
-                                                         MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
-    Handmade.Memory.TransientStorage = (Handmade.Memory.PermanentStorage + 
-                                        Handmade.Memory.PermanentStorageSize);
+    {
+      u64 HandmadeTotalStorageSize = (CommonPermanentStorageSize + 
+                                      CommonTransientStorageSize);
+      u8* MainAllocation = (u8*)VirtualAlloc(HandmadeBaseAddress, 
+                                             HandmadeTotalStorageSize, 
+                                             MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+      Handmade.Memory.Permanent = 
+        InitializeArena((memory_arena*)MainAllocation, 
+                        CommonPermanentStorageSize - sizeof(memory_arena), 
+                        MainAllocation + sizeof(memory_arena));
+      Handmade.Memory.Transient = 
+        InitializeArena((memory_arena*)(MainAllocation + CommonPermanentStorageSize), 
+                        CommonTransientStorageSize - sizeof(memory_arena), 
+                        MainAllocation + sizeof(memory_arena) + CommonPermanentStorageSize);
+    }
 
-    Win32State.GameMemoryBlockSize = HandmadeTotalStorageSize;
-    Win32State.GameMemoryBlock = Handmade.Memory.PermanentStorage;
+    Win32State.GameMemoryBlockSize = CommonPermanentStorageSize;
+    Win32State.GameMemoryBlock = (u8*)Handmade.Memory.Permanent;
 
     {
       u32 ThreadCount = 0;
@@ -1893,25 +1878,40 @@ WinMain(HINSTANCE Instance,
         DWORD ThreadID;
         work_queue* Queue = &Handmade.Memory.LowPriorityQueue;
         HANDLE ThreadHandle = CreateThread(0, 0, ThreadProc, Queue, 0, &ThreadID);
-        Queue->IdToMemory[ThreadIndex].Id = ThreadID;
-        Queue->IdToMemory[ThreadIndex].Size = Megabytes(8);
 
-        Queue->IdToMemory[ThreadIndex].Memory = SubAlloc(&Handmade.Memory.TransientStorage, 
-                                                         &Handmade.Memory.TransientStorageSize,
-                                                         Queue->IdToMemory[ThreadIndex].Size);
+        Queue->IdToMemory[ThreadIndex].Id = ThreadID;
+        SubArena(&Queue->IdToMemory[ThreadIndex].Arena, Handmade.Memory.Transient, Megabytes(8));
 
         CloseHandle(ThreadHandle);
       }
     }
 
-    render_group* GameRenderGroup = SubAllocStruct(&Handmade.Memory.TransientStorage, 
-                                                   &Handmade.Memory.TransientStorageSize, 
-                                                   render_group);
+    render_group* GameRenderGroup = PushStruct(Handmade.Memory.Transient, 
+                                               render_group);
     GameRenderGroup->PushBufferSize = 0;
     GameRenderGroup->MaxPushBufferSize = Megabytes(64);
-    GameRenderGroup->PushBufferBase = SubAlloc(&Handmade.Memory.TransientStorage, 
-                                               &Handmade.Memory.TransientStorageSize,
-                                               GameRenderGroup->MaxPushBufferSize);
+    GameRenderGroup->PushBufferBase = PushArray(Handmade.Memory.Transient, 
+                                                GameRenderGroup->MaxPushBufferSize,
+                                                u8);
+
+    game_assets* GameAssets = PushStruct(Handmade.Memory.Transient, game_assets);
+    SubArena(&GameAssets->Arena, Handmade.Memory.Transient, Gigabytes(1));
+
+    LoadAllAssets(GameAssets);
+    //TODO(bjorn): Develop the game a bit more before delving into the asset system.
+    //TODO If game gets big enough:
+    //some sort of 
+    // if(AssetIDSetLoaded(AssetIDSet))
+    // {
+    //    LockAssetIDSet(AssetIDSet); //DEBUG log failed fetches?
+    // }
+    {
+      game_bitmap* MainScreen = PushStruct(&GameAssets->Arena, game_bitmap);
+      *MainScreen = {};
+
+      GameAssets->Bitmaps[GAI_MainScreen] = MainScreen;
+      GameAssets->BitmapsMeta[GAI_MainScreen].State = AssetState_Locked;
+    }
 
     Handmade.Memory.PushWork = Win32PushWork;
     Handmade.Memory.CompleteWork = Win32CompleteWork;
@@ -2042,14 +2042,14 @@ WinMain(HINSTANCE Instance,
       }
 
 #if HANDMADE_INTERNAL
-    FILETIME LastWriteTime = Win32GetLastWriteTime(Game->DLLFullPath);
-    if(CompareFileTime(&Game->Code.DLLLastWriteTime, &LastWriteTime) != 0) 
-    {
-      Win32UnloadGameCode(&Game->Code);
-      Game->Code = Win32LoadGameCode(Game->DLLFullPath, Game->TempDLLFullPath);
-      Game->Code.DLLLastWriteTime = LastWriteTime;
-      NewGameInput.ExecutableReloaded = true;
-    }
+      FILETIME LastWriteTime = Win32GetLastWriteTime(Game->DLLFullPath);
+      if(CompareFileTime(&Game->Code.DLLLastWriteTime, &LastWriteTime) != 0) 
+      {
+        Win32UnloadGameCode(&Game->Code);
+        Game->Code = Win32LoadGameCode(Game->DLLFullPath, Game->TempDLLFullPath);
+        Game->Code.DLLLastWriteTime = LastWriteTime;
+        NewGameInput.ExecutableReloaded = true;
+      }
 #endif
 
       // TODO(bjorn): Should this be polled more often?
@@ -2201,6 +2201,12 @@ WinMain(HINSTANCE Instance,
         Win32ProcessKeyboardButton((GetKeyState(VK_XBUTTON1) & 0x8000), &Mouse->ThumbForward); 
         Win32ProcessKeyboardButton((GetKeyState(VK_XBUTTON2) & 0x8000), &Mouse->ThumbBackward); 
       }
+      
+      {
+        game_bitmap* MainScreen = GetBitmap(GameAssets, GAI_MainScreen);
+        MainScreen->Dim = {(u32)GameScreenWidth, (u32)GameScreenHeight};
+        MainScreen->WidthOverHeight = GameScreenWidth/(f32)GameScreenHeight;
+      }
 
 #if 0
       {
@@ -2227,7 +2233,7 @@ WinMain(HINSTANCE Instance,
       if(Game->Code.Update)
       {
         HandleDebugCycleCounters(&Game->Memory);
-        Game->Code.Update(TargetSecondsPerFrame, &Game->Memory, &NewGameInput, GameRenderGroup);
+        Game->Code.Update(TargetSecondsPerFrame, &Game->Memory, &NewGameInput, GameRenderGroup, GameAssets);
       }
 
       DWORD PlayCursor;
@@ -2448,15 +2454,15 @@ WinMain(HINSTANCE Instance,
       Win32DebugSyncDisplay(&BackBuffer, ArrayCount(DebugTimeMarker), 
                             DebugTimeMarker, &SoundOutput, TargetSecondsPerFrame);
 #endif
-      OpenGLRenderGroupToOutput(GameRenderGroup);
+      OpenGLRenderGroupToOutput(GameRenderGroup, GameAssets);
 
       win32_window_dimension WindowDimension = Win32GetWindowDimension(WindowHandle);
 
       HDC DeviceContext = GetDC(WindowHandle);
       Win32DisplayBufferInWindow(&BackBuffer, DeviceContext, 
-                              WindowDimension.Width, WindowDimension.Height,
-                              GameScreenLeft, GameScreenTop,
-                              GameScreenWidth, GameScreenHeight);
+                                 WindowDimension.Width, WindowDimension.Height,
+                                 GameScreenLeft, GameScreenTop,
+                                 GameScreenWidth, GameScreenHeight);
       ReleaseDC(WindowHandle, DeviceContext);
 
       for(s32 ControllerIndex = 1;

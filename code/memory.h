@@ -10,13 +10,21 @@ struct memory_arena
 	s32 TempMemCount;
 };
 
-internal_function void
+internal_function memi
+Remaining(memory_arena* Arena)
+{
+  return Arena->Size - Arena->Used;
+}
+
+internal_function memory_arena*
 InitializeArena(memory_arena* Arena, memi Size, u8 *Base)
 {
 	Arena->Size = Size;
 	Arena->Base = Base;
 	Arena->Used = 0;
 	Arena->TempMemCount = 0;
+
+  return Arena;
 }
 
 internal_function memory_arena
@@ -33,7 +41,7 @@ InitializeArena(memi Size, u8 *Base)
 #define PushStruct(Arena, type) (type *)PushSize_((Arena), sizeof(type))
 #define PushArray(Arena, Count, type) (type *)PushSize_((Arena), (Count)*sizeof(type))
 #define PushSize(Arena, Size) PushSize_((Arena), (Size))
-void *
+void*
 PushSize_(memory_arena* Arena, memi Size)
 {
 	Assert((Arena->Used + Size) <= Arena->Size);
@@ -101,6 +109,26 @@ internal_function void
 CheckMemoryArena(memory_arena* Arena)
 {
 	Assert(Arena->TempMemCount == 0);
+}
+
+#define GetFirstStruct(Arena, type) (type *)GetFirstStruct_((Arena), sizeof(type))
+void*
+GetFirstStruct_(memory_arena* Arena, memi Size)
+{
+  void* Result = 0;
+
+  if(Arena->Used == 0)
+  {
+    Assert(Size < Arena->Size);
+    Result = PushSize(Arena, Size);
+  }
+  else
+  {
+    Assert(Size <= Arena->Used);
+    Result = Arena->Base;
+  }
+
+  return Result;
 }
 
 #define MEMORY_H

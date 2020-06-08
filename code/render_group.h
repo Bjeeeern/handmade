@@ -2,6 +2,7 @@
 
 #include "primitive_shapes.h"
 #include "math.h"
+#include "asset.h"
 
 // NOTE(bjorn):
 //
@@ -40,7 +41,6 @@ struct render_entry_camera
   f32 NearClipPoint;
   f32 FarClipPoint;
 
-	game_bitmap* RenderTarget;
   //TODO(Bjorn): FoV?
   f32 ScreenWidthInMeters;
   f32 ScreenHeightInMeters;
@@ -63,7 +63,7 @@ struct render_entry_wire_cube
 };
 struct render_entry_quad
 {
-	game_bitmap* Bitmap;
+	game_asset_id AssetID;
 	v4 Color;
 	m44 Tran;
   rectangle2 BitmapUVRect;
@@ -135,6 +135,11 @@ ClearRenderGroup(render_group* RenderGroup)
 {
   RenderGroup->PushBufferSize = 0;
 }
+
+struct render_group;
+#define RENDER_GROUP_TO_OUTPUT(name) void name(render_group* RenderGroup, game_assets* Assets)
+typedef RENDER_GROUP_TO_OUTPUT(render_group_to_output);
+
 
 #define RENDER_GROUP_H
 #endif

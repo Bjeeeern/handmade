@@ -1,5 +1,13 @@
 #define UNICODE
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+//NOTE(bjorn): These have to be included becase WIN32_LEAN_AND_MEAN is a blut
+//tool to remove winsock.h in order to include winsock2.h
+#include <mmeapi.h>
+#include <timeapi.h>
+// END NOTE
+
+#include <winsock2.h>
 #include <xinput.h>
 #include <dsound.h>
 #include <gl/gl.h>

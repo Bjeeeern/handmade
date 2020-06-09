@@ -10,7 +10,7 @@ SET defines=-DHANDMADE_SLOW=1 -DHANDMADE_INTERNAL=1
 SET errors=-WX -W4 -wd4201 -wd4100 -wd4189 -wd4505 -wd4127 -wd4101
 SET flags=-MTd -nologo -GR -EHa -O2 -Oi -Z7 -FC -I..\library\tobii_4C\include
 SET asmflags=/c /Zi 
-SET links=user32.lib gdi32.lib winmm.lib tobii_stream_engine.lib opengl32.lib
+SET links=user32.lib gdi32.lib winmm.lib tobii_stream_engine.lib opengl32.lib Ws2_32.lib
 SET linkflags=-LIBPATH:..\library\tobii_4C\lib\tobii -incremental:no -opt:ref
 
 if not exist "%builddir%" mkdir "%builddir%"

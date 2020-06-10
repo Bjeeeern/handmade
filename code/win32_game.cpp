@@ -1341,6 +1341,58 @@ WinMain(HINSTANCE Instance,
         LPSTR CommandLine,
         s32 Show)
 {
+  SOCKET Socket;
+  SOCKADDR_IN ServerAddress = {};
+  SOCKADDR_IN ClientAddress = {};
+  SOCKADDR_IN GuestAddress = {};
+  s32 GuestAddressSize = 0;
+  u16 Port = 4242;
+  {
+    WSAData Data = {};
+    if(WSAStartup(MAKEWORD(2,2), &Data) != 0)
+    {
+      //TODO(bjorn): Future-proof.
+      InvalidCodePath;
+    }
+
+    Socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    Assert(Socket != INVALID_SOCKET);
+
+    ServerAddress.sin_family = AF_INET;
+    ServerAddress.sin_port = htons(Port); //TODO(bjorn): Set port in a smarter way and display it.
+    ServerAddress.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    ClientAddress.sin_family = AF_INET;
+    ClientAddress.sin_port = htons(Port); //TODO(bjorn): Set port in a smarter way and display it.
+    ClientAddress.sin_addr.S_un.S_un_b = {1,0,0,127};
+
+    if(bind(Socket, (SOCKADDR*)&ServerAddress, sizeof(ServerAddress)) == SOCKET_ERROR)
+    {
+      //TODO(bjorn): Future-proof.
+      InvalidCodePath;
+    }
+  }
+
+
+  {
+    s32 BytesRead;
+    char Buffer[256];
+    sprintf_s(Buffer, "I did it Mom!");
+    BytesRead = sendto(Socket, Buffer, 13, 0, (SOCKADDR*)&ClientAddress, sizeof(ClientAddress));
+    Assert(BytesRead == 13);
+
+    Sleep(1000);
+
+    char Buffer2[256] = {};
+    BytesRead = recvfrom(Socket, Buffer2, 13, 0, (SOCKADDR*)&GuestAddress, &GuestAddressSize);
+    Assert(BytesRead == 13);
+    Assert(GuestAddressSize == sizeof(GuestAddress));
+
+    char TextBuffer[256];
+    sprintf_s(TextBuffer, "Sent And Rcvd Content:%s\n", Buffer);
+    OutputDebugStringA(TextBuffer);
+  }
+
 #if 0
   work_queue Queue = {};
 

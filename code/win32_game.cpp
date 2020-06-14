@@ -8,6 +8,7 @@
 // END NOTE
 
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #include <xinput.h>
 #include <dsound.h>
 #include <gl/gl.h>
@@ -1335,17 +1336,23 @@ Win32InitOpenGL(HWND Window)
 game_memory* DebugGlobalMemory; 
 #endif
 
+internal_function void
+SetIP(SOCKADDR_IN* SocketStruct, u8 a, u8 b, u8 c, u8 d)
+{
+  SocketStruct->sin_addr.S_un.S_un_b.s_b1 = a;
+  SocketStruct->sin_addr.S_un.S_un_b.s_b2 = b;
+  SocketStruct->sin_addr.S_un.S_un_b.s_b3 = c;
+  SocketStruct->sin_addr.S_un.S_un_b.s_b4 = d;
+}
+
   s32 CALLBACK 
 WinMain(HINSTANCE Instance,
         HINSTANCE PrevInstance,
         LPSTR CommandLine,
         s32 Show)
 {
-  SOCKET Socket;
-  SOCKADDR_IN ServerAddress = {};
-  SOCKADDR_IN ClientAddress = {};
-  SOCKADDR_IN GuestAddress = {};
-  s32 GuestAddressSize = 0;
+  SOCKET ServerSocket;
+  SOCKET ClientSocket;
   u16 Port = 4242;
   {
     WSAData Data = {};
@@ -1355,40 +1362,60 @@ WinMain(HINSTANCE Instance,
       InvalidCodePath;
     }
 
-    Socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    Assert(Socket != INVALID_SOCKET);
+    ServerSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    Assert(ServerSocket != INVALID_SOCKET);
 
+    SOCKADDR_IN ServerAddress = {};
     ServerAddress.sin_family = AF_INET;
     ServerAddress.sin_port = htons(Port); //TODO(bjorn): Set port in a smarter way and display it.
-    ServerAddress.sin_addr.s_addr = htonl(INADDR_ANY);
+    SetIP(&ServerAddress, 0, 0, 0, 0);
 
-    ClientAddress.sin_family = AF_INET;
-    ClientAddress.sin_port = htons(Port); //TODO(bjorn): Set port in a smarter way and display it.
-    ClientAddress.sin_addr.S_un.S_un_b = {1,0,0,127};
-
-    if(bind(Socket, (SOCKADDR*)&ServerAddress, sizeof(ServerAddress)) == SOCKET_ERROR)
+    if(bind(ServerSocket, (SOCKADDR*)&ServerAddress, sizeof(SOCKADDR_IN)) == SOCKET_ERROR)
     {
       //TODO(bjorn): Future-proof.
       InvalidCodePath;
     }
   }
 
-
   {
+    char TextBuffer[256];
+
+    SOCKADDR_IN ServerAddress = {};
+    ServerAddress.sin_family = AF_INET;
+    ServerAddress.sin_port = htons(Port);
+    SetIP(&ServerAddress, 127, 0, 0, 1);
+
     s32 BytesRead;
     char Buffer[256];
     sprintf_s(Buffer, "I did it Mom!");
-    BytesRead = sendto(Socket, Buffer, 13, 0, (SOCKADDR*)&ClientAddress, sizeof(ClientAddress));
+    BytesRead = sendto(ServerSocket, Buffer, 13, 0, (SOCKADDR*)&ServerAddress, sizeof(SOCKADDR_IN));
     Assert(BytesRead == 13);
 
     Sleep(1000);
 
+    SOCKADDR_IN GuestAddress = {};
+    s32 GuestAddressSize = sizeof(SOCKADDR_IN);
     char Buffer2[256] = {};
-    BytesRead = recvfrom(Socket, Buffer2, 13, 0, (SOCKADDR*)&GuestAddress, &GuestAddressSize);
-    Assert(BytesRead == 13);
-    Assert(GuestAddressSize == sizeof(GuestAddress));
+    BytesRead = recvfrom(ServerSocket, Buffer2, 13, 0, (SOCKADDR*)&GuestAddress, &GuestAddressSize);
 
-    char TextBuffer[256];
+    if(BytesRead == -1)
+    {
+      sprintf_s(TextBuffer, "Server: Connection closed with error code: %ld\n", WSAGetLastError());
+      OutputDebugStringA(TextBuffer);
+    }
+
+    sprintf_s(TextBuffer, 
+              "Guest ip:%d.%d.%d.%d port:%d\n", 
+              GuestAddress.sin_addr.S_un.S_un_b.s_b1, 
+              GuestAddress.sin_addr.S_un.S_un_b.s_b2, 
+              GuestAddress.sin_addr.S_un.S_un_b.s_b3, 
+              GuestAddress.sin_addr.S_un.S_un_b.s_b4,
+              ntohs(GuestAddress.sin_port));
+    OutputDebugStringA(TextBuffer);
+
+    Assert(BytesRead == 13);
+    Assert(GuestAddressSize == sizeof(SOCKADDR_IN));
+
     sprintf_s(TextBuffer, "Sent And Rcvd Content:%s\n", Buffer);
     OutputDebugStringA(TextBuffer);
   }

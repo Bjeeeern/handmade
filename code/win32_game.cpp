@@ -1345,14 +1345,43 @@ SetIP(SOCKADDR_IN* SocketStruct, u8 a, u8 b, u8 c, u8 d)
   SocketStruct->sin_addr.S_un.S_un_b.s_b4 = d;
 }
 
+#define SendStruct(socket, address, payload) SendBuffer_((socket), (address), (u8*)(payload), sizeof(*payload))
+#define SendType SendStruct
+#define SendBuffer(socket, address, payload, size) SendBuffer_((socket), (address), (payload), (size))
+internal_function void
+SendBuffer_(SOCKET Socket, SOCKADDR_IN Address, u8* Payload, memi Size)
+{
+  //Assert(Size <= UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE);
+
+  s32 BytesSent = sendto(Socket, (const char *)Payload, (s32)Size, 0, (SOCKADDR*)&Address, sizeof(SOCKADDR_IN));
+
+  Assert(BytesSent == Size);
+}
+
+#define ReceiveStruct(socket, payload) ReceiveBuffer_((socket), (u8*)(payload), sizeof(*payload))
+#define ReceiveType ReceiveStruct
+#define ReceiveBuffer(socket, payload, size) ReceiveBuffer_((socket), (payload), (size))
+internal_function SOCKADDR_IN 
+ReceiveBuffer_(SOCKET Socket, u8* Payload, memi Size)
+{
+  SOCKADDR_IN Result;
+  //Assert(Size <= UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE);
+
+  s32 AddressStructSize = sizeof(SOCKADDR_IN);
+  s32 BytesRead = recvfrom(Socket, (char *)Payload, (s32)Size, 0, (SOCKADDR*)&Result, &AddressStructSize);
+
+  Assert(BytesRead == Size);
+  return Result;
+}
+
   s32 CALLBACK 
 WinMain(HINSTANCE Instance,
         HINSTANCE PrevInstance,
         LPSTR CommandLine,
         s32 Show)
 {
-  SOCKET ServerSocket;
-  SOCKET ClientSocket;
+  SOCKADDR_IN ServerAddress = {};
+  SOCKET Socket;
   u16 Port = 4242;
   {
     WSAData Data = {};
@@ -1362,34 +1391,32 @@ WinMain(HINSTANCE Instance,
       InvalidCodePath;
     }
 
-    ServerSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    Assert(ServerSocket != INVALID_SOCKET);
+    Socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    Assert(Socket != INVALID_SOCKET);
 
-    SOCKADDR_IN ServerAddress = {};
-    ServerAddress.sin_family = AF_INET;
-    ServerAddress.sin_port = htons(Port); //TODO(bjorn): Set port in a smarter way and display it.
+    SOCKADDR_IN SocketAddress = {};
+    SocketAddress.sin_family = AF_INET;
+    SocketAddress.sin_port = htons(Port); //TODO(bjorn): Set port in a smarter way and display it.
     SetIP(&ServerAddress, 0, 0, 0, 0);
 
-    if(bind(ServerSocket, (SOCKADDR*)&ServerAddress, sizeof(SOCKADDR_IN)) == SOCKET_ERROR)
+    if(bind(Socket, (SOCKADDR*)&SocketAddress, sizeof(SOCKADDR_IN)) == SOCKET_ERROR)
     {
       //TODO(bjorn): Future-proof.
       InvalidCodePath;
     }
-  }
 
-  {
-    char TextBuffer[256];
-
-    SOCKADDR_IN ServerAddress = {};
     ServerAddress.sin_family = AF_INET;
     ServerAddress.sin_port = htons(Port);
     SetIP(&ServerAddress, 127, 0, 0, 1);
+  }
 
-    s32 BytesRead;
+#if 0
+  {
+    char TextBuffer[256];
+
+
     char Buffer[256];
     sprintf_s(Buffer, "I did it Mom!");
-    BytesRead = sendto(ServerSocket, Buffer, 13, 0, (SOCKADDR*)&ServerAddress, sizeof(SOCKADDR_IN));
-    Assert(BytesRead == 13);
 
     Sleep(1000);
 
@@ -1420,7 +1447,6 @@ WinMain(HINSTANCE Instance,
     OutputDebugStringA(TextBuffer);
   }
 
-#if 0
   work_queue Queue = {};
 
   u32 InitialCount = 0;
@@ -2137,6 +2163,12 @@ WinMain(HINSTANCE Instance,
         OutputDebugStringA(TextBuffer);
       }
 #endif
+      SendStruct(Socket, ServerAddress, &NewGameInput);
+      //
+      // NOTE(Bjorn): Client/Server divide.
+      //
+      NewGameInput = {};
+      ReceiveStruct(Socket, &NewGameInput);
 
       ClearRenderGroup(GameRenderGroup);
 
@@ -2154,6 +2186,18 @@ WinMain(HINSTANCE Instance,
       {
         HandleDebugCycleCounters(&Game->Memory);
         Game->Code.Update(TargetSecondsPerFrame, &Game->Memory, &NewGameInput, GameRenderGroup, GameAssets);
+      }
+
+      {
+        u32 BufferSize = GameRenderGroup->PushBufferSize;
+        SendType(Socket, ServerAddress, &BufferSize);
+        SendBuffer(Socket, ServerAddress, GameRenderGroup->PushBufferBase, GameRenderGroup->PushBufferSize);
+
+        BufferSize = 0;
+        ClearRenderGroup(GameRenderGroup);
+
+        ReceiveType(Socket, &GameRenderGroup->PushBufferSize);
+        ReceiveBuffer(Socket, GameRenderGroup->PushBufferBase, GameRenderGroup->PushBufferSize);
       }
 
       DWORD PlayCursor;

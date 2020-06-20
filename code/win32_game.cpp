@@ -1336,6 +1336,80 @@ Win32InitOpenGL(HWND Window)
 game_memory* DebugGlobalMemory; 
 #endif
 
+struct datagram
+{
+  u8 Payload[UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE];
+  memi Used;
+  memi UnpackOffset;
+};
+
+internal_function void
+ClearDatagram(datagram* Datagram)
+{
+  Datagram->Used = 0;
+  Datagram->UnpackOffset = 0;
+}
+
+//TODO(bjorn): Byte-order.
+#define PackData(datagram, data) PackData_((datagram), (u8*)(data), sizeof(*data))
+#define PackBuffer(datagram, data, size) PackData_((datagram), (data), (size))
+internal_function void
+PackData_(datagram* Datagram, u8* Data, memi Size)
+{
+  Assert(Datagram->Used + Size <= UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE);
+  RtlCopyMemory(Datagram->Payload + Datagram->Used, Data, Size);
+  Datagram->Used += Size;
+}
+#define UnpackData(datagram, destination) UnpackData_((datagram), (u8*)(destination), sizeof(*destination))
+#define UnpackBuffer(datagram, destination, size) UnpackData_((datagram), (destination), (size))
+internal_function void
+UnpackData_(datagram* Datagram, u8* Destination, memi Size)
+{
+  Assert(Datagram->UnpackOffset < Datagram->Used);
+  Assert(Size <= Datagram->Used - Datagram->UnpackOffset);
+  RtlCopyMemory(Destination, Datagram->Payload + Datagram->UnpackOffset, Size);
+  Datagram->UnpackOffset += Size;
+}
+
+internal_function void
+SendDatagram(SOCKET Socket, SOCKADDR_IN Address, datagram* Datagram)
+{
+  Assert(Datagram->Used <= UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE);
+
+  s32 BytesSent = sendto(Socket, (const char *)Datagram->Payload, (s32)Datagram->Used, 0, (SOCKADDR*)&Address, sizeof(SOCKADDR_IN));
+
+  Assert(BytesSent == Datagram->Used);
+}
+
+struct maybe_datagram
+{
+  datagram* Datagram;
+  SOCKADDR_IN Address;
+};
+internal_function maybe_datagram 
+TryReceiveDatagram(SOCKET Socket, datagram* Datagram)
+{
+  maybe_datagram Result;
+
+  s32 AddressStructSize = sizeof(SOCKADDR_IN);
+  s32 BytesReceived = recvfrom(Socket, (char *)Datagram->Payload, UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE, 0, (SOCKADDR*)&Result.Address, &AddressStructSize);
+
+  if(BytesReceived > 0)
+  {
+    Datagram->Used = BytesReceived;
+    Datagram->UnpackOffset = 0;
+    Result.Datagram = Datagram;
+  }
+
+  return Result;
+}
+
+struct input_slot_client_map
+{
+  b32 Connected;
+  SOCKADDR_IN Address;
+};
+
 internal_function void
 SetIP(SOCKADDR_IN* SocketStruct, u8 a, u8 b, u8 c, u8 d)
 {
@@ -1345,45 +1419,22 @@ SetIP(SOCKADDR_IN* SocketStruct, u8 a, u8 b, u8 c, u8 d)
   SocketStruct->sin_addr.S_un.S_un_b.s_b4 = d;
 }
 
-#define SendStruct(socket, address, payload) SendBuffer_((socket), (address), (u8*)(payload), sizeof(*payload))
-#define SendType SendStruct
-#define SendBuffer(socket, address, payload, size) SendBuffer_((socket), (address), (payload), (size))
-internal_function void
-SendBuffer_(SOCKET Socket, SOCKADDR_IN Address, u8* Payload, memi Size)
-{
-  //Assert(Size <= UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE);
-
-  s32 BytesSent = sendto(Socket, (const char *)Payload, (s32)Size, 0, (SOCKADDR*)&Address, sizeof(SOCKADDR_IN));
-
-  Assert(BytesSent == Size);
-}
-
-#define ReceiveStruct(socket, payload) ReceiveBuffer_((socket), (u8*)(payload), sizeof(*payload))
-#define ReceiveType ReceiveStruct
-#define ReceiveBuffer(socket, payload, size) ReceiveBuffer_((socket), (payload), (size))
-internal_function SOCKADDR_IN 
-ReceiveBuffer_(SOCKET Socket, u8* Payload, memi Size)
-{
-  SOCKADDR_IN Result;
-  //Assert(Size <= UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE);
-
-  s32 AddressStructSize = sizeof(SOCKADDR_IN);
-  s32 BytesRead = recvfrom(Socket, (char *)Payload, (s32)Size, 0, (SOCKADDR*)&Result, &AddressStructSize);
-
-  Assert(BytesRead == Size);
-  return Result;
-}
-
   s32 CALLBACK 
 WinMain(HINSTANCE Instance,
         HINSTANCE PrevInstance,
         LPSTR CommandLine,
         s32 Show)
 {
+  CreateMutexA(0, FALSE, "Local\\$myprogram$");
+  b32 IsFirstInstance = GetLastError() != ERROR_ALREADY_EXISTS;
+
+  b32 IsServer = IsFirstInstance;
   SOCKADDR_IN ServerAddress = {};
   SOCKET Socket;
-  u16 Port = 4242;
   {
+    u16 ServerPort = 4242;
+    u16 Port = IsServer ? ServerPort : 0;
+
     WSAData Data = {};
     if(WSAStartup(MAKEWORD(2,2), &Data) != 0)
     {
@@ -1406,47 +1457,13 @@ WinMain(HINSTANCE Instance,
     }
 
     ServerAddress.sin_family = AF_INET;
-    ServerAddress.sin_port = htons(Port);
+    ServerAddress.sin_port = htons(ServerPort);
     SetIP(&ServerAddress, 127, 0, 0, 1);
   }
 
+  input_slot_client_map InputSlotClientMap[8] = {};
+
 #if 0
-  {
-    char TextBuffer[256];
-
-
-    char Buffer[256];
-    sprintf_s(Buffer, "I did it Mom!");
-
-    Sleep(1000);
-
-    SOCKADDR_IN GuestAddress = {};
-    s32 GuestAddressSize = sizeof(SOCKADDR_IN);
-    char Buffer2[256] = {};
-    BytesRead = recvfrom(ServerSocket, Buffer2, 13, 0, (SOCKADDR*)&GuestAddress, &GuestAddressSize);
-
-    if(BytesRead == -1)
-    {
-      sprintf_s(TextBuffer, "Server: Connection closed with error code: %ld\n", WSAGetLastError());
-      OutputDebugStringA(TextBuffer);
-    }
-
-    sprintf_s(TextBuffer, 
-              "Guest ip:%d.%d.%d.%d port:%d\n", 
-              GuestAddress.sin_addr.S_un.S_un_b.s_b1, 
-              GuestAddress.sin_addr.S_un.S_un_b.s_b2, 
-              GuestAddress.sin_addr.S_un.S_un_b.s_b3, 
-              GuestAddress.sin_addr.S_un.S_un_b.s_b4,
-              ntohs(GuestAddress.sin_port));
-    OutputDebugStringA(TextBuffer);
-
-    Assert(BytesRead == 13);
-    Assert(GuestAddressSize == sizeof(SOCKADDR_IN));
-
-    sprintf_s(TextBuffer, "Sent And Rcvd Content:%s\n", Buffer);
-    OutputDebugStringA(TextBuffer);
-  }
-
   work_queue Queue = {};
 
   u32 InitialCount = 0;
@@ -1843,6 +1860,8 @@ WinMain(HINSTANCE Instance,
     game_assets* GameAssets = PushStruct(Handmade.Memory.Transient, game_assets);
     SubArena(&GameAssets->Arena, Handmade.Memory.Transient, Gigabytes(1));
 
+    datagram* Datagram = PushStruct(Handmade.Memory.Transient, datagram);
+
     LoadAllAssets(GameAssets);
     //TODO(bjorn): Develop the game a bit more before delving into the asset system.
     //TODO If game gets big enough:
@@ -2163,14 +2182,24 @@ WinMain(HINSTANCE Instance,
         OutputDebugStringA(TextBuffer);
       }
 #endif
-      SendStruct(Socket, ServerAddress, &NewGameInput);
       //
       // NOTE(Bjorn): Client/Server divide.
       //
-      NewGameInput = {};
-      ReceiveStruct(Socket, &NewGameInput);
+      {
+        ClearDatagram(Datagram);
+        PackData(Datagram, GetMouse(&NewGameInput, 1));
+        SendDatagram(Socket, ServerAddress, Datagram);
 
-      ClearRenderGroup(GameRenderGroup);
+        if(IsServer)
+        {
+          maybe_datagram Maybe = TryReceiveDatagram(Socket, Datagram);
+          if(Maybe.Datagram)
+          {
+            //TODO(bjorn): Change mouse index depending on client.
+            UnpackData(Maybe.Datagram, GetMouse(&NewGameInput, 1));
+          }
+        }
+      }
 
 #if HANDMADE_INTERNAL
       if(Win32State.RecordHandle)
@@ -2182,22 +2211,33 @@ WinMain(HINSTANCE Instance,
         Win32PlayBackInput(&Win32State, &NewGameInput);
       }
 #endif
-      if(Game->Code.Update)
+      if(Game->Code.Update && IsServer)
       {
+        ClearRenderGroup(GameRenderGroup);
         HandleDebugCycleCounters(&Game->Memory);
         Game->Code.Update(TargetSecondsPerFrame, &Game->Memory, &NewGameInput, GameRenderGroup, GameAssets);
       }
 
+      //
+      // NOTE(Bjorn): Client/Server divide.
+      //
+      if(IsServer)
       {
-        u32 BufferSize = GameRenderGroup->PushBufferSize;
-        SendType(Socket, ServerAddress, &BufferSize);
-        SendBuffer(Socket, ServerAddress, GameRenderGroup->PushBufferBase, GameRenderGroup->PushBufferSize);
-
-        BufferSize = 0;
-        ClearRenderGroup(GameRenderGroup);
-
-        ReceiveType(Socket, &GameRenderGroup->PushBufferSize);
-        ReceiveBuffer(Socket, GameRenderGroup->PushBufferBase, GameRenderGroup->PushBufferSize);
+        //TODO(bjorn): Send an image feed to all of the connected clients.
+        ClearDatagram(Datagram);
+        PackData(Datagram, &GameRenderGroup->PushBufferSize);
+        PackBuffer(Datagram, GameRenderGroup->PushBufferBase, GameRenderGroup->PushBufferSize);
+        SendDatagram(Socket, ServerAddress, Datagram);
+      }
+      else
+      {
+        maybe_datagram Maybe = TryReceiveDatagram(Socket, Datagram);
+        if(Maybe.Datagram)
+        {
+          //TODO(bjorn): Assert sender is client?.
+          UnpackData(Maybe.Datagram, &GameRenderGroup->PushBufferSize);
+          UnpackBuffer(Maybe.Datagram, GameRenderGroup->PushBufferBase, GameRenderGroup->PushBufferSize);
+        }
       }
 
       DWORD PlayCursor;

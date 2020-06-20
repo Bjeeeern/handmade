@@ -1129,7 +1129,7 @@ Win32GetEXEFileName(win32_state *State)
   internal_function void
 HandleDebugCycleCounters(game_memory* Memory)
 {
-#if HANDMADE_INTERNAL
+#if 0 //HANDMADE_INTERNAL
   OutputDebugStringA("DEBUG CYCLE COUNTS:\n");
   for(s32 CounterIndex = 0;
       CounterIndex < ArrayCount(Memory->Counters);
@@ -1350,9 +1350,12 @@ ClearDatagram(datagram* Datagram)
   Datagram->UnpackOffset = 0;
 }
 
-//TODO(bjorn): Byte-order.
+#define DATAGRAM_TYPE_INPUT 0
+#define DATAGRAM_TYPE_RENDER_GROUP 1
+
 #define PackData(datagram, data) PackData_((datagram), (u8*)(data), sizeof(*data))
 #define PackBuffer(datagram, data, size) PackData_((datagram), (data), (size))
+//TODO(bjorn): Byte-order.
 internal_function void
 PackData_(datagram* Datagram, u8* Data, memi Size)
 {
@@ -1360,6 +1363,18 @@ PackData_(datagram* Datagram, u8* Data, memi Size)
   RtlCopyMemory(Datagram->Payload + Datagram->Used, Data, Size);
   Datagram->Used += Size;
 }
+#define GenPackVarByType(type) \
+internal_function void \
+PackVar(datagram* Datagram, type Var) \
+{ \
+  memi Size = sizeof(type); \
+  type* Data = &Var; \
+ \
+  Assert(Datagram->Used + Size <= UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE); \
+  RtlCopyMemory(Datagram->Payload + Datagram->Used, Data, Size); \
+  Datagram->Used += Size; \
+}
+
 #define UnpackData(datagram, destination) UnpackData_((datagram), (u8*)(destination), sizeof(*destination))
 #define UnpackBuffer(datagram, destination, size) UnpackData_((datagram), (destination), (size))
 internal_function void
@@ -1370,6 +1385,23 @@ UnpackData_(datagram* Datagram, u8* Destination, memi Size)
   RtlCopyMemory(Destination, Datagram->Payload + Datagram->UnpackOffset, Size);
   Datagram->UnpackOffset += Size;
 }
+#define GenUnpackVarByType(type) \
+internal_function type \
+UnpackVar(datagram* Datagram) \
+{ \
+  type Result; \
+  memi Size = sizeof(type); \
+ \
+  Assert(Datagram->UnpackOffset < Datagram->Used); \
+  Assert(Size <= Datagram->Used - Datagram->UnpackOffset); \
+  RtlCopyMemory((u8*)&Result, Datagram->Payload + Datagram->UnpackOffset, Size); \
+  Datagram->UnpackOffset += Size; \
+ \
+  return Result; \
+}
+
+#define GenPackUnpackVarByType(type) GenPackVarByType(type) GenUnpackVarByType(type)
+GenPackUnpackVarByType(u8)
 
 internal_function void
 SendDatagram(SOCKET Socket, SOCKADDR_IN Address, datagram* Datagram)
@@ -1431,8 +1463,8 @@ WinMain(HINSTANCE Instance,
   b32 IsServer = IsFirstInstance;
   SOCKADDR_IN ServerAddress = {};
   SOCKET Socket;
+  u16 ServerPort = 4242;
   {
-    u16 ServerPort = 4242;
     u16 Port = IsServer ? ServerPort : 0;
 
     WSAData Data = {};
@@ -2187,8 +2219,11 @@ WinMain(HINSTANCE Instance,
       //
       {
         ClearDatagram(Datagram);
+        PackVar(Datagram, DATAGRAM_TYPE_INPUT);
         PackData(Datagram, GetMouse(&NewGameInput, 1));
         SendDatagram(Socket, ServerAddress, Datagram);
+
+        //*GetMouse(&NewGameInput, 1) = {};
 
         if(IsServer)
         {
@@ -2196,7 +2231,16 @@ WinMain(HINSTANCE Instance,
           if(Maybe.Datagram)
           {
             //TODO(bjorn): Change mouse index depending on client.
-            UnpackData(Maybe.Datagram, GetMouse(&NewGameInput, 1));
+            u8 Header = UnpackVar(Maybe.Datagram);
+            if(Header == DATAGRAM_TYPE_INPUT)
+            {
+              u32 MouseIndex = (Maybe.Address.sin_port == htons(ServerPort)) ? 1 : 2;
+              UnpackData(Maybe.Datagram, GetMouse(&NewGameInput, MouseIndex));
+            }
+            else
+            {
+              OutputDebugStringA("Threw away DATAGRAM_TYPE_RENDER_GROUP \n");
+            }
           }
         }
       }
@@ -2225,18 +2269,31 @@ WinMain(HINSTANCE Instance,
       {
         //TODO(bjorn): Send an image feed to all of the connected clients.
         ClearDatagram(Datagram);
+        PackVar(Datagram, DATAGRAM_TYPE_RENDER_GROUP);
         PackData(Datagram, &GameRenderGroup->PushBufferSize);
         PackBuffer(Datagram, GameRenderGroup->PushBufferBase, GameRenderGroup->PushBufferSize);
         SendDatagram(Socket, ServerAddress, Datagram);
       }
-      else
+
+      //ClearRenderGroup(GameRenderGroup);
+
       {
         maybe_datagram Maybe = TryReceiveDatagram(Socket, Datagram);
         if(Maybe.Datagram)
         {
-          //TODO(bjorn): Assert sender is client?.
-          UnpackData(Maybe.Datagram, &GameRenderGroup->PushBufferSize);
-          UnpackBuffer(Maybe.Datagram, GameRenderGroup->PushBufferBase, GameRenderGroup->PushBufferSize);
+          //TODO(bjorn): Assert sender is client?
+          u8 Header = UnpackVar(Maybe.Datagram);
+          if(Header == DATAGRAM_TYPE_RENDER_GROUP)
+          {
+            UnpackData(Maybe.Datagram, &GameRenderGroup->PushBufferSize);
+            UnpackBuffer(Maybe.Datagram, 
+                         GameRenderGroup->PushBufferBase, 
+                         GameRenderGroup->PushBufferSize);
+          }
+          else
+          {
+            OutputDebugStringA("Threw away DATAGRAM_TYPE_INPUT \n");
+          }
         }
       }
 

@@ -696,8 +696,11 @@ extern "C" GAME_UPDATE(GameUpdate)
 #endif
   }
 
-  PushWireCube(RenderGroup, SimRegion->UpdateBounds, v4{0,1,1,1});
-  PushWireCube(RenderGroup, SimRegion->OuterBounds, v4{1,1,0,1});
+  if(DEBUG_GameState->DEBUG_VisualiseCollisionBox)
+  {
+    PushWireCube(RenderGroup, SimRegion->UpdateBounds, v4{0,1,1,1});
+    PushWireCube(RenderGroup, SimRegion->OuterBounds, v4{1,1,0,1});
+  }
 
 	u32 FirstStep = 1;
 	u32 LastStep = Steps;
@@ -831,6 +834,26 @@ extern "C" GAME_UPDATE(GameUpdate)
                20, {1,0,1,0.5f}, RectMinMax(v2s{0, 0}, Buffer->Dim));
   }
 #endif
+
+  {
+    PushCamera(RenderGroup, Assets, GAI_MainScreen, 
+              1.0f, M44Identity(), positive_infinity32);
+
+    game_mouse* Mouse1 = GetMouse(Input, 1);
+    game_mouse* Mouse2 = GetMouse(Input, 2);
+
+    if(Mouse1->IsConnected)
+    {
+      PushSphere(RenderGroup, 
+                 ConstructTransform(Mouse1->P - v2{0.5f, 0.5f}, 0.1f), {1,0,0,0.8f});
+    }
+
+    if(Mouse2->IsConnected)
+    {
+      PushSphere(RenderGroup, 
+                 ConstructTransform(Mouse2->P - v2{0.5f, 0.5f}, 0.1f), {0,1,0,0.8f});
+    }
+  }
 
 	EndTemporaryMemory(TempMem);
 	CheckMemoryArena(FrameBoundedTransientArena);

@@ -296,6 +296,15 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
             DrawCircle(OutputTarget, PixPos.P, PixR, Entry->Color, ClipRect);
           }
 #endif
+          quad_verts_result Quad = GetQuadVertices(WorldToCamera * Entry->Tran);
+
+          glBegin(GL_TRIANGLES);
+
+          glColor3f(Entry->Color.R, Entry->Color.G, Entry->Color.B);
+
+          OGLDrawQuad(Quad.Verts);
+
+          glEnd();
         } break;
       InvalidDefaultCase;
     }

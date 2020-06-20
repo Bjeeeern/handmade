@@ -2293,6 +2293,14 @@ ConstructTransform(v2 P)
 					  0,   0,   0,   1};
 }
 inline m44
+ConstructTransform(v2 P, f32 S)
+{
+	return {  S,   0,   0, P.X,
+					  0,   S,   0, P.Y,
+					  0,   0,   1,   0,
+					  0,   0,   0,   1};
+}
+inline m44
 ConstructTransform(v2 P, v2 S)
 {
 	return {S.X,   0,   0, P.X,

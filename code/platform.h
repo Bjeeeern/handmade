@@ -246,8 +246,8 @@ struct game_eye_tracker
 struct game_input
 {
 	game_controller Controllers[4];
-	game_keyboard Keyboards[2];
-	game_mouse Mice[2];
+	game_keyboard Keyboards[5];
+	game_mouse Mice[5];
 #if HANDMADE_INTERNAL
   b32 ExecutableReloaded;
 #endif

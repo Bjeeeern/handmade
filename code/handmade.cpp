@@ -841,6 +841,8 @@ extern "C" GAME_UPDATE(GameUpdate)
 
     game_mouse* Mouse1 = GetMouse(Input, 1);
     game_mouse* Mouse2 = GetMouse(Input, 2);
+    game_mouse* Mouse3 = GetMouse(Input, 3);
+    game_mouse* Mouse4 = GetMouse(Input, 4);
 
     if(Mouse1->IsConnected)
     {
@@ -852,6 +854,18 @@ extern "C" GAME_UPDATE(GameUpdate)
     {
       PushSphere(RenderGroup, 
                  ConstructTransform(Mouse2->P - v2{0.5f, 0.5f}, 0.1f), {0,1,0,0.8f});
+    }
+
+    if(Mouse3->IsConnected)
+    {
+      PushSphere(RenderGroup, 
+                 ConstructTransform(Mouse3->P - v2{0.5f, 0.5f}, 0.1f), {0,1,1,0.8f});
+    }
+
+    if(Mouse4->IsConnected)
+    {
+      PushSphere(RenderGroup, 
+                 ConstructTransform(Mouse4->P - v2{0.5f, 0.5f}, 0.1f), {1,1,0,0.8f});
     }
   }
 

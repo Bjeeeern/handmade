@@ -1413,34 +1413,63 @@ SendDatagram(SOCKET Socket, SOCKADDR_IN Address, datagram* Datagram)
   Assert(BytesSent == Datagram->Used);
 }
 
+inline b32
+SameAddress(SOCKADDR_IN A, SOCKADDR_IN B)
+{
+  return A.sin_addr.S_un.S_addr == B.sin_addr.S_un.S_addr &&
+         A.sin_port             == B.sin_port;
+}
+
+#define MAPPED_INPUT_SLOTS 8
+struct input_slot_client_map
+{
+  b32 Connected;
+  SOCKADDR_IN Address;
+};
 struct maybe_datagram
 {
   datagram* Datagram;
   SOCKADDR_IN Address;
 };
 internal_function maybe_datagram 
-TryReceiveDatagram(SOCKET Socket, datagram* Datagram)
+TryReceiveDatagram(SOCKET Socket, datagram* Datagram, input_slot_client_map* InputSlotClientMap)
 {
-  maybe_datagram Result;
+  maybe_datagram Result = {};
 
   s32 AddressStructSize = sizeof(SOCKADDR_IN);
-  s32 BytesReceived = recvfrom(Socket, (char *)Datagram->Payload, UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE, 0, (SOCKADDR*)&Result.Address, &AddressStructSize);
+  s32 BytesReceived = recvfrom(Socket, 
+                               (char *)Datagram->Payload, UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE, 
+                               0, (SOCKADDR*)&Result.Address, &AddressStructSize);
 
   if(BytesReceived > 0)
   {
     Datagram->Used = BytesReceived;
     Datagram->UnpackOffset = 0;
     Result.Datagram = Datagram;
+
+    for(s32 InputSlot = 1;
+        InputSlot < MAPPED_INPUT_SLOTS;
+        InputSlot++)
+    {
+      input_slot_client_map* Client = InputSlotClientMap + InputSlot;
+
+      if(Client->Connected &&
+         SameAddress(Client->Address, Result.Address))
+      {
+        break;
+      }
+
+      if(!Client->Connected)
+      {
+        Client->Connected = true;
+        Client->Address = Result.Address;
+        break;
+      }
+    }
   }
 
   return Result;
 }
-
-struct input_slot_client_map
-{
-  b32 Connected;
-  SOCKADDR_IN Address;
-};
 
 internal_function void
 SetIP(SOCKADDR_IN* SocketStruct, u8 a, u8 b, u8 c, u8 d)
@@ -1488,12 +1517,20 @@ WinMain(HINSTANCE Instance,
       InvalidCodePath;
     }
 
+    //NOTE(bjorn): Non-blocking socket.
+    u_long CommandParameter = 1;
+    if(ioctlsocket(Socket, FIONBIO, &CommandParameter) == SOCKET_ERROR)
+    {
+      //TODO(bjorn): Future-proof.
+      InvalidCodePath;
+    }
+
     ServerAddress.sin_family = AF_INET;
     ServerAddress.sin_port = htons(ServerPort);
     SetIP(&ServerAddress, 127, 0, 0, 1);
   }
 
-  input_slot_client_map InputSlotClientMap[8] = {};
+  input_slot_client_map InputSlotClientMap[MAPPED_INPUT_SLOTS] = {};
 
 #if 0
   work_queue Queue = {};
@@ -2150,6 +2187,10 @@ WinMain(HINSTANCE Instance,
       {
         game_mouse* NewMouse = GetMouse(&NewGameInput, MouseIndex);
         game_mouse* OldMouse = GetMouse(&OldGameInput, MouseIndex);
+
+        NewMouse->IsConnected = OldMouse->IsConnected;
+        NewMouse->P = OldMouse->P;
+
         if(NewMouse->IsConnected)
         {
           for(int ButtonIndex = 0;
@@ -2188,6 +2229,7 @@ WinMain(HINSTANCE Instance,
         Assert(0.0f <= Mouse->P.Y && 1.0f >= Mouse->P.Y);
 
         game_mouse* OldMouse = GetMouse(&OldGameInput, 1);
+        //TODO(Bjorn): Calculate dP after pulling in online data.
         Mouse->dP = OldMouse->P - Mouse->P;
 
         Win32ProcessKeyboardButton((GetKeyState(VK_LBUTTON) & 0x8000), &Mouse->Left); 
@@ -2222,25 +2264,45 @@ WinMain(HINSTANCE Instance,
         PackVar(Datagram, DATAGRAM_TYPE_INPUT);
         PackData(Datagram, GetMouse(&NewGameInput, 1));
         SendDatagram(Socket, ServerAddress, Datagram);
+      }
 
-        //*GetMouse(&NewGameInput, 1) = {};
+      //*GetMouse(&NewGameInput, 1) = {};
 
-        if(IsServer)
+      if(IsServer)
+      {
+        for(maybe_datagram Maybe = TryReceiveDatagram(Socket, Datagram, InputSlotClientMap);
+            Maybe.Datagram;
+            Maybe = TryReceiveDatagram(Socket, Datagram, InputSlotClientMap))
         {
-          maybe_datagram Maybe = TryReceiveDatagram(Socket, Datagram);
-          if(Maybe.Datagram)
+          u8 Header = UnpackVar(Maybe.Datagram);
+          switch(Header)
           {
-            //TODO(bjorn): Change mouse index depending on client.
-            u8 Header = UnpackVar(Maybe.Datagram);
-            if(Header == DATAGRAM_TYPE_INPUT)
-            {
-              u32 MouseIndex = (Maybe.Address.sin_port == htons(ServerPort)) ? 1 : 2;
-              UnpackData(Maybe.Datagram, GetMouse(&NewGameInput, MouseIndex));
-            }
-            else
-            {
-              OutputDebugStringA("Threw away DATAGRAM_TYPE_RENDER_GROUP \n");
-            }
+            case DATAGRAM_TYPE_RENDER_GROUP
+              : {
+                InvalidCodePath;
+              } break;
+            case DATAGRAM_TYPE_INPUT
+              : {
+                Assert(IsServer);
+
+                s32 MouseIndex = -1;
+                for(s32 InputSlot = 1;
+                    InputSlot < ArrayCount(InputSlotClientMap);
+                    InputSlot++)
+                {
+                  input_slot_client_map Client = InputSlotClientMap[InputSlot];
+                  if(Client.Connected &&
+                     SameAddress(Client.Address, Maybe.Address))
+                  {
+                     MouseIndex = InputSlot;
+                     break;
+                  }
+                }
+
+                Assert(MouseIndex != -1);
+                UnpackData(Maybe.Datagram, GetMouse(&NewGameInput, MouseIndex));
+              } break;
+            InvalidDefaultCase;
           }
         }
       }
@@ -2272,28 +2334,48 @@ WinMain(HINSTANCE Instance,
         PackVar(Datagram, DATAGRAM_TYPE_RENDER_GROUP);
         PackData(Datagram, &GameRenderGroup->PushBufferSize);
         PackBuffer(Datagram, GameRenderGroup->PushBufferBase, GameRenderGroup->PushBufferSize);
-        SendDatagram(Socket, ServerAddress, Datagram);
+
+        for(s32 InputSlot = 1;
+            InputSlot < ArrayCount(InputSlotClientMap);
+            InputSlot++)
+        {
+          input_slot_client_map Client = InputSlotClientMap[InputSlot];
+          if(Client.Connected)
+          {
+            SendDatagram(Socket, Client.Address, Datagram);
+          }
+        }
       }
 
       //ClearRenderGroup(GameRenderGroup);
 
+      for(maybe_datagram Maybe = TryReceiveDatagram(Socket, Datagram, InputSlotClientMap);
+          Maybe.Datagram;
+          Maybe = TryReceiveDatagram(Socket, Datagram, InputSlotClientMap))
       {
-        maybe_datagram Maybe = TryReceiveDatagram(Socket, Datagram);
-        if(Maybe.Datagram)
+        u8 Header = UnpackVar(Maybe.Datagram);
+        switch(Header)
         {
-          //TODO(bjorn): Assert sender is client?
-          u8 Header = UnpackVar(Maybe.Datagram);
-          if(Header == DATAGRAM_TYPE_RENDER_GROUP)
-          {
-            UnpackData(Maybe.Datagram, &GameRenderGroup->PushBufferSize);
-            UnpackBuffer(Maybe.Datagram, 
-                         GameRenderGroup->PushBufferBase, 
-                         GameRenderGroup->PushBufferSize);
-          }
-          else
-          {
-            OutputDebugStringA("Threw away DATAGRAM_TYPE_INPUT \n");
-          }
+          case DATAGRAM_TYPE_RENDER_GROUP
+            : {
+              if(IsServer)
+              {
+                Assert(Maybe.Address.sin_port == htons(ServerPort));
+              }
+
+              UnpackData(Maybe.Datagram, &GameRenderGroup->PushBufferSize);
+              UnpackBuffer(Maybe.Datagram, 
+                           GameRenderGroup->PushBufferBase, 
+                           GameRenderGroup->PushBufferSize);
+            } break;
+          case DATAGRAM_TYPE_INPUT
+            : {
+              Assert(IsServer);
+
+              u32 MouseIndex = (Maybe.Address.sin_port == htons(ServerPort)) ? 1 : 2;
+              UnpackData(Maybe.Datagram, GetMouse(&NewGameInput, MouseIndex));
+            } break;
+          InvalidDefaultCase;
         }
       }
 

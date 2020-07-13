@@ -1,6 +1,7 @@
 #if !defined(DATAGRAM_STREAM)
 
-#define UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE (576 - (8 + 60))
+//#define UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE (576 - (8 + 60))
+#define UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE 4046
 //#define UDP_MAX_OS_PAYLOAD_SIZE (0xFFFF - (8 + 60))
 
 struct datagram
@@ -23,9 +24,6 @@ struct datagram_stream
   datagram* Datagrams;
   b32 Complete;
 };
-
-#define DATAGRAM_TYPE_INPUT 0
-#define DATAGRAM_TYPE_RENDER_GROUP 1
 
 #define PackData(datagram, data) PackData_((datagram), (u8*)(data), sizeof(*data))
 #define PackBuffer(datagram, data, size) PackData_((datagram), (data), (size))

@@ -124,12 +124,5 @@ global_variable int IEEE_INF_BITS = 0x7F800000;
 #define Max(a, b) ((a) < (b)?(b):(a))
 #define Swap(x, y, T) do { T SWAP = x; x = y; y = SWAP; } while (0)
 
-#if 1
-#define UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE (576 - (8 + 60)) * 2
-#else
-#define UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE (576 - (8 + 60))
-#endif
-//#define UDP_MAX_OS_PAYLOAD_SIZE (0xFFFF - (8 + 60))
-
 #define TYPES_AND_DEFINES_H
 #endif

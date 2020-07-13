@@ -18,6 +18,7 @@
 #include "platform.h"
 #include "asset_streaming.h"
 #include "opengl_renderer.h"
+#include "datagram_stream.h"
 
 //IMPORTANT TODO(bjorn): This is for the wsprintfA and sprintf_s functions.
 //Remove this in the future.
@@ -1336,72 +1337,6 @@ Win32InitOpenGL(HWND Window)
 game_memory* DebugGlobalMemory; 
 #endif
 
-struct datagram
-{
-  u8 Payload[UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE];
-  memi Used;
-  memi UnpackOffset;
-};
-
-internal_function void
-ClearDatagram(datagram* Datagram)
-{
-  Datagram->Used = 0;
-  Datagram->UnpackOffset = 0;
-}
-
-#define DATAGRAM_TYPE_INPUT 0
-#define DATAGRAM_TYPE_RENDER_GROUP 1
-
-#define PackData(datagram, data) PackData_((datagram), (u8*)(data), sizeof(*data))
-#define PackBuffer(datagram, data, size) PackData_((datagram), (data), (size))
-//TODO(bjorn): Byte-order.
-internal_function void
-PackData_(datagram* Datagram, u8* Data, memi Size)
-{
-  Assert(Datagram->Used + Size <= UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE);
-  RtlCopyMemory(Datagram->Payload + Datagram->Used, Data, Size);
-  Datagram->Used += Size;
-}
-#define GenPackVarByType(type) \
-internal_function void \
-PackVar(datagram* Datagram, type Var) \
-{ \
-  memi Size = sizeof(type); \
-  type* Data = &Var; \
- \
-  Assert(Datagram->Used + Size <= UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE); \
-  RtlCopyMemory(Datagram->Payload + Datagram->Used, Data, Size); \
-  Datagram->Used += Size; \
-}
-
-#define UnpackData(datagram, destination) UnpackData_((datagram), (u8*)(destination), sizeof(*destination))
-#define UnpackBuffer(datagram, destination, size) UnpackData_((datagram), (destination), (size))
-internal_function void
-UnpackData_(datagram* Datagram, u8* Destination, memi Size)
-{
-  Assert(Datagram->UnpackOffset < Datagram->Used);
-  Assert(Size <= Datagram->Used - Datagram->UnpackOffset);
-  RtlCopyMemory(Destination, Datagram->Payload + Datagram->UnpackOffset, Size);
-  Datagram->UnpackOffset += Size;
-}
-#define GenUnpackVarByType(type) \
-internal_function type \
-UnpackVar(datagram* Datagram) \
-{ \
-  type Result; \
-  memi Size = sizeof(type); \
- \
-  Assert(Datagram->UnpackOffset < Datagram->Used); \
-  Assert(Size <= Datagram->Used - Datagram->UnpackOffset); \
-  RtlCopyMemory((u8*)&Result, Datagram->Payload + Datagram->UnpackOffset, Size); \
-  Datagram->UnpackOffset += Size; \
- \
-  return Result; \
-}
-
-#define GenPackUnpackVarByType(type) GenPackVarByType(type) GenUnpackVarByType(type)
-GenPackUnpackVarByType(u8)
 
 internal_function void
 SendDatagram(SOCKET Socket, SOCKADDR_IN Address, datagram* Datagram)

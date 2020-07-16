@@ -18,17 +18,27 @@ ClearDatagram(datagram* Datagram)
   Datagram->UnpackOffset = 0;
 }
 
+struct gen_meta_data
+{
+  b32 Complete;
+  u8 FoundDgramCount;
+  u8 TotalDgramCount;
+  u8 Generation;
+};
+
+//TODO(bjorn): Maybe have two stream structs? One for sending and one for receiving.
 struct datagram_stream
 {
-  u8 Generation;
-
   u8 ConcurrentGenerationCount;
   u8 StreamDatagramLength;
   datagram* Datagrams;
 
-  b32 Complete;
+  //NOTE IN
+  gen_meta_data* GenMeta;
 
+  //NOTE OUT
   u8 CurrentPayloadDatagramLenght;
+  u8 Generation;
 };
 
 internal_function datagram*
@@ -39,19 +49,93 @@ GetDatagram(datagram_stream* Stream, u8 DatagramIndex, u8 GenerationIndex = 0)
   return Stream->Datagrams + (GenerationIndex * Stream->StreamDatagramLength + DatagramIndex);
 }
 
-internal_function void
-ClearDatagramStream(datagram_stream* Stream, u8 GenerationIndex = 0)
+inline b32
+AOlderB(u8 A, u8 B)
 {
-  Stream->CurrentPayloadDatagramLenght = 0;
+  s32 Diff = B - A;
 
-  for(u8 DatagramIndex = 0;
-      DatagramIndex < Stream->StreamDatagramLength;
-      DatagramIndex++)
+  if(Diff == 0)
   {
-    datagram* Datagram = GetDatagram(Stream, DatagramIndex, GenerationIndex);
-    ClearDatagram(Datagram);
+    return false;
+  }
+
+  if(AbsoluteS32(Diff) < (max_u8 / 2))
+  {
+    return Diff > 0;
+  }
+  else
+  {
+    return Diff < 0;
   }
 }
+
+internal_function void
+AddDatagramToStream(datagram* Datagram, datagram_stream* Stream)
+{
+  u8 Generation = Datagram->Payload[0];
+  u8 DatagramIndex = Datagram->Payload[1];
+  u8 TotalDgrams = 0;
+  if(DatagramIndex == 0)
+  {
+    TotalDgrams = Datagram->Payload[2];
+  }
+
+  u8 OldestIncompleteGenIndex = 0;
+  u8 OldestGenIndex = 0;
+  for(u8 GenerationIndex = 0;
+      GenerationIndex < Stream->ConcurrentGenerationCount;
+      GenerationIndex++)
+  {
+    gen_meta_data* Meta = Stream->GenMeta + GenerationIndex;
+    if(Meta->Generation == Generation)
+    {
+      *GetDatagram(Stream, DatagramIndex, GenerationIndex) = *Datagram;
+      Meta->FoundDgramCount += 1;
+
+      if(DatagramIndex == 0)
+      {
+        Meta->TotalDgramCount = TotalDgrams;
+      }
+      if(Meta->FoundDgramCount == Meta->TotalDgramCount)
+      {
+        Meta->Complete = true;
+      }
+      return;
+    }
+    else
+    {
+      if(AOlderB(Meta->Generation, Stream->GenMeta[OldestGenIndex].Generation))
+      {
+        OldestGenIndex = GenerationIndex;
+      }
+      //TODO(Bjorn): Double-check that this makes sense.
+      if((!Meta->Complete && 
+          AOlderB(Meta->Generation, Stream->GenMeta[OldestIncompleteGenIndex].Generation)) ||
+         Stream->GenMeta[OldestIncompleteGenIndex].Complete)
+      {
+        OldestIncompleteGenIndex = GenerationIndex;
+      }
+    }
+  }
+  u8 OldestPreferablyIncompleteGenIndex = OldestIncompleteGenIndex;
+  if(Stream->GenMeta[OldestIncompleteGenIndex].Complete)
+  {
+    OldestPreferablyIncompleteGenIndex = OldestGenIndex;
+  }
+
+  //NOTE(Bjorn): No good spot found. A generation has to go.
+  Stream->GenMeta[OldestPreferablyIncompleteGenIndex].Generation = Generation;
+  Stream->GenMeta[OldestPreferablyIncompleteGenIndex].Complete = false;
+  Stream->GenMeta[OldestPreferablyIncompleteGenIndex].TotalDgramCount = 0;
+  Stream->GenMeta[OldestPreferablyIncompleteGenIndex].FoundDgramCount = 1;
+  *GetDatagram(Stream, DatagramIndex, OldestPreferablyIncompleteGenIndex) = *Datagram;
+
+  if(TotalDgrams == 1)
+  {
+    Stream->GenMeta[OldestPreferablyIncompleteGenIndex].Complete = true;
+    Stream->GenMeta[OldestPreferablyIncompleteGenIndex].TotalDgramCount = TotalDgrams;
+  }
+} 
 
 internal_function datagram_stream*
 CreateDatagramStream(memory_arena* Arena, u8 StreamDatagramLength, u8 ConcurrentGenerationCount)
@@ -61,12 +145,47 @@ CreateDatagramStream(memory_arena* Arena, u8 StreamDatagramLength, u8 Concurrent
   Result->ConcurrentGenerationCount = ConcurrentGenerationCount;
   Result->StreamDatagramLength = StreamDatagramLength;
 
-  Result-> Generation = 0;
-  Result->Complete = false;
+  Result->Generation = 0;
 
-  Result->Datagrams = PushArray(Arena, StreamDatagramLength * ConcurrentGenerationCount, datagram);
+  s32 TotalDatagramCount = StreamDatagramLength * ConcurrentGenerationCount;
+  Result->Datagrams = PushArray(Arena, TotalDatagramCount, datagram);
+  for(u8 DatagramIndex = 0;
+      DatagramIndex < Result->StreamDatagramLength;
+      DatagramIndex++)
+  {
+    ClearDatagram(Result->Datagrams + DatagramIndex);
+  }
 
-  ClearDatagramStream(Result);
+  Result->GenMeta = PushArray(Arena, ConcurrentGenerationCount, gen_meta_data);
+  for(u8 GenerationIndex = 0;
+      GenerationIndex < Result->ConcurrentGenerationCount;
+      GenerationIndex++)
+  {
+    Result->GenMeta[GenerationIndex] = {};
+  }
+}
+
+inline u8
+IncrementGeneration(u8 CurrentGen)
+{
+  u8 Result = CurrentGen + 1;
+  //if(CurrentGen == 0) { Result = 1; }
+  return Result;
+}
+
+internal_function void
+PrepDatagramStreamForPacking(datagram_stream* Stream, u8 GenerationIndex = 0)
+{
+  Stream->Generation = IncrementGeneration(Stream->Generation);
+  Stream->CurrentPayloadDatagramLenght = 0;
+
+  for(u8 DatagramIndex = 0;
+      DatagramIndex < Stream->StreamDatagramLength;
+      DatagramIndex++)
+  {
+    datagram* Datagram = GetDatagram(Stream, DatagramIndex, GenerationIndex);
+    ClearDatagram(Datagram);
+  }
 }
 
 internal_function void

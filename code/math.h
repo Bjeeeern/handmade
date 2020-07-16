@@ -1587,6 +1587,18 @@ AbsoluteS64(s64 Number)
 		return Number;
 	}
 }
+inline s32
+AbsoluteS32(s32 Number)
+{
+	if(Number < 0)
+	{
+		return Number * -1;
+	}
+	else
+	{
+		return Number;
+	}
+}
 
 	inline s32
 Sign(s32 Number)

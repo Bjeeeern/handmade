@@ -2235,7 +2235,7 @@ WinMain(HINSTANCE Instance,
       //
       if(!IsServer)
       {
-        ClearDatagramStream(GameInputDatagramStream);
+        PrepDatagramStreamForPacking(GameInputDatagramStream);
 
         PackData(GameInputDatagramStream, GetMouse(&NewGameInput, 1));
 
@@ -2273,13 +2273,12 @@ WinMain(HINSTANCE Instance,
             InputSlot < ArrayCount(InputSlotClientMap);
             InputSlot++)
         {
+          //TODO IMPORTANT split datagram_stream into datagram_stream and datagram_stream_generations
           datagram_stream* DatagramStream = 
             GetMostRecentAssembledGeneration(GameInputDatagramStreams[InputSlot]);
           if(DatagramStream)
           {
             UnpackData(DatagramStream, GetMouse(&NewGameInput, MouseIndex));
-            //TODO Needed?? 
-            //ClearDatagramStream();
           }
         }
       }
@@ -2307,7 +2306,7 @@ WinMain(HINSTANCE Instance,
       //
       if(IsServer)
       {
-        ClearDatagramStream(GameOutputDatagramStream);
+        PrepDatagramStreamForPacking(GameOutputDatagramStream);
 
         PackData(GameOutputDatagramStream, &GameRenderGroup->PushBufferSize);
         PackBuffer(GameOutputDatagramStream, 

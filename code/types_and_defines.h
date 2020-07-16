@@ -94,6 +94,8 @@ typedef size_t memi;
 #define quiet_not_a_number32     0b01111111110000000000000000000000
 #define signaling_not_a_number32 0b01111111101000000000000000000000
 
+#define max_u8       0xFF
+#define min_u8       0x00
 #define max_u32       0xFFFFFFFF
 #define min_u32       0x00000000
 #define max_s32       0x7FFFFFFF

@@ -1347,25 +1347,19 @@ SendDatagram(SOCKET Socket, SOCKADDR_IN Address, datagram* Datagram)
   Assert(BytesSent == Datagram->Used);
 }
 internal_function void
-SendDatagramStream(SOCKET Socket, SOCKADDR_IN Address, datagram_stream* DatagramStream)
+SendDatagramStream(SOCKET Socket, SOCKADDR_IN Address, datagram_stream_out* DatagramStream)
 {
   for(u8 DatagramIndex = 0;
-      DatagramIndex < DatagramStream->StreamDatagramLength;
+      DatagramIndex < DatagramStream->DatagramUsedCount;
       DatagramIndex++)
   {
     datagram* Datagram = GetDatagram(DatagramStream, DatagramIndex);
-    if(Datagram->Used)
+    Assert(Datagram->Used);
+    if(DatagramIndex == 0)
     {
-      if(DatagramIndex == 0)
-      {
-        Datagram->Payload[2] = DatagramStream->CurrentPayloadDatagramLenght;
-      }
-      SendDatagram(Socket, Address, Datagram);
+      Datagram->Payload[2] = DatagramStream->DatagramUsedCount;
     }
-    else
-    {
-      break;
-    }
+    SendDatagram(Socket, Address, Datagram);
   }
 }
 
@@ -1886,23 +1880,24 @@ WinMain(HINSTANCE Instance,
     SubArena(&GameAssets->Arena, Handmade.Memory.Transient, Gigabytes(1));
 
     datagram* BufferDatagram = PushStruct(Handmade.Memory.Transient, datagram);
-    datagram_stream* GameInputDatagramStreams[MAPPED_INPUT_SLOTS] = {};
-    datagram_stream* GameInputDatagramStream = 0;
-    datagram_stream* GameOutputDatagramStream = 0;
+    datagram_stream_in* GameInputInStream[MAPPED_INPUT_SLOTS] = {};
+    datagram_stream_out* GameInputOutStream = 0;
+    datagram_stream_in* GameOutputInStream = 0;
+    datagram_stream_out* GameOutputOutStream = 0;
     if(IsServer)
     {
       for(s32 StreamIndex = 2;
-          StreamIndex < ArrayCount(GameInputDatagramStreams);
+          StreamIndex < ArrayCount(GameInputInStream);
           StreamIndex++)
       {
-        GameInputDatagramStreams[StreamIndex] = CreateDatagramStream(Handmade.Memory.Transient, 8, 4);
+        GameInputInStream[StreamIndex] = CreateDatagramStreamIn(Handmade.Memory.Transient, 8, 4);
       }
-      GameOutputDatagramStream = CreateDatagramStream(Handmade.Memory.Transient, 64, 1);
+      GameOutputOutStream = CreateDatagramStreamOut(Handmade.Memory.Transient, 64);
     }
     else
     {
-      GameInputDatagramStream = CreateDatagramStream(Handmade.Memory.Transient, 8, 1);
-      GameOutputDatagramStream = CreateDatagramStream(Handmade.Memory.Transient, 64, 4);
+      GameInputOutStream = CreateDatagramStreamOut(Handmade.Memory.Transient, 8);
+      GameOutputInStream = CreateDatagramStreamIn(Handmade.Memory.Transient, 64, 4);
     }
 
     LoadAllAssets(GameAssets);
@@ -2235,11 +2230,11 @@ WinMain(HINSTANCE Instance,
       //
       if(!IsServer)
       {
-        PrepDatagramStreamForPacking(GameInputDatagramStream);
+        PrepDatagramStreamForPacking(GameInputOutStream);
 
-        PackData(GameInputDatagramStream, GetMouse(&NewGameInput, 1));
+        PackData(GameInputOutStream, GetMouse(&NewGameInput, 1));
 
-        SendDatagramStream(Socket, ServerAddress, GameInputDatagramStream);
+        SendDatagramStream(Socket, ServerAddress, GameInputOutStream);
       }
 
       //*GetMouse(&NewGameInput, 1) = {};
@@ -2266,19 +2261,18 @@ WinMain(HINSTANCE Instance,
 
           Assert(DatagramDestinationInputSlot != -1);
           AddDatagramToStream(Maybe.Datagram, 
-                              GameInputDatagramStreams[DatagramDestinationInputSlot]);
+                              GameInputInStream[DatagramDestinationInputSlot]);
         }
 
         for(s32 InputSlot = 2;
             InputSlot < ArrayCount(InputSlotClientMap);
             InputSlot++)
         {
-          //TODO IMPORTANT split datagram_stream into datagram_stream and datagram_stream_generations
-          datagram_stream* DatagramStream = 
-            GetMostRecentAssembledGeneration(GameInputDatagramStreams[InputSlot]);
-          if(DatagramStream)
+          u8 GenerationIndex = GetIndexOfMostRecentCompleteGeneration(GameInputInStream[InputSlot]);
+          if(GenerationIndex != -1)
           {
-            UnpackData(DatagramStream, GetMouse(&NewGameInput, MouseIndex));
+            datagram_stream_in* Stream = GameInputInStream[InputSlot];
+            UnpackData(Stream, GenerationIndex, GetMouse(&NewGameInput, MouseIndex));
           }
         }
       }

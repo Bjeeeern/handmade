@@ -26,27 +26,35 @@ struct gen_meta_data
   u8 Generation;
 };
 
-//TODO(bjorn): Maybe have two stream structs? One for sending and one for receiving.
-struct datagram_stream
+struct datagram_stream_in
 {
   u8 ConcurrentGenerationCount;
-  u8 StreamDatagramLength;
+  u8 DatagramCount;
+
+  datagram* Datagrams;
+  gen_meta_data* GenMeta;
+};
+struct datagram_stream_out
+{
+  u8 DatagramCount;
   datagram* Datagrams;
 
-  //NOTE IN
-  gen_meta_data* GenMeta;
-
-  //NOTE OUT
-  u8 CurrentPayloadDatagramLenght;
+  u8 DatagramUsedCount;
   u8 Generation;
 };
 
 internal_function datagram*
-GetDatagram(datagram_stream* Stream, u8 DatagramIndex, u8 GenerationIndex = 0)
+GetDatagram(datagram_stream_out* Stream, u8 DatagramIndex)
 {
-  Assert(DatagramIndex < Stream->StreamDatagramLength);
+  Assert(DatagramIndex < Stream->DatagramCount);
+  return Stream->Datagrams + DatagramIndex;
+}
+internal_function datagram*
+GetDatagram(datagram_stream_in* Stream, u8 DatagramIndex, u8 GenerationIndex)
+{
+  Assert(DatagramIndex < Stream->DatagramCount);
   Assert(GenerationIndex < Stream->ConcurrentGenerationCount);
-  return Stream->Datagrams + (GenerationIndex * Stream->StreamDatagramLength + DatagramIndex);
+  return Stream->Datagrams + (GenerationIndex * Stream->DatagramCount + DatagramIndex);
 }
 
 inline b32
@@ -70,7 +78,7 @@ AOlderB(u8 A, u8 B)
 }
 
 internal_function void
-AddDatagramToStream(datagram* Datagram, datagram_stream* Stream)
+AddDatagramToStream(datagram* Datagram, datagram_stream_in* Stream)
 {
   u8 Generation = Datagram->Payload[0];
   u8 DatagramIndex = Datagram->Payload[1];
@@ -89,6 +97,7 @@ AddDatagramToStream(datagram* Datagram, datagram_stream* Stream)
     gen_meta_data* Meta = Stream->GenMeta + GenerationIndex;
     if(Meta->Generation == Generation)
     {
+      Assert(!Meta->Complete);
       *GetDatagram(Stream, DatagramIndex, GenerationIndex) = *Datagram;
       Meta->FoundDgramCount += 1;
 
@@ -137,28 +146,39 @@ AddDatagramToStream(datagram* Datagram, datagram_stream* Stream)
   }
 } 
 
-internal_function datagram_stream*
-CreateDatagramStream(memory_arena* Arena, u8 StreamDatagramLength, u8 ConcurrentGenerationCount)
+
+internal_function u8  
+GetIndexOfMostRecentCompleteGeneration(datagram_stream_in* Stream)
 {
-  datagram_stream* Result = PushStruct(Arena, datagram_stream);
+  //TODO
+  return 0;
+}
+
+//TODO(bjorn): Do we care about double allocation?
+internal_function datagram_stream_out*
+CreateDatagramStreamOut(memory_arena* Arena, u8 StreamDatagramLength)
+{
+  datagram_stream_out* Result = PushStruct(Arena, datagram_stream_out);
+
+  Result->DatagramCount = StreamDatagramLength;
+  Result->Generation = 0;
+  Result->Datagrams = PushArray(Arena, StreamDatagramLength, datagram);
+}
+
+internal_function datagram_stream_in*
+CreateDatagramStreamIn(memory_arena* Arena, u8 StreamDatagramLength, u8 ConcurrentGenerationCount)
+{
+  datagram_stream_in* Result = PushStruct(Arena, datagram_stream_in);
 
   Result->ConcurrentGenerationCount = ConcurrentGenerationCount;
-  Result->StreamDatagramLength = StreamDatagramLength;
-
-  Result->Generation = 0;
+  Result->DatagramCount = StreamDatagramLength;
 
   s32 TotalDatagramCount = StreamDatagramLength * ConcurrentGenerationCount;
   Result->Datagrams = PushArray(Arena, TotalDatagramCount, datagram);
-  for(u8 DatagramIndex = 0;
-      DatagramIndex < Result->StreamDatagramLength;
-      DatagramIndex++)
-  {
-    ClearDatagram(Result->Datagrams + DatagramIndex);
-  }
 
   Result->GenMeta = PushArray(Arena, ConcurrentGenerationCount, gen_meta_data);
   for(u8 GenerationIndex = 0;
-      GenerationIndex < Result->ConcurrentGenerationCount;
+      GenerationIndex < ConcurrentGenerationCount;
       GenerationIndex++)
   {
     Result->GenMeta[GenerationIndex] = {};
@@ -174,17 +194,16 @@ IncrementGeneration(u8 CurrentGen)
 }
 
 internal_function void
-PrepDatagramStreamForPacking(datagram_stream* Stream, u8 GenerationIndex = 0)
+PrepDatagramStreamForPacking(datagram_stream_out* Stream)
 {
   Stream->Generation = IncrementGeneration(Stream->Generation);
-  Stream->CurrentPayloadDatagramLenght = 0;
+  Stream->DatagramUsedCount = 0;
 
   for(u8 DatagramIndex = 0;
-      DatagramIndex < Stream->StreamDatagramLength;
+      DatagramIndex < Stream->DatagramCount;
       DatagramIndex++)
   {
-    datagram* Datagram = GetDatagram(Stream, DatagramIndex, GenerationIndex);
-    ClearDatagram(Datagram);
+    ClearDatagram(GetDatagram(Stream, DatagramIndex));
   }
 }
 
@@ -200,13 +219,13 @@ PackData_(datagram* Datagram, u8* Data, memi Size)
 #define PackBuffer(datagram_stream, data, size) PackData_((datagram_stream), (data), (size))
 //TODO(bjorn): Byte-order.
 internal_function void
-PackData_(datagram_stream* DatagramStream, u8* Data, memi Size)
+PackData_(datagram_stream_out* DatagramStream, u8* Data, memi Size)
 {
   Assert(Size);
 
   memi SizeLeft = Size;
   for(u8 DatagramIndex = 0;
-      DatagramIndex < DatagramStream->StreamDatagramLength;
+      DatagramIndex < DatagramStream->DatagramCount;
       DatagramIndex++)
   {
     datagram* Datagram = GetDatagram(DatagramStream, DatagramIndex);
@@ -231,7 +250,7 @@ PackData_(datagram_stream* DatagramStream, u8* Data, memi Size)
         PackData_(Datagram, &Var, sizeof(u8));
       }
 
-      DatagramStream->CurrentPayloadDatagramLenght += 1;
+      DatagramStream->DatagramUsedCount += 1;
     }
 
     memi AvailableSpace = UDP_NON_FRAGMENTABLE_PAYLOAD_SIZE - Datagram->Used;
@@ -256,7 +275,7 @@ PackData_(datagram_stream* DatagramStream, u8* Data, memi Size)
 }
 #define GenPackVarByType(type) \
 internal_function void \
-PackVar(datagram_stream* DatagramStream, type Var) \
+PackVar(datagram_stream_out* DatagramStream, type Var) \
 { \
   memi Size = sizeof(type); \
   type* Data = &Var; \
@@ -264,15 +283,22 @@ PackVar(datagram_stream* DatagramStream, type Var) \
   PackData_(DatagramStream, Data, Size); \
 }
 
-#define UnpackData(datagram, destination) UnpackData_((datagram), (u8*)(destination), sizeof(*destination))
-#define UnpackBuffer(datagram, destination, size) UnpackData_((datagram), (destination), (size))
-internal_function void
 UnpackData_(datagram* Datagram, u8* Destination, memi Size)
 {
   Assert(Datagram->UnpackOffset < Datagram->Used);
   Assert(Size <= Datagram->Used - Datagram->UnpackOffset);
   RtlCopyMemory(Destination, Datagram->Payload + Datagram->UnpackOffset, Size);
   Datagram->UnpackOffset += Size;
+}
+
+#define UnpackData(datagram, destination) UnpackData_((datagram), (u8*)(destination), sizeof(*destination))
+#define UnpackBuffer(datagram, destination, size) UnpackData_((datagram), (destination), (size))
+internal_function void
+UnpackData_(datagram_stream_in* Stream, u8 GenerationIndex, u8* Destination, memi Size)
+{
+  Assert(GenerationIndex >= 0);
+  Assert(GenerationIndex < Stream->ConcurrentGenerationCount);
+  //TODO IMPORTANT
 }
 #define GenUnpackVarByType(type) \
 internal_function type \

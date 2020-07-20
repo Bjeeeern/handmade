@@ -1394,7 +1394,7 @@ TryReceiveDatagram(SOCKET Socket, datagram* Datagram, input_slot_client_map* Inp
   if(BytesReceived > 0)
   {
     Datagram->Used = BytesReceived;
-    Datagram->UnpackOffset = 0;
+    Datagram->UnpackOffset = (Datagram->Payload[1] == 0) ? 3 : 2;
     Result.Datagram = Datagram;
 
     for(s32 InputSlot = 2;
@@ -2268,11 +2268,14 @@ WinMain(HINSTANCE Instance,
             InputSlot < ArrayCount(InputSlotClientMap);
             InputSlot++)
         {
-          u8 GenerationIndex = GetIndexOfMostRecentCompleteGeneration(GameInputInStream[InputSlot]);
-          if(GenerationIndex != -1)
+          datagram_stream_in* Stream = GameInputInStream[InputSlot];
+          //TODO(bjorn): Process all completed inputs in order, not just the latest one.
+          u8 GenerationIndex = GetIndexOfMostRecentCompleteGeneration(Stream);
+          if(GenerationIndex)
           {
-            datagram_stream_in* Stream = GameInputInStream[InputSlot];
-            UnpackData(Stream, GenerationIndex, GetMouse(&NewGameInput, MouseIndex));
+            UnpackData(Stream, GenerationIndex, GetMouse(&NewGameInput, InputSlot));
+
+            DiscardGenerations(Stream);
           }
         }
       }
@@ -2300,10 +2303,11 @@ WinMain(HINSTANCE Instance,
       //
       if(IsServer)
       {
-        PrepDatagramStreamForPacking(GameOutputDatagramStream);
+        PrepDatagramStreamForPacking(GameOutputOutStream);
 
-        PackData(GameOutputDatagramStream, &GameRenderGroup->PushBufferSize);
-        PackBuffer(GameOutputDatagramStream, 
+        PackData(GameOutputOutStream, 
+                 &GameRenderGroup->PushBufferSize);
+        PackBuffer(GameOutputOutStream, 
                    GameRenderGroup->PushBufferBase, GameRenderGroup->PushBufferSize);
 
         for(s32 InputSlot = 2;
@@ -2313,7 +2317,7 @@ WinMain(HINSTANCE Instance,
           input_slot_client_map Client = InputSlotClientMap[InputSlot];
           if(Client.Connected)
           {
-            SendDatagramStream(Socket, Client.Address, GameOutputDatagramStream);
+            SendDatagramStream(Socket, Client.Address, GameOutputOutStream);
           }
         }
       }
@@ -2326,19 +2330,20 @@ WinMain(HINSTANCE Instance,
             Maybe.Datagram;
             Maybe = TryReceiveDatagram(Socket, BufferDatagram, InputSlotClientMap))
         {
-          AddDatagramToStream(Maybe.Datagram, 
-                              GameInputDatagramStreams[DatagramDestinationInputSlot]);
+          AddDatagramToStream(Maybe.Datagram, GameOutputInStream);
         }
 
-        datagram_stream* DatagramStream = GetMostRecentAssembledGeneration(GameOutputDatagramStream);
-        if(DatagramStream)
+        u8 GenerationIndex = GetIndexOfMostRecentCompleteGeneration(GameOutputInStream);
+        if(GenerationIndex)
         {
-          UnpackData(DatagramStream, &GameRenderGroup->PushBufferSize);
-          UnpackBuffer(DatagramStream, 
+          datagram_stream_in* Stream = GameOutputInStream;
+          UnpackData(Stream, GenerationIndex, 
+                     &GameRenderGroup->PushBufferSize);
+          UnpackBuffer(Stream, GenerationIndex, 
                        GameRenderGroup->PushBufferBase, 
                        GameRenderGroup->PushBufferSize);
-          //TODO Needed?? 
-          //ClearDatagramStream();
+
+          DiscardGenerations(Stream);
         }
       }
 

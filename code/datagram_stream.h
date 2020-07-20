@@ -21,6 +21,7 @@ ClearDatagram(datagram* Datagram)
 struct gen_meta_data
 {
   b32 Complete;
+  b32 Discarded;
   u8 FoundDgramCount;
   u8 TotalDgramCount;
   u8 Generation;
@@ -43,37 +44,38 @@ struct datagram_stream_out
   u8 Generation;
 };
 
-internal_function datagram*
+inline datagram*
 GetDatagram(datagram_stream_out* Stream, u8 DatagramIndex)
 {
   Assert(DatagramIndex < Stream->DatagramCount);
   return Stream->Datagrams + DatagramIndex;
 }
-internal_function datagram*
+inline datagram*
 GetDatagram(datagram_stream_in* Stream, u8 DatagramIndex, u8 GenerationIndex)
 {
   Assert(DatagramIndex < Stream->DatagramCount);
-  Assert(GenerationIndex < Stream->ConcurrentGenerationCount);
-  return Stream->Datagrams + (GenerationIndex * Stream->DatagramCount + DatagramIndex);
+  Assert(GenerationIndex <= Stream->ConcurrentGenerationCount);
+  return Stream->Datagrams + ((GenerationIndex-1) * Stream->DatagramCount + DatagramIndex);
+}
+inline gen_meta_data*
+GetGenMeta(datagram_stream_in* Stream, u8 GenerationIndex)
+{
+  Assert(GenerationIndex <= Stream->ConcurrentGenerationCount);
+  return Stream->GenMeta + (GenerationIndex - 1);
 }
 
-inline b32
-AOlderB(u8 A, u8 B)
+inline s32
+GenerationAgeDifference(u8 A, u8 B)
 {
   s32 Diff = B - A;
 
-  if(Diff == 0)
-  {
-    return false;
-  }
-
   if(AbsoluteS32(Diff) < (max_u8 / 2))
   {
-    return Diff > 0;
+    return Diff;
   }
   else
   {
-    return Diff < 0;
+    return -Diff;
   }
 }
 
@@ -88,17 +90,49 @@ AddDatagramToStream(datagram* Datagram, datagram_stream_in* Stream)
     TotalDgrams = Datagram->Payload[2];
   }
 
-  u8 OldestIncompleteGenIndex = 0;
-  u8 OldestGenIndex = 0;
-  for(u8 GenerationIndex = 0;
-      GenerationIndex < Stream->ConcurrentGenerationCount;
+  gen_meta_data* Candidate = 0;
+  u8 CandidateGenIndex = 0;
+  for(u8 GenerationIndex = 1;
+      GenerationIndex <= Stream->ConcurrentGenerationCount;
       GenerationIndex++)
   {
-    gen_meta_data* Meta = Stream->GenMeta + GenerationIndex;
-    if(Meta->Generation == Generation)
+    gen_meta_data* Meta = GetGenMeta(Stream, GenerationIndex);
+    s32 AgeDiff = GenerationAgeDifference(Generation, Meta->Generation);
+    if(AgeDiff == 0)
     {
+      Candidate = Meta;
+      CandidateGenIndex = GenerationIndex;
+      break;
+    }
+    else if(AgeDiff < 0)
+    {
+      continue;
+    }
+    else
+    {
+      if(!Candidate)
+      {
+        Candidate = Meta;
+        CandidateGenIndex = GenerationIndex;
+        continue;
+      }
+
+      //TODO double-check logic.
+      if(!(!Meta->Discarded && Meta->Complete && !Candidate->Complete))
+      {
+        Candidate = Meta;
+        CandidateGenIndex = GenerationIndex;
+      }
+    }
+  }
+
+  if(Candidate)
+  {
+    if(Candidate->Generation == Generation)
+    {
+      gen_meta_data* Meta = Candidate;
       Assert(!Meta->Complete);
-      *GetDatagram(Stream, DatagramIndex, GenerationIndex) = *Datagram;
+      *GetDatagram(Stream, DatagramIndex, CandidateGenIndex) = *Datagram;
       Meta->FoundDgramCount += 1;
 
       if(DatagramIndex == 0)
@@ -109,52 +143,67 @@ AddDatagramToStream(datagram* Datagram, datagram_stream_in* Stream)
       {
         Meta->Complete = true;
       }
-      return;
     }
     else
     {
-      if(AOlderB(Meta->Generation, Stream->GenMeta[OldestGenIndex].Generation))
+      //NOTE(Bjorn): No good spot found. A generation has to go.
+      gen_meta_data* Meta = Candidate;
+      Meta->Generation = Generation;
+      Meta->Complete = false;
+      Meta->Discarded = false;
+      Meta->TotalDgramCount = TotalDgrams;
+      Meta->FoundDgramCount = 1;
+      *GetDatagram(Stream, DatagramIndex, CandidateGenIndex) = *Datagram;
+
+      if(Meta->FoundDgramCount == Meta->TotalDgramCount)
       {
-        OldestGenIndex = GenerationIndex;
-      }
-      //TODO(Bjorn): Double-check that this makes sense.
-      if((!Meta->Complete && 
-          AOlderB(Meta->Generation, Stream->GenMeta[OldestIncompleteGenIndex].Generation)) ||
-         Stream->GenMeta[OldestIncompleteGenIndex].Complete)
-      {
-        OldestIncompleteGenIndex = GenerationIndex;
+        Meta->Complete = true;
       }
     }
   }
-  u8 OldestPreferablyIncompleteGenIndex = OldestIncompleteGenIndex;
-  if(Stream->GenMeta[OldestIncompleteGenIndex].Complete)
+  else
   {
-    OldestPreferablyIncompleteGenIndex = OldestGenIndex;
-  }
-
-  //NOTE(Bjorn): No good spot found. A generation has to go.
-  Stream->GenMeta[OldestPreferablyIncompleteGenIndex].Generation = Generation;
-  Stream->GenMeta[OldestPreferablyIncompleteGenIndex].Complete = false;
-  Stream->GenMeta[OldestPreferablyIncompleteGenIndex].TotalDgramCount = 0;
-  Stream->GenMeta[OldestPreferablyIncompleteGenIndex].FoundDgramCount = 1;
-  *GetDatagram(Stream, DatagramIndex, OldestPreferablyIncompleteGenIndex) = *Datagram;
-
-  if(TotalDgrams == 1)
-  {
-    Stream->GenMeta[OldestPreferablyIncompleteGenIndex].Complete = true;
-    Stream->GenMeta[OldestPreferablyIncompleteGenIndex].TotalDgramCount = TotalDgrams;
+    //NOTE(bjorn): Throw away datagram.
   }
 } 
-
 
 internal_function u8  
 GetIndexOfMostRecentCompleteGeneration(datagram_stream_in* Stream)
 {
-  //TODO
-  return 0;
+  u8 Result = 0;
+  gen_meta_data* PrevMeta = 0;
+  for(u8 GenerationIndex = 1;
+      GenerationIndex <= Stream->ConcurrentGenerationCount;
+      GenerationIndex++)
+  {
+    gen_meta_data* Meta = GetGenMeta(Stream, GenerationIndex);
+
+    if(Meta->Complete &&
+       !Meta->Discarded)
+    {
+      if(Result == 0 ||
+         (PrevMeta && GenerationAgeDifference(PrevMeta->Generation, Meta->Generation)<0))
+      {
+        Result = GenerationIndex;
+        PrevMeta = Meta;
+      }
+    }
+  }
+  return Result;
 }
 
-//TODO(bjorn): Do we care about double allocation?
+internal_function void
+DiscardGenerations(datagram_stream_in* Stream)
+{
+  for(u8 GenerationIndex = 1;
+      GenerationIndex <= Stream->ConcurrentGenerationCount;
+      GenerationIndex++)
+  {
+    gen_meta_data* Meta = GetGenMeta(Stream, GenerationIndex);
+    Meta->Discarded = true;
+  }
+}
+
 internal_function datagram_stream_out*
 CreateDatagramStreamOut(memory_arena* Arena, u8 StreamDatagramLength)
 {
@@ -163,6 +212,8 @@ CreateDatagramStreamOut(memory_arena* Arena, u8 StreamDatagramLength)
   Result->DatagramCount = StreamDatagramLength;
   Result->Generation = 0;
   Result->Datagrams = PushArray(Arena, StreamDatagramLength, datagram);
+
+  return Result;
 }
 
 internal_function datagram_stream_in*
@@ -177,18 +228,20 @@ CreateDatagramStreamIn(memory_arena* Arena, u8 StreamDatagramLength, u8 Concurre
   Result->Datagrams = PushArray(Arena, TotalDatagramCount, datagram);
 
   Result->GenMeta = PushArray(Arena, ConcurrentGenerationCount, gen_meta_data);
-  for(u8 GenerationIndex = 0;
-      GenerationIndex < ConcurrentGenerationCount;
+  for(u8 GenerationIndex = 1;
+      GenerationIndex <= ConcurrentGenerationCount;
       GenerationIndex++)
   {
-    Result->GenMeta[GenerationIndex] = {};
+    *GetGenMeta(Result, GenerationIndex) = {};
   }
+
+  return Result;
 }
 
 inline u8
 IncrementGeneration(u8 CurrentGen)
 {
-  u8 Result = CurrentGen + 1;
+  u8 Result = CurrentGen == 255 ? 0 : CurrentGen + 1;
   //if(CurrentGen == 0) { Result = 1; }
   return Result;
 }
@@ -283,6 +336,7 @@ PackVar(datagram_stream_out* DatagramStream, type Var) \
   PackData_(DatagramStream, Data, Size); \
 }
 
+internal_function void
 UnpackData_(datagram* Datagram, u8* Destination, memi Size)
 {
   Assert(Datagram->UnpackOffset < Datagram->Used);
@@ -291,23 +345,52 @@ UnpackData_(datagram* Datagram, u8* Destination, memi Size)
   Datagram->UnpackOffset += Size;
 }
 
-#define UnpackData(datagram, destination) UnpackData_((datagram), (u8*)(destination), sizeof(*destination))
-#define UnpackBuffer(datagram, destination, size) UnpackData_((datagram), (destination), (size))
+#define UnpackData(datagram_stream, gen_index, destination) UnpackData_((datagram_stream), (gen_index), (u8*)(destination), sizeof(*destination))
+#define UnpackBuffer(datagram_stream, gen_index, destination, size) UnpackData_((datagram_stream), (gen_index), (destination), (size))
 internal_function void
 UnpackData_(datagram_stream_in* Stream, u8 GenerationIndex, u8* Destination, memi Size)
 {
-  Assert(GenerationIndex >= 0);
-  Assert(GenerationIndex < Stream->ConcurrentGenerationCount);
-  //TODO IMPORTANT
+  Assert(GenerationIndex <= Stream->ConcurrentGenerationCount);
+  gen_meta_data* Meta = GetGenMeta(Stream, GenerationIndex);
+  Assert(Meta->Complete);
+  Assert(Meta->FoundDgramCount == Meta->TotalDgramCount);
+
+  memi SizeLeft = Size;
+  memi SizeRead = 0;
+  b32 DatagramWasUnpacked = false;
+  for(u8 DatagramIndex = 0;
+      DatagramIndex < Meta->TotalDgramCount;
+      DatagramIndex++)
+  {
+    datagram* Dgram = GetDatagram(Stream, DatagramIndex, GenerationIndex);
+    if(Dgram->UnpackOffset == Dgram->Used)
+    {
+      continue;
+    }
+    else
+    {
+      memi ReadableSize = Dgram->Used - Dgram->UnpackOffset;
+      memi SizeToRead = Min(ReadableSize, SizeLeft);
+      UnpackData_(Dgram, Destination + SizeRead, SizeToRead);
+      SizeLeft -= SizeToRead;
+      SizeRead += SizeToRead;
+      if(SizeLeft == 0)
+      {
+        DatagramWasUnpacked = true;
+        break;
+      }
+    }
+  }
+  Assert(DatagramWasUnpacked);
 }
 #define GenUnpackVarByType(type) \
 internal_function type \
-UnpackVar(datagram* Datagram) \
+UnpackVar(datagram_stream_in* Stream, u8 GenerationIndex) \
 { \
   type Result; \
   memi Size = sizeof(type); \
  \
-  UnpackData_(Datagram, (u8*)&Result, Size); \
+  UnpackData_(Stream, GenerationIndex, (u8*)&Result, Size); \
  \
   return Result; \
 }

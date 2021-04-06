@@ -100,7 +100,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input,
 	world_map_position RoomOriginWorldPos = {};
   Assert(IsValid(RoomOriginWorldPos));
 #if HANDMADE_INTERNAL
-	GameState->DEBUG_VisualiseCollisionBox = false;
+	GameState->DEBUG_VisualiseCollisionBox = true;
 	for(s32 Index = 0;
 			Index < 10;
 			Index++)

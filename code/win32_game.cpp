@@ -15,7 +15,7 @@
 #include <stdio.h>
 
 //NOTE(bjorn): 1080p display mode is 1920x1080 -> Half of that is 960x540.
-#if 1
+#if 0
 #define GAME_RGB_BUFFER_WIDTH 1920
 #define GAME_RGB_BUFFER_HEIGHT 1080
 #else

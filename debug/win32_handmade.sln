@@ -1,19 +1,20 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.27004.2006
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.31129.286
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{911E67C6-3D85-4FCE-B560-20A9C3E3FF48}") = "win32_handmade", "win32_handmade.exe", "{D3380921-EE4E-439F-879D-491827B12386}"
 	ProjectSection(DebuggerProjectSystem) = preProject
 		PortSupplier = 00000000-0000-0000-0000-000000000000
-		Executable = w:\handmade\build\win32_game.exe
+		Executable = C:\Users\Björn Strömberg\Desktop\handmade\build\win32_game.exe
 		RemoteMachine = KUMA-PC
-		StartingDirectory = C:\Users\kuma\Desktop\enviroment\handmade\build
+		StartingDirectory = C:\Users\Björn Strömberg\Desktop\handmade\build
 		Environment = Default
 		LaunchingEngine = 00000000-0000-0000-0000-000000000000
 		UseLegacyDebugEngines = No
 		LaunchSQLEngine = No
 		AttachLaunchAction = No
+		IORedirection = Auto
 	EndProjectSection
 EndProject
 Global

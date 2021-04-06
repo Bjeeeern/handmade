@@ -4,7 +4,7 @@
 I had two repositories before but now all code for the enginge just lives here in the Code folder for simplicitys sake.
 
 The repository is named after the quite amazing [Handmade Hero](https://handmadehero.org/) web series
-which I am working my way through, learning how to make this stuff. Everything in the repository is written by hand by me apart from a couple of functions in math.h that I will revisit once I start optimizing things.
+which I am working my way through (_ep. 240~_), learning how to make this stuff. Everything in the repository is written by hand by me apart from a couple of functions in math.h that I will revisit once I start optimizing things.
 
 Most recently I added a rigid body 3D physics system and started on multithreaded asset-streaming. This temporarily broke alot of things like glyph generation and since I haven't fixed that yet and since I removed the demo code for the physics part and changed it to a game based on moving around a alphabet grid the demo looks quite boring right now.
 

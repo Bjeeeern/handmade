@@ -24,26 +24,6 @@ PushQuad(render_group* RenderGroup, m44 T, game_assets* Assets, game_asset_id ID
 }
 
 internal_function void
-PushTriangleFillFlip(render_group* RenderGroup, v2 Sta, v2 Mid, v2 End)
-{
-	render_entry_triangle_fill_flip* Entry = 
-    PushRenderElement(RenderGroup, render_entry_triangle_fill_flip);
-	Entry->Sta = ToV3(Sta, 0.0f);
-	Entry->Mid = ToV3(Mid, 0.0f);
-	Entry->End = ToV3(End, 0.0f);
-}
-
-internal_function void
-PushQuadBezierFlip(render_group* RenderGroup, v2 Sta, v2 Mid, v2 End)
-{
-	render_entry_quad_bezier_fill_flip* Entry = 
-    PushRenderElement(RenderGroup, render_entry_quad_bezier_fill_flip);
-	Entry->Sta = ToV3(Sta, 0.0f);
-	Entry->Mid = ToV3(Mid, 0.0f);
-	Entry->End = ToV3(End, 0.0f);
-}
-
-internal_function void
 PushWireCube(render_group* RenderGroup, m44 T, v4 Color = {0,0.4f,0.8f,1})
 {
 	render_entry_wire_cube* Entry = PushRenderElement(RenderGroup, render_entry_wire_cube);

@@ -235,46 +235,6 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
           glEnd();
           glDisable(GL_TEXTURE_2D);
         } break;
-      case RenderGroupEntryType_render_entry_triangle_fill_flip
-        : {
-          RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_triangle_fill_flip);
-
-          //TODO(Bjorn): Shaders
-#if 0
-          DrawTriangle(OutputTarget, 
-                       &RenderGroup->CamParam, &ScreenVars, 
-                       Entry->Sta, 
-                       Entry->Mid, 
-                       Entry->End, 
-                       {1,0},
-                       {1,1},
-                       {0,1},
-                       0,
-                       {},
-                       ClipRect,
-                       PlainFillFlipShader);
-#endif
-        } break;
-      case RenderGroupEntryType_render_entry_quad_bezier_fill_flip
-        : {
-          RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_quad_bezier_fill_flip);
-
-          //TODO(Bjorn): Shaders
-#if 0
-          DrawTriangle(OutputTarget, 
-                       &RenderGroup->CamParam, &ScreenVars, 
-                       Entry->Sta, 
-                       Entry->Mid, 
-                       Entry->End, 
-                       {1,0},
-                       {1,1},
-                       {0,1},
-                       0,
-                       {},
-                       ClipRect,
-                       QuadBezierFlipShader);
-#endif
-        } break;
       case RenderGroupEntryType_render_entry_sphere
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_sphere);

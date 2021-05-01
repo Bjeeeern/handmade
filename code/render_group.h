@@ -18,8 +18,6 @@ enum render_group_entry_type
 	RenderGroupEntryType_render_entry_wire_cube,
 	RenderGroupEntryType_render_entry_blank_quad,
 	RenderGroupEntryType_render_entry_quad,
-	RenderGroupEntryType_render_entry_triangle_fill_flip,
-	RenderGroupEntryType_render_entry_quad_bezier_fill_flip,
 	RenderGroupEntryType_render_entry_sphere,
 };
 

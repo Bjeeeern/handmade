@@ -4,34 +4,14 @@
 #include "render_group.h"
 #include <gl/gl.h>
 
-internal_function void
-OGLDrawQuad(v3* Verts)
-{
-  glTexCoord2f(0,0);
-    glVertex3f(Verts[0].X, Verts[0].Y, Verts[0].Z);
-  glTexCoord2f(0,1);
-    glVertex3f(Verts[1].X, Verts[1].Y, Verts[1].Z);
-  glTexCoord2f(1,1);
-    glVertex3f(Verts[2].X, Verts[2].Y, Verts[2].Z);
-
-  glTexCoord2f(0,0);
-    glVertex3f(Verts[0].X, Verts[0].Y, Verts[0].Z);
-  glTexCoord2f(1,1);
-    glVertex3f(Verts[2].X, Verts[2].Y, Verts[2].Z);
-  glTexCoord2f(1,0);
-    glVertex3f(Verts[3].X, Verts[3].Y, Verts[3].Z);
-}
-
 global_variable s32 GLOBAL_NextTextureHandle = 0;
 RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
 {
   BEGIN_TIMED_BLOCK(RenderGroupToOutput);
 
-  m44 WorldToCamera = {};
-
   for(u32 PushBufferByteOffset = 0;
       PushBufferByteOffset < RenderGroup->PushBufferSize;
-      )
+     )
   {
     render_entry_header* Header = 
       (render_entry_header*)(RenderGroup->PushBufferBase + PushBufferByteOffset);
@@ -45,22 +25,22 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_camera);
 
           f32 ClipSize = (Entry->FarClipPoint - Entry->NearClipPoint);
+
           f32 a = SafeRatio0(1.0f, Entry->ScreenWidthInMeters * 0.5f);
           f32 b = SafeRatio0(1.0f, Entry->ScreenHeightInMeters * 0.5f);
           f32 c = SafeRatio0(1.0f, ClipSize * 0.5f);
           f32 d = 1.0f + SafeRatio0(Entry->NearClipPoint, ClipSize * 0.5f);
           f32 f = SafeRatio0(1.0f, Entry->LensChamberSize);
 
-          f32 ProjMat[16] = { a, 0, 0, 0,
-                              0, b, 0, 0,
-                              0, 0, c,-f,
-                              0, 0, d, 1, };
+          m44 CameraToScreen = { a, 0, 0, 0,
+                                 0, b, 0, 0,
+                                 0, 0, c, d,
+                                 0, 0, -f, 1, };
+
+          m44 WorldToScreen = CameraToScreen * Entry->WorldToCamera;
 
           glMatrixMode(GL_PROJECTION);
-          glLoadMatrixf((const GLfloat*)(&ProjMat));
-
-          //TODO(bjorn): Combine this with the projection matrix.
-          WorldToCamera = Entry->WorldToCamera;
+          glLoadMatrixf((const GLfloat*)Transpose(WorldToScreen).E_);
         } break;
       case RenderGroupEntryType_render_entry_clear_screen
         : {
@@ -76,8 +56,8 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
 
           glBegin(GL_LINES);
 
-          v3 V0 = WorldToCamera * Entry->A;
-          v3 V1 = WorldToCamera * Entry->B;
+          v3 V0 = Entry->A;
+          v3 V1 = Entry->B;
 
           glColor3f(Entry->Color.R, Entry->Color.G, Entry->Color.B);
 
@@ -90,12 +70,14 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_coordinate_system);
 
+          glMatrixMode(GL_MODELVIEW);
+          glLoadMatrixf((const GLfloat*)Transpose(Entry->Tran).E_);
+
           glBegin(GL_LINES);
 
-          m44 Tran = WorldToCamera * Entry->Tran;
           {
-            v3 V0 = Tran*v3{0,0,0};
-            v3 V1 = Tran*v3{1,0,0};
+            v3 V0 = v3{0,0,0};
+            v3 V1 = v3{1,0,0};
 
             glColor3f(1,0,0);
 
@@ -104,8 +86,8 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
           }
 
           {
-            v3 V0 = Tran*v3{0,0,0};
-            v3 V1 = Tran*v3{0,1,0};
+            v3 V0 = v3{0,0,0};
+            v3 V1 = v3{0,1,0};
 
             glColor3f(0,1,0);
 
@@ -114,8 +96,8 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
           }
 
           {
-            v3 V0 = Tran*v3{0,0,0};
-            v3 V1 = Tran*v3{0,0,1};
+            v3 V0 = v3{0,0,0};
+            v3 V1 = v3{0,0,1};
 
             glColor3f(0,0,1);
 
@@ -129,8 +111,12 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_wire_cube);
 
-          m44 Tran = WorldToCamera * Entry->Tran;
-          aabb_verts_result AABB = GetAABBVertices(&Tran);
+          glMatrixMode(GL_MODELVIEW);
+          glLoadMatrixf((const GLfloat*)Transpose(Entry->Tran).E_);
+
+          //TODO(bjorn): Replace with a line mesh with colors
+          m44 Identity = M44Identity();
+          aabb_verts_result AABB = GetAABBVertices(&Identity);
 
           glBegin(GL_LINES);
 
@@ -179,13 +165,31 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_blank_quad);
 
-          quad_verts_result Quad = GetQuadVertices(WorldToCamera * Entry->Tran);
+          glMatrixMode(GL_MODELVIEW);
+          glLoadMatrixf((const GLfloat*)Transpose(Entry->Tran).E_);
+
+          //TODO(bjorn): Replace with a line mesh with colors
+          m44 Identity = M44Identity();
+          quad_verts_result Quad = GetQuadVertices(Identity);
 
           glBegin(GL_TRIANGLES);
 
           glColor3f(Entry->Color.R, Entry->Color.G, Entry->Color.B);
 
-          OGLDrawQuad(Quad.Verts);
+          v3* Verts = Quad.Verts;
+          glTexCoord2f(0,0);
+          glVertex3f(Verts[0].X, Verts[0].Y, Verts[0].Z);
+          glTexCoord2f(0,1);
+          glVertex3f(Verts[1].X, Verts[1].Y, Verts[1].Z);
+          glTexCoord2f(1,1);
+          glVertex3f(Verts[2].X, Verts[2].Y, Verts[2].Z);
+
+          glTexCoord2f(0,0);
+          glVertex3f(Verts[0].X, Verts[0].Y, Verts[0].Z);
+          glTexCoord2f(1,1);
+          glVertex3f(Verts[2].X, Verts[2].Y, Verts[2].Z);
+          glTexCoord2f(1,0);
+          glVertex3f(Verts[3].X, Verts[3].Y, Verts[3].Z);
 
           glEnd();
         } break;
@@ -193,7 +197,12 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_quad);
 
-          quad_verts_result Quad = GetQuadVertices(WorldToCamera * Entry->Tran);
+          glMatrixMode(GL_MODELVIEW);
+          glLoadMatrixf((const GLfloat*)Transpose(Entry->Tran).E_);
+
+          //TODO(bjorn): Replace with a line mesh with colors
+          m44 Identity = M44Identity();
+          quad_verts_result Quad = GetQuadVertices(Identity);
 
           glEnable(GL_TEXTURE_2D);
 
@@ -230,7 +239,20 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
 
           glColor3f(Entry->Color.R, Entry->Color.G, Entry->Color.B);
 
-          OGLDrawQuad(Quad.Verts);
+          v3* Verts = Quad.Verts;
+          glTexCoord2f(0,0);
+          glVertex3f(Verts[0].X, Verts[0].Y, Verts[0].Z);
+          glTexCoord2f(0,1);
+          glVertex3f(Verts[1].X, Verts[1].Y, Verts[1].Z);
+          glTexCoord2f(1,1);
+          glVertex3f(Verts[2].X, Verts[2].Y, Verts[2].Z);
+
+          glTexCoord2f(0,0);
+          glVertex3f(Verts[0].X, Verts[0].Y, Verts[0].Z);
+          glTexCoord2f(1,1);
+          glVertex3f(Verts[2].X, Verts[2].Y, Verts[2].Z);
+          glTexCoord2f(1,0);
+          glVertex3f(Verts[3].X, Verts[3].Y, Verts[3].Z);
 
           glEnd();
           glDisable(GL_TEXTURE_2D);
@@ -239,23 +261,32 @@ RENDER_GROUP_TO_OUTPUT(OpenGLRenderGroupToOutput)
         : {
           RenderGroup_DefineEntryAndAdvanceByteOffset(render_entry_sphere);
 
-          //TODO(Bjorn): Shaders
-#if 0
-          v3 P0 = Entry->Tran * v3{0,0,0};
-          v3 P1 = Entry->Tran * v3{0.5f,0,0};
+          glMatrixMode(GL_MODELVIEW);
+          glLoadMatrixf((const GLfloat*)Transpose(Entry->Tran).E_);
 
-          pixel_pos_result PixPos = 
-            ProjectPointToScreen(WorldToCamera, &RenderGroup->CamParam, 
-                                 &ScreenVars, P0);
-          if(PixPos.PointIsInView)
+          game_mesh* Mesh = GetMesh(Assets, GAI_SphereMesh);
+          if(Mesh)
           {
-            f32 PixR = (ScreenVars.MeterToPixel.A * 
-                        Magnitude(P1 - P0) * 
-                        PixPos.PerspectiveCorrection);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
-            DrawCircle(OutputTarget, PixPos.P, PixR, Entry->Color, ClipRect);
+            glColor4f(Entry->Color.R, Entry->Color.G, Entry->Color.B, Entry->Color.A);
+
+            glEnableClientState(GL_VERTEX_ARRAY);
+            glVertexPointer(Mesh->Dimensions, GL_FLOAT,
+                            0, //TODO(bjorn): Measure if stride matter here.
+                            Mesh->Vertices);
+
+            glDrawElements(GL_TRIANGLES, Mesh->FaceCount * Mesh->EdgesPerFace,
+                           GL_UNSIGNED_INT, Mesh->Indicies);
+
+            glColor4f(Entry->Color.R*0.8f, 
+                      Entry->Color.G*0.8f, 
+                      Entry->Color.B*0.8f, 
+                      Entry->Color.A);
+            glDrawElements(GL_LINES, Mesh->FaceCount * Mesh->EdgesPerFace,
+                           GL_UNSIGNED_INT, Mesh->Indicies);
           }
-#endif
         } break;
       InvalidDefaultCase;
     }

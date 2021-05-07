@@ -1,6 +1,7 @@
 #if !defined(ASSET_STREAMING_H)
 
 #include "asset.h"
+#include "ascii_parse.h"
 #include "file_format_BMP.h"
 #include "font.h"
 
@@ -223,6 +224,21 @@ JunkBitmap(memory_arena* Arena, u32 Width, u32 Height)
   return Result;
 }
 
+internal_function game_bitmap*
+EmptyBitmap(memory_arena* Arena, u32 Width, u32 Height)
+{
+  game_bitmap* Result = PushStruct(Arena, game_bitmap);
+
+  Result->Width = Width;
+  Result->Height = Height;
+  Result->WidthOverHeight = SafeRatio0((f32)Result->Width, (f32)Result->Height);
+  Result->GPUHandle = 0;
+
+  Result->Memory = 0;
+
+  return Result;
+}
+
 internal_function void 
 ClearEdgeXPix(game_bitmap* Bitmap, u32 PixelsToClear)
 {
@@ -256,7 +272,9 @@ ClearEdgeXPix(game_bitmap* Bitmap, u32 PixelsToClear)
 internal_function void
 LoadAsset(game_assets* Assets, game_asset_id ID)
 {
-  Assets->BitmapsMeta[ID].State = AssetState_Queued;
+  Assert(Assets);
+
+  Assets->Assets[ID].Meta.State = AssetState_Queued;
 
   char* Path = 0;
   switch(ID)
@@ -267,68 +285,144 @@ LoadAsset(game_assets* Assets, game_asset_id ID)
       } break;
     case GAI_Backdrop:
       {
+        Assets->Assets[ID].Type = AssetType_Bitmap;
         Path = "data/test/test_background.bmp";
       } break;
     case GAI_RockWall:
       {
+        Assets->Assets[ID].Type = AssetType_Bitmap;
         Path = "data/test2/tuft00.bmp";
         //GetBitmap(Assets, GAI_RockWall)->Alignment = {35, 41};
       } break;
     case GAI_Dirt:
       {
+        Assets->Assets[ID].Type = AssetType_Bitmap;
         Path = "data/test2/ground00.bmp";
         //GetBitmap(Assets, GAI_Dirt)->Alignment = {133, 56};
       } break;
     case GAI_Shadow:
       {
+        Assets->Assets[ID].Type = AssetType_Bitmap;
         Path = "data/test/test_hero_shadow.bmp";
         //GetBitmap(Assets, GAI_Shadow)->Alignment = {72, 182};
       } break;
     case GAI_Sword:
       {
+        Assets->Assets[ID].Type = AssetType_Bitmap;
         Path = "data/test2/ground01.bmp";
         //GetBitmap(Assets, GAI_Sword)->Alignment = {256/2, 116/2};
+      } break;
+    case GAI_QuadMesh:
+      {
+        Assets->Assets[ID].Type = AssetType_Mesh;
+      } break;
+    case GAI_SphereMesh:
+      {
+        Assets->Assets[ID].Type = AssetType_Mesh;
+        Path = "data/sphere.obj";
       } break;
 
       InvalidDefaultCase;
   }
 
-  //if(!Assets->BitmapsMeta[ID].RezKnown)
+  if(Assets->Assets[ID].Type == AssetType_Bitmap)
   {
-    //TODO(bjorn): Multi-thread.
     debug_read_file_result File = DEBUGPlatformReadEntireFile(Path); 
 
     v2s Rez = PeekAtBMPResolution(File.Content, File.ContentSize);
-    Assets->BitmapsMeta[ID].Rez = Rez;
+    Assets->Assets[ID].Bitmap = JunkBitmap(&Assets->Arena, Rez.Width, Rez.Height);
 
-    CompileTimeWriteBarrier;
-    Assets->BitmapsMeta[ID].RezKnown = true;
-    Assets->BitmapsMeta[ID].State = AssetState_Unloaded;
+    LoadBMPIntoBitmap(File.Content, File.ContentSize, Assets->Assets[ID].Bitmap);
+    ClearEdgeXPix(Assets->Assets[ID].Bitmap, 1);
 
     DEBUGPlatformFreeFileMemory(File.Content);
   }
-  //else
+
+  if(Assets->Assets[ID].Type == AssetType_Mesh)
   {
-    v2s Rez = Assets->BitmapsMeta[ID].Rez;
-    Assets->Bitmaps[ID] = JunkBitmap(&Assets->Arena, Rez.Width, Rez.Height);
+    if(ID == GAI_QuadMesh)
+    {
+      // TODO(bjorn): Make and use a quadmesh
+    }
+    if(ID == GAI_SphereMesh)
+    {
+      debug_read_file_result File = DEBUGPlatformReadEntireFile(Path); 
 
-    //TODO(bjorn): Multi-thread.
-    debug_read_file_result File = DEBUGPlatformReadEntireFile(Path); 
-    LoadBMPIntoBitmap(File.Content, File.ContentSize, Assets->Bitmaps[ID]);
+      s32 VertexCount = 0;
+      s32 FaceCount = 0;
+      {
+        u8* Cursor = File.Content;
+        u8* End = File.Content + File.ContentSize - 2;
 
-    ClearEdgeXPix(Assets->Bitmaps[ID], 1);
+        do
+        {
+          if(Cursor[0] == 'v' && Cursor[1] == ' ') { VertexCount += 1; }
+          if(Cursor[0] == 'f' && Cursor[1] == ' ') { FaceCount += 1; }
+        }
+        while(Cursor++ != End);
+      }
 
-    CompileTimeWriteBarrier;
-    Assets->BitmapsMeta[ID].State = AssetState_Loaded;
+      game_mesh* Mesh = PushStruct(&Assets->Arena, game_mesh);
+      Mesh->Dimensions = 3;
+      Mesh->VertexCount = VertexCount;
+      Mesh->Vertices = PushArray(&Assets->Arena, Mesh->VertexCount * Mesh->Dimensions, f32);
 
-    DEBUGPlatformFreeFileMemory(File.Content);
+      Mesh->EdgesPerFace = 3;
+      Mesh->FaceCount = FaceCount;
+      Mesh->Indicies = PushArray(&Assets->Arena, Mesh->FaceCount * Mesh->EdgesPerFace, u32);
+      {
+        u8* Cursor = File.Content;
+        u8* End = File.Content + File.ContentSize - 2;
+
+        s32 VertIndex = 0;
+        s32 FaceIndex = 0;
+        do
+        {
+          if(Cursor[0] == 'v' && Cursor[1] == ' ') 
+          {
+            while(*Cursor++ != ' ') {}
+            Mesh->Vertices[VertIndex*3 + 0] = ParseDecimal(Cursor);
+            while(*Cursor++ != ' ') {}
+            Mesh->Vertices[VertIndex*3 + 1] = ParseDecimal(Cursor);
+            while(*Cursor++ != ' ') {}
+            Mesh->Vertices[VertIndex*3 + 2] = ParseDecimal(Cursor);
+
+            VertIndex += 1;
+          }
+          if(Cursor[0] == 'f' && Cursor[1] == ' ')
+          {
+            while(*Cursor++ != ' ') {}
+            Mesh->Indicies[FaceIndex*3 + 0] = ParseUnsignedInteger(Cursor);
+            while(*Cursor++ != ' ') {}
+            Mesh->Indicies[FaceIndex*3 + 1] = ParseUnsignedInteger(Cursor);
+            while(*Cursor++ != ' ') {}
+            Mesh->Indicies[FaceIndex*3 + 2] = ParseUnsignedInteger(Cursor);
+
+            FaceIndex += 1;
+          }
+        }
+        while(Cursor++ != End);
+
+        Assert(VertIndex == VertexCount);
+        Assert(FaceIndex == FaceCount);
+      }
+      Assets->Assets[ID].Mesh = Mesh;
+
+      DEBUGPlatformFreeFileMemory(File.Content);
+    }
   }
+
+  CompileTimeWriteBarrier;
+  Assets->Assets[ID].Meta.State = AssetState_Loaded;
 }
 
 internal_function void
 LoadAllAssets(game_assets* Assets)
 {
+  //TODO(bjorn): Load assets on demand
   LoadAsset(Assets, GAI_RockWall);
+  LoadAsset(Assets, GAI_QuadMesh);
+  LoadAsset(Assets, GAI_SphereMesh);
 }
 
 #define ASSET_STREAMING_H

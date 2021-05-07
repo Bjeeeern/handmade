@@ -962,7 +962,17 @@ QuaternionIdentity()
 
 struct m44
 {
-	f32 E_[16];
+	union
+	{
+		struct
+		{
+			f32 A; f32 B; f32 C; f32 D; 
+      f32 E; f32 F; f32 G; f32 H; 
+      f32 I; f32 J; f32 K; f32 L; 
+      f32 M; f32 N; f32 O; f32 P; 
+		};
+    f32 E_[16];
+	};
 
 	m44&
 		operator*=(m44 rhs)
@@ -2468,6 +2478,23 @@ Transpose(m33 M)
 		u32 x = i % 3;
 		u32 y = i / 3;
 		Result.E_[x*3 + y] = M.E_[y*3 + x];
+	}
+
+	return Result;
+}
+
+	inline m44
+Transpose(m44 M)
+{
+	m44 Result = {};
+
+	for(u32 i = 0;
+			i < 16;
+			i++)
+	{
+		u32 x = i % 4;
+		u32 y = i / 4;
+		Result.E_[x*4 + y] = M.E_[y*4 + x];
 	}
 
 	return Result;

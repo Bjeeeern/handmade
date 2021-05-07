@@ -24,6 +24,17 @@ struct game_bitmap
   s32 GPUHandle; //TODO(bjorn): Think about this.
 };
 
+struct game_mesh
+{
+  f32* Vertices;
+  s32 VertexCount;
+  s32 Dimensions;
+
+  u32* Indicies;
+  s32 FaceCount;
+  s32 EdgesPerFace;
+};
+
 struct hero_bitmaps
 {
 	game_bitmap Head;
@@ -41,6 +52,9 @@ enum game_asset_id
 	GAI_Shadow,
 	GAI_Sword,
 
+	GAI_QuadMesh,
+	GAI_SphereMesh,
+
   GAI_Count,
 };
 
@@ -52,37 +66,34 @@ enum game_asset_state
   AssetState_Locked,
 };
 
-struct game_bitmap_meta
+struct game_asset_meta
 {
   u32 RequestLoad;
 
-  v2s Rez;
-  b32 RezKnown;
   game_asset_state State;
+};
+
+enum game_asset_type
+{
+  AssetType_Bitmap,
+  AssetType_Mesh,
+};
+
+struct game_asset
+{
+  game_asset_meta Meta;
+  game_asset_type Type;
+  union
+  {
+    game_bitmap* Bitmap;
+    game_mesh* Mesh;
+  };
 };
 
 struct game_assets
 {
   memory_arena Arena;
-
-  //TODO(bjorn): Merge into one asset thing containing needed data.
-	game_bitmap_meta BitmapsMeta[GAI_Count];
-	game_bitmap* Bitmaps[GAI_Count];
-
-  //TODO(bjorn): What HMHM did.
-#if 0
-  font* Font;
-  game_bitmap GenFontMap;
-  game_bitmap GenTile;
-
-	hero_bitmaps HeroBitmaps[4];
-
-  game_bitmap Grass[2];
-  game_bitmap Ground[4];
-  game_bitmap Rock[4];
-  game_bitmap Tuft[3];
-  game_bitmap Tree[3];
-#endif
+	game_asset Assets[1024];
 };
 
 inline game_bitmap* 
@@ -91,20 +102,48 @@ GetBitmap(game_assets* Assets, game_asset_id ID)
   game_bitmap* Result = 0;
 
   Assert(Assets);
-  Result = Assets->Bitmaps[ID];
+  Assert(Assets->Assets[ID].Type == AssetType_Bitmap);
+  Result = Assets->Assets[ID].Bitmap;
 
   //NOTE(bjorn): Multi-pass so we must assert before doing the load.
-  if(Assets->BitmapsMeta[ID].State == AssetState_Loaded ||
-     Assets->BitmapsMeta[ID].State == AssetState_Locked) 
+  if(Assets->Assets[ID].Meta.State == AssetState_Loaded ||
+     Assets->Assets[ID].Meta.State == AssetState_Locked) 
   { 
     Assert(Result); 
   }
 
   //TODO(Bjorn): Asset streaming.
 #if 0
-  if(Assets->BitmapsMeta[ID].State == AssetState_Unloaded)
+  if(Assets->Assets[ID].Meta.State == AssetState_Unloaded)
   {
-    Assets->BitmapsMeta[ID].RequestLoad += 1;
+    Assets->Assets[ID].Meta.RequestLoad += 1;
+  }
+#endif
+
+  return Result;
+}
+
+inline game_mesh* 
+GetMesh(game_assets* Assets, game_asset_id ID)
+{
+  game_mesh* Result = 0;
+
+  Assert(Assets);
+  Assert(Assets->Assets[ID].Type == AssetType_Mesh);
+  Result = Assets->Assets[ID].Mesh;
+
+  //NOTE(bjorn): Multi-pass so we must assert before doing the load.
+  if(Assets->Assets[ID].Meta.State == AssetState_Loaded ||
+     Assets->Assets[ID].Meta.State == AssetState_Locked) 
+  { 
+    Assert(Result); 
+  }
+
+  //TODO(Bjorn): Asset streaming.
+#if 0
+  if(Assets->Assets[ID].Meta.State == AssetState_Unloaded)
+  {
+    Assets->Assets[ID].RequestLoad += 1;
   }
 #endif
 

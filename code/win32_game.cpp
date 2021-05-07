@@ -7,6 +7,12 @@
 #include <tobii/tobii_streams.h>
 
 #include "platform.h"
+
+#if HANDMADE_INTERNAL
+// NOTE(bjorn): global input reference for testing things easily across the platform.
+global_variable game_input* DEBUG_NewGameInput;
+#endif
+
 #include "asset_streaming.h"
 #include "opengl_renderer.h"
 
@@ -126,7 +132,6 @@ ConcatenateStrings(size_t SourceALength, char *SourceA,
   }
   *Destination = '\0';
 }
-
 
 #if HANDMADE_INTERNAL
 //IMPORTANT(bjorn): As of 2018 6/2. GlobalPathToGameRoot is a path to the folder
@@ -1739,11 +1744,11 @@ WinMain(HINSTANCE Instance,
     //    LockAssetIDSet(AssetIDSet); //DEBUG log failed fetches?
     // }
     {
-      game_bitmap* MainScreen = PushStruct(&GameAssets->Arena, game_bitmap);
-      *MainScreen = {};
+      // NOTE(bjorn): There is an idea about being able to set any bitmap as a camera target
+      game_bitmap* MainScreen = EmptyBitmap(&GameAssets->Arena, (u32)GameScreenWidth, (u32)GameScreenHeight);
 
-      GameAssets->Bitmaps[GAI_MainScreen] = MainScreen;
-      GameAssets->BitmapsMeta[GAI_MainScreen].State = AssetState_Locked;
+      GameAssets->Assets[GAI_MainScreen].Bitmap = MainScreen;
+      GameAssets->Assets[GAI_MainScreen].Meta.State = AssetState_Locked;
     }
 
     Handmade.Memory.PushWork = Win32PushWork;
@@ -2035,12 +2040,6 @@ WinMain(HINSTANCE Instance,
         Win32ProcessKeyboardButton((GetKeyState(VK_XBUTTON2) & 0x8000), &Mouse->ThumbBackward); 
       }
       
-      {
-        game_bitmap* MainScreen = GetBitmap(GameAssets, GAI_MainScreen);
-        MainScreen->Dim = {(u32)GameScreenWidth, (u32)GameScreenHeight};
-        MainScreen->WidthOverHeight = GameScreenWidth/(f32)GameScreenHeight;
-      }
-
 #if 0
       {
         char TextBuffer[256];
@@ -2062,6 +2061,9 @@ WinMain(HINSTANCE Instance,
       {
         Win32PlayBackInput(&Win32State, &NewGameInput);
       }
+#endif
+#if HANDMADE_INTERNAL
+      DEBUG_NewGameInput = &NewGameInput;
 #endif
       if(Game->Code.Update)
       {

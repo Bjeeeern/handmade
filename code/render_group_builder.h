@@ -69,6 +69,7 @@ PushCamera(render_group* RenderGroup, game_assets* Assets, game_asset_id ID, f32
            m44 WorldToCamera, f32 LensChamberSize, 
            f32 NearClipPoint = 0, f32 FarClipPoint = 100.0f)
 {
+  // NOTE(bjorn): There is an idea about being able to set any bitmap as a camera target
   game_bitmap* Target = GetBitmap(Assets, ID);
   Assert(Target);
 

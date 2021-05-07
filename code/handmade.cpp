@@ -117,7 +117,10 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input,
 		sim_region* SimRegion = BeginSim(Input, &GameState->Entities, 
 																		 FrameBoundedTransientArena, WorldMap,
 																		 RoomOriginWorldPos, GameState->CameraUpdateBounds, 0);
-		AddWall(SimRegion, v3{0, 0, 0})->MoveSpec.Gravity = {};
+
+    entity* Wall = AddWall(SimRegion, v3{0, 0, 0});
+    Wall->MoveSpec.Gravity = {};
+    Wall->Tran = ConstructTransform(v3{0,0,0}, AngleAxisToQuaternion(-tau32*0.25f, v3{1,0,0}));
 
 		entity* MainCamera = AddCamera(SimRegion, v3{0, 0, 0});
 		MainCamera->Keyboard = GetKeyboard(Input, 1);
@@ -243,7 +246,7 @@ InitializeGame(game_memory *Memory, game_state *GameState, game_input* Input,
 
   //TODO Is there a way to do this assignment of the camera storage index?
   for(u32 StorageIndex = 1;
-      StorageIndex < GameState->Entities.EntityCount;
+      StorageIndex <= GameState->Entities.EntityCount;
       StorageIndex++)
   {
     if(GameState->Entities.Entities[StorageIndex].Sim.IsCamera)
